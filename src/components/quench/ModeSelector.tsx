@@ -30,7 +30,7 @@ export function ModeSelector({
   className?: string;
 }) {
   return (
-    <div className={cn("flex flex-wrap justify-center gap-2.5", className)}>
+    <div className={cn("flex flex-wrap justify-center gap-2 lg:flex-nowrap", className)}>
       {VISIBLE_MODES.map((id) => {
         const Icon = ICONS[id];
         const active = mode === id;

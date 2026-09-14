@@ -4,28 +4,28 @@ export function CosmicBackground() {
       <div className="bg-background absolute inset-0" />
       {/* planet limb top-right */}
       <div
-        className="absolute -top-[45%] right-[-25%] size-[95vw] rounded-full opacity-70 blur-2xl"
+        className="absolute -top-[45%] right-[-25%] size-[95vw] rounded-full opacity-95 blur-2xl"
         style={{
           background:
-            "radial-gradient(circle at 35% 65%, oklch(0.45 0.12 220 / 45%), transparent 62%)",
+            "radial-gradient(circle at 35% 65%, oklch(0.45 0.12 220 / 85%), transparent 62%)",
           animation: "quench-drift 26s ease-in-out infinite",
         }}
       />
       {/* green atmosphere sweep */}
       <div
-        className="absolute top-[10%] left-[18%] size-[70vw] rounded-full opacity-50 blur-3xl"
+        className="absolute top-[10%] left-[18%] size-[70vw] rounded-full opacity-80 blur-3xl"
         style={{
           background:
-            "radial-gradient(circle at 50% 50%, oklch(0.6 0.18 155 / 30%), transparent 60%)",
+            "radial-gradient(circle at 50% 50%, oklch(0.6 0.18 155 / 55%), transparent 60%)",
           animation: "quench-drift 34s ease-in-out infinite reverse",
         }}
       />
       {/* bottom planet curve */}
       <div
-        className="absolute -bottom-[70%] -left-[20%] size-[120vw] rounded-full opacity-60 blur-2xl"
+        className="absolute -bottom-[70%] -left-[20%] size-[120vw] rounded-full opacity-90 blur-2xl"
         style={{
           background:
-            "radial-gradient(circle at 50% 20%, oklch(0.5 0.13 235 / 40%), transparent 55%)",
+            "radial-gradient(circle at 50% 20%, oklch(0.5 0.13 235 / 70%), transparent 55%)",
         }}
       />
       {/* luminous arcs */}
