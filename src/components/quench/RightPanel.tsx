@@ -16,7 +16,7 @@ export function RightPanel({
 }: {
   state: AgentState;
   mode: ModeId;
-  errorMessage?: string | null;
+  errorMessage?: string | null | undefined;
 }) {
   return (
     <div className="flex w-full flex-col gap-4 xl:w-[330px]">

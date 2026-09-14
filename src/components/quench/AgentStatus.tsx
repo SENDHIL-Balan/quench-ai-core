@@ -50,7 +50,7 @@ export function AgentRunCard({
 }: {
   state: AgentState;
   mode: ModeId;
-  errorMessage?: string | null;
+  errorMessage?: string | null | undefined;
 }) {
   const activeIndex = SEQUENCE.indexOf(state);
 
