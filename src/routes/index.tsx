@@ -255,7 +255,13 @@ function BravuraApp() {
   }, [messages, activeChatId, authUser, status]);
 
   useEffect(() => {
-    if (liveVoiceModalOpen || !voiceSetting.autoSpeak || status !== "ready" || messages.length === 0) return;
+    if (
+      liveVoiceModalOpen ||
+      !voiceSetting.autoSpeak ||
+      status !== "ready" ||
+      messages.length === 0
+    )
+      return;
     const last = messages[messages.length - 1];
     if (!last || last.role !== "assistant") return;
     // Never auto-speak messages produced inside the live voice session (it speaks internally)
