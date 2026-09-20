@@ -6,11 +6,7 @@
  * to fail-open (answer without search) or hard-fail.
  */
 
-import {
-  WebSearchError,
-  type WebSearchBundle,
-  type WebSearchResult,
-} from "./web-search-types";
+import { WebSearchError, type WebSearchBundle, type WebSearchResult } from "./web-search-types";
 
 const TAVILY_ENDPOINT = "https://api.tavily.com/search";
 const DEFAULT_TIMEOUT_MS = 8_000;
@@ -121,7 +117,12 @@ export async function searchWeb(
     if (error instanceof Error && error.name === "AbortError") {
       throw new WebSearchError("Web search timed out.", "timeout", undefined, error);
     }
-    throw new WebSearchError("Web search failed to reach the provider.", "provider_error", undefined, error);
+    throw new WebSearchError(
+      "Web search failed to reach the provider.",
+      "provider_error",
+      undefined,
+      error,
+    );
   }
   clearTimeout(timer);
 

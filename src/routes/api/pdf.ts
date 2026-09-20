@@ -1,0 +1,379 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { GoogleGenAI } from "@google/genai";
+import { resolveProvider } from "@/lib/agent/provider.server";
+
+interface PdfRequestBody {
+  prompt?: unknown;
+  style?: unknown;
+  documentType?: unknown;
+}
+
+export interface GeneratedPdfContent {
+  title: string;
+  subtitle: string;
+  documentType: string;
+  author: string;
+  date: string;
+  summary: string;
+  metaFields?: Array<{ label: string; value: string }>;
+  sections: Array<{
+    heading: string;
+    content: string;
+    bullets?: string[];
+    table?: {
+      headers: string[];
+      rows: string[][];
+    };
+    callout?: string;
+  }>;
+  conclusion?: string;
+  footerNotes?: string;
+}
+
+function errorResponse(message: string, status = 400) {
+  return new Response(JSON.stringify({ ok: false, error: message }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function parseAndSanitizePdfJson(rawText: string, fallbackPrompt: string): GeneratedPdfContent {
+  if (!rawText || !rawText.trim()) {
+    throw new Error("Empty AI response received.");
+  }
+
+  let text = rawText.trim();
+  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch) {
+    text = codeBlockMatch[1].trim();
+  }
+
+  const firstBrace = text.indexOf("{");
+  const lastBrace = text.lastIndexOf("}");
+
+  let candidate = text;
+  if (firstBrace !== -1) {
+    candidate =
+      lastBrace > firstBrace ? text.slice(firstBrace, lastBrace + 1) : text.slice(firstBrace);
+  }
+
+  // 1. Direct JSON parse
+  try {
+    const obj = JSON.parse(candidate);
+    if (obj && typeof obj === "object") {
+      return sanitizeDoc(obj, fallbackPrompt);
+    }
+  } catch {
+    // Continue to repair logic
+  }
+
+  // 2. Repair truncated strings or unclosed braces/brackets
+  try {
+    let inString = false;
+    let escaped = false;
+    const stack: string[] = [];
+    let repaired = "";
+
+    for (let i = 0; i < candidate.length; i++) {
+      const char = candidate[i];
+      if (escaped) {
+        escaped = false;
+        repaired += char;
+        continue;
+      }
+      if (char === "\\") {
+        escaped = true;
+        repaired += char;
+        continue;
+      }
+      if (char === '"') {
+        inString = !inString;
+        repaired += char;
+        continue;
+      }
+      if (!inString) {
+        if (char === "{" || char === "[") {
+          stack.push(char === "{" ? "}" : "]");
+        } else if (char === "}" || char === "]") {
+          if (stack.length > 0 && stack[stack.length - 1] === char) {
+            stack.pop();
+          }
+        }
+      } else {
+        if (char === "\n") {
+          repaired += "\\n";
+          continue;
+        }
+        if (char === "\r") {
+          continue;
+        }
+        if (char === "\t") {
+          repaired += "\\t";
+          continue;
+        }
+      }
+      repaired += char;
+    }
+
+    if (inString) {
+      repaired += '"';
+    }
+
+    repaired = repaired.replace(/,\s*$/, "");
+    while (stack.length > 0) {
+      repaired += stack.pop();
+    }
+
+    const obj = JSON.parse(repaired);
+    if (obj && typeof obj === "object") {
+      return sanitizeDoc(obj, fallbackPrompt);
+    }
+  } catch (repairErr) {
+    console.warn("[bravura-pdf] JSON repair attempt encountered:", repairErr);
+  }
+
+  // 3. Fallback extraction from text
+  return extractDocumentFallback(rawText, fallbackPrompt);
+}
+
+function sanitizeDoc(obj: Record<string, unknown>, prompt: string): GeneratedPdfContent {
+  const title =
+    typeof obj.title === "string" && obj.title.trim() ? obj.title.trim() : prompt.slice(0, 60);
+
+  const sections: GeneratedPdfContent["sections"] = [];
+  if (Array.isArray(obj.sections) && obj.sections.length > 0) {
+    for (let i = 0; i < obj.sections.length; i++) {
+      const s = obj.sections[i] as Record<string, unknown>;
+      sections.push({
+        heading:
+          typeof s?.heading === "string" && s.heading.trim()
+            ? s.heading.trim()
+            : `Section ${i + 1}`,
+        content: typeof s?.content === "string" ? s.content : "",
+        bullets: Array.isArray(s?.bullets)
+          ? (s.bullets.filter((b) => typeof b === "string") as string[])
+          : [],
+        table:
+          s?.table &&
+          typeof s.table === "object" &&
+          Array.isArray((s.table as { headers?: unknown[] }).headers) &&
+          Array.isArray((s.table as { rows?: unknown[][] }).rows)
+            ? (s.table as { headers: string[]; rows: string[][] })
+            : undefined,
+        callout: typeof s?.callout === "string" ? s.callout : undefined,
+      });
+    }
+  }
+
+  if (sections.length === 0) {
+    sections.push({
+      heading: "Overview",
+      content:
+        typeof obj.summary === "string" ? obj.summary : "Document draft produced by Bravura AI.",
+    });
+  }
+
+  const metaFields: Array<{ label: string; value: string }> = [];
+  if (Array.isArray(obj.metaFields)) {
+    for (const m of obj.metaFields) {
+      if (
+        m &&
+        typeof m === "object" &&
+        typeof m.label === "string" &&
+        typeof m.value === "string"
+      ) {
+        metaFields.push({ label: m.label, value: m.value });
+      }
+    }
+  }
+
+  return {
+    title,
+    subtitle: typeof obj.subtitle === "string" ? obj.subtitle : "",
+    documentType: typeof obj.documentType === "string" ? obj.documentType : "Report",
+    author:
+      typeof obj.author === "string" && obj.author.trim()
+        ? obj.author
+        : "Bravura AI Document Studio",
+    date:
+      typeof obj.date === "string" && obj.date.trim()
+        ? obj.date
+        : new Date().toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          }),
+    summary:
+      typeof obj.summary === "string"
+        ? obj.summary
+        : "Executive document overview generated for " + title,
+    metaFields,
+    sections,
+    conclusion: typeof obj.conclusion === "string" ? obj.conclusion : undefined,
+    footerNotes: typeof obj.footerNotes === "string" ? obj.footerNotes : undefined,
+  };
+}
+
+function extractDocumentFallback(rawText: string, prompt: string): GeneratedPdfContent {
+  const titleMatch = rawText.match(/"title"\s*:\s*"([^"]+)"/);
+  const summaryMatch = rawText.match(/"summary"\s*:\s*"([^"]+)"/);
+
+  return {
+    title: titleMatch ? titleMatch[1] : prompt.slice(0, 60),
+    subtitle: "Automated Document Export",
+    documentType: "Report",
+    author: "Bravura AI Document Studio",
+    date: new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    }),
+    summary: summaryMatch
+      ? summaryMatch[1]
+      : "Structured publication document compiled from requested topic.",
+    metaFields: [{ label: "Generated", value: "Bravura AI Engine" }],
+    sections: [
+      {
+        heading: "Primary Document Findings",
+        content: rawText
+          .replace(/[{}[\]"']/g, " ")
+          .replace(/\s+/g, " ")
+          .slice(0, 600),
+      },
+    ],
+    conclusion: "Document compilation complete.",
+    footerNotes: "Generated by Bravura AI Document Engine.",
+  };
+}
+
+export const Route = createFileRoute("/api/pdf")({
+  server: {
+    handlers: {
+      POST: async ({ request }) => {
+        let body: PdfRequestBody;
+        try {
+          body = (await request.json()) as PdfRequestBody;
+        } catch {
+          return errorResponse("Invalid JSON payload in request.", 400);
+        }
+
+        const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+        if (!prompt) {
+          return errorResponse("Please provide a prompt describing the PDF to generate.", 400);
+        }
+
+        const documentType = typeof body.documentType === "string" ? body.documentType : "report";
+        const style = typeof body.style === "string" ? body.style : "corporate";
+
+        const systemPrompt = `You are Bravura AI Document Engine. You generate comprehensive, highly detailed, beautifully structured documents ready for conversion into professional PDF documents.
+Respond ONLY with a valid, clean JSON object (no markdown surrounding code fences if possible, or standard \`\`\`json format).
+
+The JSON object MUST adhere to this exact TypeScript interface:
+{
+  "title": string,
+  "subtitle": string,
+  "documentType": string, // "report" | "invoice" | "study-guide" | "proposal" | "notes" | "specification"
+  "author": string,
+  "date": string,
+  "summary": string, // 2-4 sentences executive summary or overview
+  "metaFields": [
+    { "label": string, "value": string }
+  ],
+  "sections": [
+    {
+      "heading": string,
+      "content": string, // in-depth paragraph
+      "bullets": [string], // optional key takeaways or bullet points
+      "table": { // optional data table where applicable
+        "headers": [string],
+        "rows": [[string]]
+      },
+      "callout": string // optional important highlight or warning
+    }
+  ],
+  "conclusion": string, // thorough conclusion or next steps
+  "footerNotes": string // confidentiality, terms, or contact reference
+}
+
+Ensure the output is informative, rigorous, realistic, and complete. Include 3-4 rich sections with realistic metrics, data tables, or structured points according to the user's specific prompt.`;
+
+        const userPrompt = `Generate a complete, professional ${documentType} styled for a ${style} presentation on this topic:
+"${prompt}"
+
+Include relevant sections, metrics, realistic data tables, and key takeaways.`;
+
+        let rawText = "";
+
+        // 1. Try Gemini first via @google/genai if standard AIzaSy key is configured
+        const geminiKey = process.env.GEMINI_API_KEY?.trim();
+        const isStandardGeminiKey = Boolean(geminiKey && geminiKey.startsWith("AIzaSy"));
+        if (isStandardGeminiKey) {
+          try {
+            const ai = new GoogleGenAI({
+              apiKey: geminiKey!,
+              httpOptions: { headers: { "User-Agent": "aistudio-build" } },
+            });
+            const response = await ai.models.generateContent({
+              model: "gemini-3.8-flash",
+              contents: `${systemPrompt}\n\nUser Request: ${userPrompt}`,
+              config: {
+                responseMimeType: "application/json",
+              },
+            });
+
+            rawText = response.text?.trim() || "";
+          } catch (geminiError) {
+            const isAuthError =
+              geminiError instanceof Error &&
+              /UNAUTHENTICATED|invalid authentication|401/i.test(geminiError.message);
+            if (!isAuthError) {
+              console.warn("[bravura-pdf] Gemini call failed, attempting fallback:", geminiError);
+            }
+          }
+        }
+
+        // 2. Fallback to existing LLM provider (Groq / OpenAI) if Gemini wasn't available or failed
+        if (!rawText) {
+          try {
+            const provider = resolveProvider();
+            rawText = await provider.generateText({
+              systemPrompt,
+              messages: [
+                { id: "pdf-req", role: "user", parts: [{ type: "text", text: userPrompt }] },
+              ],
+              deepThink: false,
+              maxOutputTokens: 3_500,
+            });
+          } catch (fallbackError) {
+            console.error("[bravura-pdf] Fallback provider failed:", fallbackError);
+            return errorResponse(
+              "Bravura AI could not connect to an AI model to generate this PDF. Please check your API keys.",
+              503,
+            );
+          }
+        }
+
+        try {
+          const documentData = parseAndSanitizePdfJson(rawText, prompt);
+
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              data: documentData,
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        } catch (parseError) {
+          console.error("[bravura-pdf] Failed to parse JSON response:", parseError, rawText);
+          return errorResponse(
+            "The AI generated a document with invalid formatting. Please try again.",
+            500,
+          );
+        }
+      },
+    },
+  },
+});

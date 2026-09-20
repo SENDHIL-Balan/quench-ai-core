@@ -10,33 +10,25 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
-<<<<<<< HEAD
 import { Route as ToolsRouteImport } from './routes/tools'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 import { Route as ApiSpeakRouteImport } from './routes/api/speak'
-=======
-import { Route as ApiChatRouteImport } from './routes/api/chat'
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-<<<<<<< HEAD
 const ToolsRoute = ToolsRouteImport.update({
   id: '/tools',
   path: '/tools',
   getParentRoute: () => rootRouteImport,
 } as any)
-=======
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 const ApiChatRoute = ApiChatRouteImport.update({
   id: '/api/chat',
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
-<<<<<<< HEAD
 const ApiSpeakRoute = ApiSpeakRouteImport.update({
   id: '/api/speak',
   path: '/api/speak',
@@ -54,21 +46,10 @@ export interface FileRoutesByTo {
   '/tools': typeof ToolsRoute
   '/api/chat': typeof ApiChatRoute
   '/api/speak': typeof ApiSpeakRoute
-=======
-
-export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/api/chat': typeof ApiChatRoute
-}
-export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/api/chat': typeof ApiChatRoute
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-<<<<<<< HEAD
   '/tools': typeof ToolsRoute
   '/api/chat': typeof ApiChatRoute
   '/api/speak': typeof ApiSpeakRoute
@@ -79,27 +60,13 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to: '/' | '/tools' | '/api/chat' | '/api/speak'
   id: '__root__' | '/' | '/tools' | '/api/chat' | '/api/speak'
-=======
-  '/api/chat': typeof ApiChatRoute
-}
-export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/chat'
-  fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/chat'
-  id: '__root__' | '/' | '/api/chat'
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-<<<<<<< HEAD
   ToolsRoute: typeof ToolsRoute
   ApiChatRoute: typeof ApiChatRoute
   ApiSpeakRoute: typeof ApiSpeakRoute
-=======
-  ApiChatRoute: typeof ApiChatRoute
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 }
 
 declare module '@tanstack/react-router' {
@@ -111,7 +78,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-<<<<<<< HEAD
     '/tools': {
       id: '/tools'
       path: '/tools'
@@ -119,8 +85,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ToolsRouteImport
       parentRoute: typeof rootRouteImport
     }
-=======
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
     '/api/chat': {
       id: '/api/chat'
       path: '/api/chat'
@@ -128,7 +92,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
-<<<<<<< HEAD
     '/api/speak': {
       id: '/api/speak'
       path: '/api/speak'
@@ -136,20 +99,14 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSpeakRouteImport
       parentRoute: typeof rootRouteImport
     }
-=======
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-<<<<<<< HEAD
   ToolsRoute: ToolsRoute,
   ApiChatRoute: ApiChatRoute,
   ApiSpeakRoute: ApiSpeakRoute,
-=======
-  ApiChatRoute: ApiChatRoute,
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

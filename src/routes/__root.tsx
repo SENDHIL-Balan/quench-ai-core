@@ -10,7 +10,6 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
 
 function NotFoundComponent() {
   return (
@@ -37,9 +36,6 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
-  useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -77,21 +73,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-<<<<<<< HEAD
       { title: "Bravura AI" },
-      { name: "description", content: "Curiosity, fully satisfied." },
+      {
+        name: "description",
+        content:
+          "Bravura AI is a modern AI agent workspace featuring real-time live voice intelligence, deep reasoning, research, and multimodal capabilities.",
+      },
       { name: "author", content: "Bravura AI" },
       { property: "og:title", content: "Bravura AI" },
-=======
-      { title: "Quench AI" },
-      { name: "description", content: "Curiosity, fully satisfied." },
-      { name: "author", content: "Quench AI" },
-      { property: "og:title", content: "Quench AI" },
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
-      { property: "og:description", content: "Curiosity, fully satisfied." },
+      { property: "og:description", content: "Intelligence & Real-Time Live Voice AI." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:site", content: "@BravuraAI" },
     ],
     links: [
       {
@@ -115,7 +108,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
       <head>
         <HeadContent />
       </head>

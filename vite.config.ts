@@ -12,8 +12,11 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
-<<<<<<< HEAD
   vite: {
+    server: {
+      host: "0.0.0.0",
+      port: 3000,
+    },
     build: {
       rollupOptions: {
         output: {
@@ -30,6 +33,3 @@ export default defineConfig({
     },
   },
 });
-=======
-});
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39

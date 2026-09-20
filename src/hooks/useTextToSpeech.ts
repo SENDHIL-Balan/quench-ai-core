@@ -1,23 +1,35 @@
 import { useCallback, useRef, useState } from "react";
-import type { SpeakRequestBody, VoiceState } from "@/lib/voice/types";
+import type { SpeakRequestBody, VoiceProvider, VoiceState } from "@/lib/voice/types";
+
+export interface SpeakOptions {
+  id?: string;
+  voice?: string;
+  provider?: VoiceProvider;
+}
 
 interface UseTextToSpeechResult {
   state: Extract<VoiceState, "idle" | "speaking" | "error">;
   errorMessage: string | null;
-  speak: (text: string, voice?: SpeakRequestBody["voice"]) => Promise<void>;
+  playingId: string | null;
+  isSpeaking: boolean;
+  speak: (text: string, options?: SpeakOptions) => Promise<void>;
   stop: () => void;
 }
 
-/** Sends text to /api/speak, plays the returned audio, and reports state. */
+/** Sends text to /api/speak with ElevenLabs or Deepgram, plays audio, and tracks state. */
 export function useTextToSpeech(): UseTextToSpeechResult {
   const [state, setState] = useState<UseTextToSpeechResult["state"]>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const urlRef = useRef<string | null>(null);
 
   const cleanup = useCallback(() => {
-    audioRef.current?.pause();
-    audioRef.current = null;
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
     if (urlRef.current) {
       URL.revokeObjectURL(urlRef.current);
       urlRef.current = null;
@@ -27,23 +39,26 @@ export function useTextToSpeech(): UseTextToSpeechResult {
   const stop = useCallback(() => {
     cleanup();
     setState("idle");
+    setPlayingId(null);
   }, [cleanup]);
 
   const speak = useCallback(
-    async (text: string, voice?: SpeakRequestBody["voice"]) => {
+    async (text: string, options: SpeakOptions = {}) => {
       const trimmed = text.trim();
       if (!trimmed) return;
 
       cleanup();
       setErrorMessage(null);
       setState("speaking");
+      setPlayingId(options.id ?? null);
 
       try {
-        // Build the request body. We only include `voice` when it has a value
-        // so the payload is valid under `exactOptionalPropertyTypes`.
         const requestBody: SpeakRequestBody = { text: trimmed };
-        if (voice) {
-          requestBody.voice = voice;
+        if (options.voice) {
+          requestBody.voice = options.voice;
+        }
+        if (options.provider) {
+          requestBody.provider = options.provider;
         }
 
         const response = await fetch("/api/speak", {
@@ -54,7 +69,7 @@ export function useTextToSpeech(): UseTextToSpeechResult {
 
         if (!response.ok) {
           const detail = (await response.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(detail?.error || "Speech request failed");
+          throw new Error(detail?.error || "Voice agent could not generate speech.");
         }
 
         const blob = await response.blob();
@@ -66,14 +81,16 @@ export function useTextToSpeech(): UseTextToSpeechResult {
 
         await new Promise<void>((resolve, reject) => {
           audio.onended = () => resolve();
-          audio.onerror = () => reject(new Error("Audio playback failed"));
+          audio.onerror = () => reject(new Error("Audio playback failed."));
           void audio.play().catch(reject);
         });
 
         setState("idle");
+        setPlayingId(null);
       } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : "Couldn't play that reply.");
+        setErrorMessage(err instanceof Error ? err.message : "Couldn't play audio.");
         setState("error");
+        setPlayingId(null);
       } finally {
         cleanup();
       }
@@ -81,5 +98,12 @@ export function useTextToSpeech(): UseTextToSpeechResult {
     [cleanup],
   );
 
-  return { state, errorMessage, speak, stop };
+  return {
+    state,
+    errorMessage,
+    playingId,
+    isSpeaking: state === "speaking",
+    speak,
+    stop,
+  };
 }

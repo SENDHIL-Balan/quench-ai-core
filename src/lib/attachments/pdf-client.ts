@@ -17,7 +17,7 @@ async function loadPdfjs(): Promise<typeof import("pdfjs-dist")> {
   if (!pdfjsPromise) {
     pdfjsPromise = import("pdfjs-dist").then((mod) => {
       // Vite bundles the worker as a URL we can point pdfjs at.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       const workerMod = import("pdfjs-dist/build/pdf.worker.min.mjs?url");
       void workerMod.then((worker) => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -74,7 +74,9 @@ export async function extractPdfTextFromFile(file: File): Promise<string> {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[bravura] pdf load failed", { message, error });
     if (/password/i.test(message)) {
-      throw new PdfExtractError("That PDF is password-protected. Remove the password and try again.");
+      throw new PdfExtractError(
+        "That PDF is password-protected. Remove the password and try again.",
+      );
     }
     throw new PdfExtractError("That PDF could not be opened. Try a different file.");
   }

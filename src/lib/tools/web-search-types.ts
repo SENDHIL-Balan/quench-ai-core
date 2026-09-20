@@ -27,18 +27,9 @@ export interface WebSearchBundle {
 export class WebSearchError extends Error {
   public readonly statusCode: number | undefined;
   public readonly code:
-    | "missing_key"
-    | "rate_limited"
-    | "timeout"
-    | "provider_error"
-    | "invalid_response";
+    "missing_key" | "rate_limited" | "timeout" | "provider_error" | "invalid_response";
 
-  constructor(
-    message: string,
-    code: WebSearchError["code"],
-    statusCode?: number,
-    cause?: unknown,
-  ) {
+  constructor(message: string, code: WebSearchError["code"], statusCode?: number, cause?: unknown) {
     super(message);
     this.name = "WebSearchError";
     this.code = code;

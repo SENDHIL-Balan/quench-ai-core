@@ -7,7 +7,6 @@ import {
   Plug,
   Plus,
   Crown,
-<<<<<<< HEAD
   ChevronRight,
   LogIn,
   LogOut,
@@ -15,6 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { QuenchOrb } from "./QuenchOrb";
 import { cn } from "@/lib/utils";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
@@ -49,8 +49,7 @@ export function Sidebar({
 
     void supabase.auth.getUser().then(({ data }) => {
       const metadata = data.user?.user_metadata as
-        | { full_name?: string; name?: string; avatar_url?: string }
-        | undefined;
+        { full_name?: string; name?: string; avatar_url?: string } | undefined;
       setUser(
         data.user
           ? {
@@ -64,8 +63,7 @@ export function Sidebar({
 
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       const metadata = session?.user.user_metadata as
-        | { full_name?: string; name?: string; avatar_url?: string }
-        | undefined;
+        { full_name?: string; name?: string; avatar_url?: string } | undefined;
       setUser(
         session?.user
           ? {
@@ -93,61 +91,25 @@ export function Sidebar({
   };
 
   return (
-        <aside
-      className={cn(
-        "glass-panel flex min-h-full w-full flex-col gap-6 overflow-y-auto rounded-3xl p-4 lg:h-full lg:w-[260px]",
-=======
-  MoreVertical,
-  ChevronRight,
-} from "lucide-react";
-import { QuenchOrb } from "./QuenchOrb";
-import { cn } from "@/lib/utils";
-
-const NAV = [
-  { label: "Explore", icon: Compass },
-  { label: "Library", icon: BookMarked },
-  { label: "Agents", icon: Bot },
-  { label: "Tools", icon: Wrench },
-  { label: "Projects", icon: Folder },
-  { label: "Integrations", icon: Plug },
-];
-
-export function Sidebar({
-  onNewChat,
-  className,
-}: {
-  onNewChat: () => void;
-  className?: string;
-}) {
-  return (
     <aside
       className={cn(
-        "glass-panel flex h-full w-full flex-col gap-6 rounded-3xl p-4 lg:w-[260px]",
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
+        "glass-panel flex min-h-full w-full flex-col gap-6 overflow-y-auto rounded-3xl p-4 lg:h-full lg:w-[260px]",
         className,
       )}
     >
       <div className="flex items-center gap-3 px-1 pt-2">
-<<<<<<< HEAD
-        <img
-          src="/ai-logo.jpg"
-          alt="AI logo"
-          className="h-20 w-auto max-w-full rounded-xl object-contain"
-        />
-=======
         <QuenchOrb className="size-11" />
         <div>
           <p className="text-[1.35rem] leading-none font-semibold tracking-wide">
-            QUENCH <span className="text-gradient-brand">AI</span>
+            BRAVURA <span className="text-gradient-brand">AI</span>
           </p>
-          <p className="text-muted-foreground mt-1 text-[11px]">Curiosity, fully satisfied.</p>
+          <p className="text-muted-foreground mt-1 text-[11px]">Intelligent Voice & Workspace</p>
         </div>
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
       </div>
 
       <button
         onClick={onNewChat}
-        className="glow-ring bg-primary/12 text-foreground hover:bg-primary/20 flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-medium transition-colors"
+        className="glow-ring bg-primary/12 text-foreground hover:bg-primary/20 flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-medium transition-colors cursor-pointer"
       >
         <span className="bg-gradient-brand text-primary-foreground flex size-7 items-center justify-center rounded-full">
           <Plus className="size-4" />
@@ -156,10 +118,9 @@ export function Sidebar({
       </button>
 
       <nav className="flex flex-col gap-1">
-<<<<<<< HEAD
         {NAV.map(({ label, icon: Icon, to }) => {
           const baseClass =
-            "text-muted-foreground hover:bg-accent/60 hover:text-foreground flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors";
+            "text-muted-foreground hover:bg-accent/60 hover:text-foreground flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors cursor-pointer";
 
           if (to) {
             return (
@@ -186,26 +147,15 @@ export function Sidebar({
         <button
           type="button"
           onClick={onHistory}
-          className="text-muted-foreground hover:bg-accent/60 hover:text-foreground flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors"
+          className="text-muted-foreground hover:bg-accent/60 hover:text-foreground flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors cursor-pointer"
         >
           <History className="size-[18px]" />
           History
         </button>
-=======
-        {NAV.map(({ label, icon: Icon }) => (
-          <button
-            key={label}
-            className="text-muted-foreground hover:bg-accent/60 hover:text-foreground flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors"
-          >
-            <Icon className="size-[18px]" />
-            {label}
-          </button>
-        ))}
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
       </nav>
 
       <div className="mt-auto flex flex-col gap-3">
-        <button className="border-border/80 bg-accent/40 hover:bg-accent/70 flex items-center gap-3 rounded-2xl border px-3 py-3 text-left transition-colors">
+        <button className="border-border/80 bg-accent/40 hover:bg-accent/70 flex items-center gap-3 rounded-2xl border px-3 py-3 text-left transition-colors cursor-pointer">
           <Crown className="text-quench-green size-5" />
           <span className="flex-1">
             <span className="block text-sm font-medium">Upgrade to Pro</span>
@@ -214,7 +164,6 @@ export function Sidebar({
           <ChevronRight className="text-muted-foreground size-4" />
         </button>
 
-<<<<<<< HEAD
         {user ? (
           <div className="border-border/60 flex items-center gap-3 border-t px-1 pt-3">
             {user.avatarUrl ? (
@@ -231,7 +180,7 @@ export function Sidebar({
             <button
               type="button"
               onClick={() => void signOut()}
-              className="text-muted-foreground hover:text-foreground p-1"
+              className="text-muted-foreground hover:text-foreground p-1 cursor-pointer"
               aria-label="Sign out"
               title="Sign out"
             >
@@ -244,14 +193,14 @@ export function Sidebar({
               type="button"
               onClick={() => void signInWithGoogle()}
               disabled={!isSupabaseConfigured()}
-              className="border-border bg-card/60 text-foreground hover:bg-accent/70 flex w-full items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              className="border-border bg-card/60 text-foreground hover:bg-accent/70 flex w-full items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
             >
               <LogIn className="size-4" />
               Sign in with Google
             </button>
             {!isSupabaseConfigured() && (
               <p className="text-muted-foreground mt-2 text-center text-[11px]">
-                Add Supabase environment variables to enable sign-in.
+                Add Supabase credentials to enable sign-in.
               </p>
             )}
           </div>
@@ -260,19 +209,3 @@ export function Sidebar({
     </aside>
   );
 }
-=======
-        <div className="border-border/60 flex items-center gap-3 border-t px-1 pt-3">
-          <span className="bg-gradient-brand text-primary-foreground flex size-9 items-center justify-center rounded-full text-sm font-semibold">
-            A
-          </span>
-          <span className="flex-1">
-            <span className="block text-sm font-medium">Aditya</span>
-            <span className="text-muted-foreground block text-xs">Free Plan</span>
-          </span>
-          <MoreVertical className="text-muted-foreground size-4" />
-        </div>
-      </div>
-    </aside>
-  );
-}
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39

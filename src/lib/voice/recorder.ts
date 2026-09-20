@@ -13,6 +13,8 @@
 export type RecorderOptions = {
   /** Called frequently with current audio level (0..1). For a waveform UI. */
   onLevel?: (level: number) => void;
+  /** Called frequently with frequency spectrum data (0..255). For live frequency bars/waveform. */
+  onFrequencyData?: (data: Uint8Array) => void;
   /** Auto-stop after this many ms of silence. 0 disables. Default 1500. */
   silenceMs?: number;
   /** Volume below which we consider it silence. 0..1. Default 0.02. */
@@ -42,13 +44,15 @@ export class VoiceRecorder {
   private stopReject: ((e: Error) => void) | null = null;
   private options: {
     onLevel?: (level: number) => void;
+    onFrequencyData?: (data: Uint8Array) => void;
     silenceMs: number;
     silenceThreshold: number;
     maxDurationMs: number;
   };
   constructor(options: RecorderOptions = {}) {
-        const opts: {
+    const opts: {
       onLevel?: (level: number) => void;
+      onFrequencyData?: (data: Uint8Array) => void;
       silenceMs: number;
       silenceThreshold: number;
       maxDurationMs: number;
@@ -58,7 +62,12 @@ export class VoiceRecorder {
       maxDurationMs: options.maxDurationMs ?? 60_000,
     };
     if (options.onLevel) opts.onLevel = options.onLevel;
+    if (options.onFrequencyData) opts.onFrequencyData = options.onFrequencyData;
     this.options = opts;
+  }
+
+  getAnalyser(): AnalyserNode | null {
+    return this.analyser;
   }
 
   /** Pick a mimeType the browser supports. */
@@ -110,9 +119,7 @@ export class VoiceRecorder {
     this.chunks = [];
 
     const mimeType = this.pickMimeType();
-    const recorder = mimeType
-      ? new MediaRecorder(stream, { mimeType })
-      : new MediaRecorder(stream);
+    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
 
     this.recorder = recorder;
     this.startedAt = performance.now();
@@ -143,11 +150,18 @@ export class VoiceRecorder {
       this.analyser = analyser;
 
       const buffer = new Uint8Array(analyser.fftSize);
+      const freqBuffer = this.options.onFrequencyData
+        ? new Uint8Array(analyser.frequencyBinCount)
+        : null;
       const tick = () => {
         if (!this.analyser) return;
         this.analyser.getByteTimeDomainData(buffer);
+        if (this.options.onFrequencyData && freqBuffer) {
+          this.analyser.getByteFrequencyData(freqBuffer);
+          this.options.onFrequencyData(freqBuffer);
+        }
         // RMS from centered byte data (128 = silence)
-                let sum = 0;
+        let sum = 0;
         for (let i = 0; i < buffer.length; i += 1) {
           const byte = buffer[i];
           if (byte === undefined) continue;

@@ -6,8 +6,8 @@ const DEFAULTS = {
   maxTextFileChars: 12_000,
   maxAttachmentBytes: 2 * 1024 * 1024,
   maxAttachmentsPerMessage: 2,
-  maxOutputTokens: 800,
-  maxDeepThinkOutputTokens: 1_400,
+  maxOutputTokens: 2_500,
+  maxDeepThinkOutputTokens: 4_000,
   requestsPerMinute: 10,
 } as const;
 

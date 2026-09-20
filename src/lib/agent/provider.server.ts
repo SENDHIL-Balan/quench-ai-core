@@ -1,7 +1,7 @@
-<<<<<<< HEAD
 import { createGroq } from "@ai-sdk/groq";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText } from "ai";
-import type { UIMessage } from "ai";
+import type { LanguageModel, UIMessage } from "ai";
 import {
   AGENT_LIMITS,
   getDataUrlSizeInBytes,
@@ -9,6 +9,7 @@ import {
 } from "./limits.server";
 
 export const GROQ_MODEL = process.env["GROQ_MODEL"]?.trim() || "openai/gpt-oss-20b";
+export const GEMINI_MODEL = process.env["GEMINI_MODEL"]?.trim() || "gemini-2.5-flash";
 
 export interface LLMProvider {
   generateText(options: {
@@ -16,6 +17,8 @@ export interface LLMProvider {
     messages: UIMessage[];
     deepThink: boolean;
     abortSignal?: AbortSignal;
+    maxOutputTokens?: number;
+    temperature?: number;
   }): Promise<string>;
 }
 
@@ -24,34 +27,15 @@ export class AgentInputError extends Error {
     super(message);
     this.name = "AgentInputError";
   }
-=======
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import type { LanguageModel } from "ai";
-
-/**
- * LLM provider layer.
- *
- * The rest of the app (agent + UI) never imports a vendor SDK — it only asks
- * for `resolveModel()`. To swap in OpenAI / Anthropic / a local model later,
- * add a branch here and keep the returned `LanguageModel` shape.
- */
-export type ProviderId = "gemini" | "lovable";
-
-export interface ResolvedProvider {
-  provider: ProviderId;
-  model: LanguageModel;
-  modelId: string;
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 }
 
 export class MissingProviderKeyError extends Error {
   constructor() {
-    super("No AI provider credentials configured.");
+    super("No AI provider credentials configured. Please set GEMINI_API_KEY or GROQ_API_KEY.");
     this.name = "MissingProviderKeyError";
   }
 }
 
-<<<<<<< HEAD
 export class GroqProviderError extends Error {
   public readonly statusCode: number | undefined;
 
@@ -134,9 +118,6 @@ async function extractPdfText(url: string): Promise<string> {
     );
   }
 
-  // Force pdfjs to run on the main thread. Without this, pdfjs tries to
-  // spawn a worker via a URL that doesn't exist on the server, and the
-  // request fails with an opaque error.
   try {
     pdfjs.GlobalWorkerOptions.workerSrc = "";
   } catch {
@@ -262,59 +243,66 @@ export async function mapUiMessagesToGroq(messages: UIMessage[]): Promise<TextMe
   return trimConversation(mapped.filter((message): message is TextMessage => message !== null));
 }
 
-export class GroqProvider implements LLMProvider {
-  public readonly client: ReturnType<typeof createGroq>;
-
-  constructor(apiKey: string) {
-    this.client = createGroq({ apiKey });
-  }
+export class ModelProvider implements LLMProvider {
+  constructor(
+    public readonly model: LanguageModel,
+    public readonly modelName: string,
+    public readonly isGroq = false,
+  ) {}
 
   async generateText({
     systemPrompt,
     messages,
     deepThink,
     abortSignal,
+    maxOutputTokens,
+    temperature,
   }: {
     systemPrompt: string;
     messages: UIMessage[];
     deepThink: boolean;
     abortSignal?: AbortSignal;
-  }) {
+    maxOutputTokens?: number;
+    temperature?: number;
+  }): Promise<string> {
     try {
-      const groqProviderOptions = GROQ_MODEL.startsWith("openai/gpt-oss-")
-        ? {
-            groq: {
-              reasoningEffort: deepThink ? "medium" : "low",
-              reasoningFormat: "hidden",
-            },
-          }
-        : undefined;
+      const groqProviderOptions =
+        this.isGroq && this.modelName.startsWith("openai/gpt-oss-")
+          ? {
+              groq: {
+                reasoningEffort: deepThink ? "medium" : "low",
+                reasoningFormat: "hidden",
+              },
+            }
+          : undefined;
+
+      const defaultMaxTokens = deepThink
+        ? AGENT_LIMITS.maxDeepThinkOutputTokens
+        : AGENT_LIMITS.maxOutputTokens;
+
       const result = await generateText({
-        model: this.client(GROQ_MODEL),
+        model: this.model,
         system: systemPrompt,
         messages: await mapUiMessagesToGroq(messages),
-        maxOutputTokens: deepThink
-          ? AGENT_LIMITS.maxDeepThinkOutputTokens
-          : AGENT_LIMITS.maxOutputTokens,
-        temperature: deepThink ? 0.45 : 0.3,
+        maxOutputTokens: maxOutputTokens ?? defaultMaxTokens,
+        temperature: temperature ?? (deepThink ? 0.45 : 0.3),
         maxRetries: 0,
         ...(abortSignal ? { abortSignal } : {}),
         ...(groqProviderOptions ? { providerOptions: groqProviderOptions } : {}),
       });
 
       console.info("[quench] model usage", {
-        model: GROQ_MODEL,
-        inputTokens: result.usage.inputTokens,
-        outputTokens: result.usage.outputTokens,
-        reasoningTokens: result.usage.outputTokenDetails.reasoningTokens,
-        totalTokens: result.usage.totalTokens,
+        model: this.modelName,
+        inputTokens: result.usage?.inputTokens,
+        outputTokens: result.usage?.outputTokens,
+        totalTokens: result.usage?.totalTokens,
       });
 
-      if (result.text.trim().length > 0) {
+      if (result.text && result.text.trim().length > 0) {
         return result.text.trim();
       }
 
-      throw new GroqProviderError("Groq returned an empty response.");
+      throw new GroqProviderError("AI model returned an empty response.");
     } catch (error) {
       if (error instanceof AgentInputError) {
         console.warn("[quench] attachment rejected", { message: error.message });
@@ -326,51 +314,64 @@ export class GroqProvider implements LLMProvider {
           ? Number((error as { status?: unknown }).status)
           : undefined;
 
-      console.error("[quench] groq request failed", {
+      console.error("[quench] model request failed", {
         statusCode,
         message: error instanceof Error ? error.message : String(error),
         cause: error,
       });
 
-      throw new GroqProviderError("Groq request failed.", error);
+      throw new GroqProviderError("AI model request failed.", error);
     }
   }
 }
 
-export function resolveProvider(): LLMProvider {
-  return new GroqProvider(getGroqKey());
+export class GroqProvider extends ModelProvider {
+  constructor(apiKey: string) {
+    const client = createGroq({ apiKey });
+    super(client(GROQ_MODEL), GROQ_MODEL, true);
+  }
 }
-=======
-const GEMINI_MODEL = "gemini-2.5-flash";
-const GATEWAY_MODEL = "google/gemini-3.8-flash";
 
-export function resolveModel(): ResolvedProvider {
-  // 1) Direct Google Gemini API key (set GEMINI_API_KEY as a secret).
-  const geminiKey = process.env["GEMINI_API_KEY"];
-  if (geminiKey) {
-    const gemini = createOpenAICompatible({
+export class GeminiCompatibleProvider extends ModelProvider {
+  constructor(apiKey: string) {
+    const client = createOpenAICompatible({
       name: "gemini",
       baseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
-      apiKey: geminiKey,
+      apiKey,
     });
-    return { provider: "gemini", model: gemini(GEMINI_MODEL), modelId: GEMINI_MODEL };
+    super(client(GEMINI_MODEL), GEMINI_MODEL, false);
+  }
+}
+
+export class OpenAICompatibleProvider extends ModelProvider {
+  constructor(apiKey: string) {
+    const client = createOpenAICompatible({
+      name: "openai",
+      apiKey,
+    });
+    super(client("gpt-4o-mini"), "gpt-4o-mini", false);
+  }
+}
+
+export function resolveProvider(): LLMProvider {
+  const groqKey = process.env["GROQ_API_KEY"]?.trim();
+  if (groqKey) {
+    return new GroqProvider(groqKey);
   }
 
-  // 2) Managed Lovable AI Gateway (also serves Gemini models, no key setup).
-  const lovableKey = process.env["LOVABLE_API_KEY"];
-  if (lovableKey) {
-    const gateway = createOpenAICompatible({
-      name: "lovable",
-      baseURL: "https://ai.gateway.lovable.dev/v1",
-      apiKey: lovableKey,
-      headers: {
-        "Lovable-API-Key": lovableKey,
-        "X-Lovable-AIG-SDK": "vercel-ai-sdk",
-      },
-    });
-    return { provider: "lovable", model: gateway(GATEWAY_MODEL), modelId: GATEWAY_MODEL };
+  const geminiKey = process.env["GEMINI_API_KEY"]?.trim();
+  if (geminiKey && geminiKey.startsWith("AIzaSy")) {
+    return new GeminiCompatibleProvider(geminiKey);
+  }
+
+  const openAiKey = process.env["OPENAI_API_KEY"]?.trim();
+  if (openAiKey) {
+    return new OpenAICompatibleProvider(openAiKey);
+  }
+
+  if (geminiKey) {
+    return new GeminiCompatibleProvider(geminiKey);
   }
 
   throw new MissingProviderKeyError();
 }
->>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39

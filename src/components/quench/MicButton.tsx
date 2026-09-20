@@ -55,8 +55,7 @@ export function MicButton({ onTranscribed, onCancel, disabled }: MicButtonProps)
       await recorder.start();
     } catch (error) {
       recorderRef.current = null;
-      const message =
-        error instanceof Error ? error.message : "Could not start the microphone.";
+      const message = error instanceof Error ? error.message : "Could not start the microphone.";
       showError(message);
     }
   }, [showError]);
@@ -95,9 +94,7 @@ export function MicButton({ onTranscribed, onCancel, disabled }: MicButtonProps)
       });
 
       const payload = (await res.json().catch(() => null)) as
-        | { ok: true; text: string }
-        | { ok: false; error: string }
-        | null;
+        { ok: true; text: string } | { ok: false; error: string } | null;
 
       if (!res.ok || !payload || !("ok" in payload) || !payload.ok) {
         const message =
@@ -155,10 +152,10 @@ export function MicButton({ onTranscribed, onCancel, disabled }: MicButtonProps)
         aria-label={label}
         title={label}
         className={cn(
-          "relative flex size-10 shrink-0 items-center justify-center rounded-full transition-all",
+          "relative flex size-9 shrink-0 items-center justify-center rounded-full transition-all cursor-pointer",
           status === "recording"
-            ? "bg-red-500/20 text-red-400 ring-1 ring-red-500/50"
-            : "border-border bg-card/60 text-muted-foreground hover:text-foreground hover:border-primary/30 border",
+            ? "bg-red-500/25 text-red-400 ring-1 ring-red-500/60"
+            : "text-zinc-400 hover:text-white hover:bg-white/10",
           status === "transcribing" && "opacity-70",
           disabled && "cursor-not-allowed opacity-40",
         )}

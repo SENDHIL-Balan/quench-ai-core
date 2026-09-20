@@ -30,12 +30,18 @@ export function formatSearchForPrompt(bundle: WebSearchBundle): string | null {
   if (bundle.results.length === 0) return null;
 
   const lines: string[] = [];
-  lines.push("The user has enabled web search. The following results were retrieved for their latest message.");
-  lines.push("Use them when relevant. Prefer them over your prior knowledge for time-sensitive facts.");
+  lines.push(
+    "The user has enabled web search. The following results were retrieved for their latest message.",
+  );
+  lines.push(
+    "Use them when relevant. Prefer them over your prior knowledge for time-sensitive facts.",
+  );
   lines.push("Cite sources inline using bracket numbers that match the list below, e.g. [1].");
   lines.push("If the results do not answer the question, say so honestly instead of guessing.");
   lines.push("");
-  lines.push(`<web-search-results query="${escapeAttr(bundle.query)}" provider="${escapeAttr(bundle.provider)}">`);
+  lines.push(
+    `<web-search-results query="${escapeAttr(bundle.query)}" provider="${escapeAttr(bundle.provider)}">`,
+  );
   for (const r of bundle.results) {
     lines.push(`[${r.index}] ${r.title}`);
     lines.push(`    ${r.url}`);
