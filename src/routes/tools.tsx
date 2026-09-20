@@ -35,14 +35,15 @@ const SEARCH_KEY = "quench-tool-websearch";
 const DEEPTHINK_KEY = "quench-tool-deepthink";
 
 function ToolsPage() {
-  const [webSearch, setWebSearch] = useState(false);
+  const [webSearch, setWebSearch] = useState(true);
   const [deepThink, setDeepThink] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
 
   useEffect(() => {
     try {
-      setWebSearch(window.localStorage.getItem(SEARCH_KEY) === "1");
+      const storedSearch = window.localStorage.getItem(SEARCH_KEY);
+      setWebSearch(storedSearch === null ? true : storedSearch === "1");
       setDeepThink(window.localStorage.getItem(DEEPTHINK_KEY) === "1");
     } catch {
       /* storage unavailable */

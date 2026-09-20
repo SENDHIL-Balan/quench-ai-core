@@ -71,7 +71,7 @@ function extractImagePromptAndReference(messages: UIMessage[]): {
 }
 
 /**
- * Runs a search and returns the block to append to the system prompt,
+ * Runs a search and returns the block to append to the system prompt and source citations,
  * or null if search was skipped/failed/empty.
  *
  * Never throws.
@@ -79,9 +79,9 @@ function extractImagePromptAndReference(messages: UIMessage[]): {
 async function resolveSearchBlock(
   query: string,
   abortSignal: AbortSignal | undefined,
-): Promise<string | null> {
+): Promise<{ block: string; sources: Array<{ title: string; url: string }> } | null> {
   if (!query) {
-    console.info("[quench] web search skipped: no user text to search");
+    console.info("[bravura] web search skipped: no user text to search");
     return null;
   }
 
@@ -89,24 +89,131 @@ async function resolveSearchBlock(
     const bundle = await searchWeb(query, abortSignal ? { signal: abortSignal } : undefined);
     const block = formatSearchForPrompt(bundle);
     if (!block) {
-      console.info("[quench] web search returned no usable results", { query });
+      console.info("[bravura] web search returned no usable results", { query });
       return null;
     }
-    console.info("[quench] web search ok", {
+    const sources = bundle.results.map((r) => ({ title: r.title, url: r.url }));
+    console.info("[bravura] web search ok", {
       query,
       resultCount: bundle.results.length,
     });
-    return block;
+    return { block, sources };
   } catch (error) {
     if (error instanceof WebSearchError) {
-      console.warn("[quench] web search failed (fail-open)", {
+      console.warn("[bravura] web search failed (fail-open)", {
         code: error.code,
         statusCode: error.statusCode,
         message: error.message,
       });
       return null;
     }
-    console.error("[quench] web search threw unexpected error (fail-open)", error);
+    console.error("[bravura] web search threw unexpected error (fail-open)", error);
+    return null;
+  }
+}
+
+function isRealTimeQuery(text: string): boolean {
+  if (!text) return false;
+  return /\b(today|tonight|now|current|currently|latest|recent|news|weather|headline|price|stock|score|yesterday|tomorrow|live|update|2026|who won|who is)\b/i.test(
+    text,
+  );
+}
+
+function mapUiMessagesToGeminiContents(messages: UIMessage[]) {
+  const contents = [];
+  for (const m of messages) {
+    if (m.role !== "user" && m.role !== "assistant") continue;
+    const role = m.role === "assistant" ? "model" : "user";
+    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+    for (const p of m.parts) {
+      if (p.type === "text" && p.text) {
+        parts.push({ text: p.text });
+      } else if (p.type === "file" && typeof (p as { url?: unknown }).url === "string") {
+        const parsed = parseDataUrl((p as { url: string }).url);
+        if (parsed) {
+          parts.push({ inlineData: { mimeType: parsed.mimeType, data: parsed.data } });
+        }
+      }
+    }
+    if (parts.length > 0) {
+      contents.push({ role, parts });
+    }
+  }
+  return contents;
+}
+
+/**
+ * Attempts real-time search grounding with Gemini 3.5 Flash using the Google Search tool.
+ * Returns grounded response text with live web source citations, or null if unauthenticated/unavailable.
+ */
+async function tryGeminiSearchGrounding({
+  messages,
+  systemInstruction,
+}: {
+  messages: UIMessage[];
+  systemInstruction: string;
+}): Promise<string | null> {
+  const geminiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!geminiKey) return null;
+
+  try {
+    const ai = new GoogleGenAI({
+      apiKey: geminiKey,
+      httpOptions: { headers: { "User-Agent": "aistudio-build" } },
+    });
+
+    const contents = mapUiMessagesToGeminiContents(messages);
+    if (contents.length === 0) return null;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents,
+      config: {
+        systemInstruction,
+        tools: [{ googleSearch: {} }],
+      },
+    });
+
+    let text = response.text?.trim();
+    if (!text) return null;
+
+    // Extract real-time search grounding metadata from Gemini response
+    const candidate = response.candidates?.[0];
+    const groundingMetadata = candidate?.groundingMetadata;
+    const chunks = groundingMetadata?.groundingChunks;
+
+    const sources: Array<{ title: string; url: string }> = [];
+    const seen = new Set<string>();
+
+    if (Array.isArray(chunks)) {
+      for (const chunk of chunks) {
+        const uri = chunk.web?.uri;
+        const title = chunk.web?.title || uri;
+        if (uri && !seen.has(uri)) {
+          seen.add(uri);
+          sources.push({ title, url: uri });
+        }
+      }
+    }
+
+    if (sources.length > 0 && !text.includes(sources[0].url)) {
+      const sourcesBlock = [
+        "\n\n---\n**🌐 Live Web Sources & Grounding:**",
+        ...sources.slice(0, 5).map((s, idx) => `${idx + 1}. [${s.title}](${s.url})`),
+      ].join("\n");
+      text += sourcesBlock;
+    }
+
+    console.info(
+      "[bravura] Gemini 3.5 Flash Search Grounding succeeded with sources:",
+      sources.length,
+    );
+    return text;
+  } catch (error) {
+    console.warn(
+      "[bravura] Gemini 3.5 Flash search grounding attempt failed (will use search fallback):",
+      error,
+    );
     return null;
   }
 }
@@ -231,27 +338,66 @@ export async function runBaseAgent({
     return handleImageModeAgent(messages);
   }
 
+  const query = lastUserText(messages);
+  const shouldSearch = Boolean(webSearch || mode === "research" || isRealTimeQuery(query));
+
+  // Build the base prompt with real-time search context
+  let systemInstruction = buildSystemPrompt({ mode, deepThink, webSearch: shouldSearch });
+
+  // When real-time data is requested, attempt native Gemini Google Search Grounding first (gemini-3.5-flash with googleSearch tool)
+  if (shouldSearch) {
+    const groundedText = await tryGeminiSearchGrounding({
+      messages,
+      systemInstruction,
+    });
+
+    if (groundedText) {
+      const stream = createUIMessageStream({
+        originalMessages: messages,
+        async execute({ writer }) {
+          writer.write({ type: "start" });
+          writer.write({ type: "text-start", id: "bravura-response" });
+          writer.write({ type: "text-delta", id: "bravura-response", delta: groundedText });
+          writer.write({ type: "text-end", id: "bravura-response" });
+        },
+        onError(error) {
+          console.error("[bravura] ui stream error", error);
+          return "Bravura AI couldn't complete that request. Please try again.";
+        },
+      });
+
+      return createUIMessageStreamResponse({ stream });
+    }
+  }
+
+  // Fallback to active provider with real-time web search injection
   const provider = resolveProvider();
+  let searchSources: Array<{ title: string; url: string }> = [];
 
-  // Build the base prompt first so deepThink + mode behavior is unchanged when search is off.
-  let systemInstruction = buildSystemPrompt({ mode, deepThink, webSearch });
-
-  // If search is requested, do it now and append the block.
-  if (webSearch) {
-    const query = lastUserText(messages);
-    const block = await resolveSearchBlock(query, abortSignal);
-    if (block) {
-      systemInstruction = `${systemInstruction}\n\n${block}`;
+  if (shouldSearch) {
+    const searchData = await resolveSearchBlock(query, abortSignal);
+    if (searchData) {
+      systemInstruction = `${systemInstruction}\n\n${searchData.block}`;
+      searchSources = searchData.sources;
     }
   }
 
   try {
-    const text = await provider.generateText({
+    let text = await provider.generateText({
       systemPrompt: systemInstruction,
       messages,
       deepThink,
       ...(abortSignal ? { abortSignal } : {}),
     });
+
+    // If search sources were retrieved and not yet linked in text, append real-time citations
+    if (searchSources.length > 0 && !text.includes(searchSources[0].url)) {
+      const sourcesBlock = [
+        "\n\n---\n**🌐 Real-Time Sources:**",
+        ...searchSources.slice(0, 5).map((s, idx) => `${idx + 1}. [${s.title}](${s.url})`),
+      ].join("\n");
+      text += sourcesBlock;
+    }
 
     const stream = createUIMessageStream({
       originalMessages: messages,
@@ -275,7 +421,7 @@ export async function runBaseAgent({
 
     const cause = error instanceof Error ? error : new Error(String(error));
 
-    console.error("[quench] model request failed", {
+    console.error("[bravura] model request failed", {
       message: cause.message,
       stack: cause.stack,
       cause: error,

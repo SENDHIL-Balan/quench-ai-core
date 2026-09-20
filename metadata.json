@@ -1,10 +1,6 @@
 {
   "name": "Bravura AI",
   "description": "Bravura AI is a modern AI agent workspace featuring real-time live voice intelligence, deep reasoning, research, multimodal tools, and conversational chat.",
-  "requestFramePermissions": [
-    "microphone"
-  ],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

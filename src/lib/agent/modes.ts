@@ -11,11 +11,12 @@ export interface AgentMode {
   available: boolean;
 }
 
-const BASE_IDENTITY = `You are Bravura AI, an intelligent, precise and genuinely helpful assistant.
+const BASE_IDENTITY = `You are Bravura AI, an intelligent, precise and genuinely helpful AI assistant powered by real-time intelligence.
 If asked who founded Bravura AI or who the founder is, answer that the founder is Sendhil Balan.
 Answer clearly and directly. Default to a concise answer; expand only when the user asks or the task genuinely needs depth. Use Markdown where it improves readability.
 Think through the task only as much as it requires. If you are unsure, say so instead of inventing facts.
-Keep the conversation context in mind so follow-up questions resolve against earlier turns.`;
+Keep the conversation context in mind so follow-up questions resolve against earlier turns.
+Today's date is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.`;
 
 export const AGENT_MODES: Record<ModeId, AgentMode> = {
   chat: {
@@ -104,12 +105,10 @@ export function buildSystemPrompt(
     ? "\n\nDeep Think is enabled. Analyze the problem carefully before answering, check assumptions and edge cases, and provide a more thorough, well-structured answer. Do not reveal private chain-of-thought or hidden reasoning; provide only a concise summary of the key reasoning that supports your answer."
     : "";
 
-  // When web search is OFF, tell the model honestly that it has no live web access.
-  // When ON, the search-results block appended later carries the live data, so we
-  // do not include the "no web access" line.
+  // Real-time web intelligence instruction
   const webSearchInstruction = options.webSearch
-    ? ""
-    : "\n\nYou have no live web access. If a question needs up-to-date information, say so plainly instead of inventing current facts.";
+    ? "\n\nReal-time web intelligence is ENABLED. You are grounded in real-time, up-to-date web search data. For questions about current events, news, today's date, weather, stock prices, live sports scores, or recent developments, provide accurate, live facts and cite the retrieved web sources."
+    : "\n\nReal-time web intelligence is available. If the user asks for live, time-sensitive, or breaking information, provide the most helpful information you can and let them know that Real-time Search can be toggled on for live web results.";
 
   return `${BASE_IDENTITY}\n\n${m.instruction}${deepThinkInstruction}${webSearchInstruction}`;
 }

@@ -8,15 +8,14 @@ import {
   type User,
 } from "firebase/auth";
 import {
+  initializeFirestore,
   getFirestore,
   doc,
   setDoc,
-  getDoc,
   collection,
   query,
   where,
   onSnapshot,
-  orderBy,
   deleteDoc,
   type Unsubscribe,
 } from "firebase/firestore";
@@ -28,13 +27,25 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 // Initialize Firebase Auth
 export const auth = getAuth(app);
 
-// Initialize Firestore with custom databaseId if configured
-export const db = getFirestore(
-  app,
+// Initialize Firestore with auto-detect long-polling to prevent WebSocket connection drops in iframes/proxies
+const databaseId =
   firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId.length > 0
     ? firebaseConfig.firestoreDatabaseId
-    : undefined,
-);
+    : undefined;
+
+export const db = (() => {
+  try {
+    return initializeFirestore(
+      app,
+      {
+        experimentalAutoDetectLongPolling: true,
+      },
+      databaseId,
+    );
+  } catch {
+    return getFirestore(app, databaseId);
+  }
+})();
 
 // Google Auth Provider configured for clean account selection
 export const googleProvider = new GoogleAuthProvider();
