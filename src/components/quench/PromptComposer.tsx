@@ -9,11 +9,14 @@ import {
   MessageSquare,
   PenLine,
   BarChart3,
+  ListChecks,
   Code2,
   Image as ImageIcon,
   Camera,
   Check,
   X,
+  Sparkles,
+  FileText,
 } from "lucide-react";
 import { AGENT_MODES, VISIBLE_MODES, type ModeId } from "@/lib/agent/modes";
 import { cn } from "@/lib/utils";
@@ -24,6 +27,7 @@ const MODE_ICONS: Record<ModeId, typeof MessageSquare> = {
   chat: MessageSquare,
   research: Search,
   create: PenLine,
+  plan: ListChecks,
   analyze: BarChart3,
   code: Code2,
   image: ImageIcon,
@@ -41,6 +45,8 @@ export function PromptComposer({
   onTranscribed,
   onOpenLiveVoice,
   isLiveVoiceActive,
+  onOpenImageStudio,
+  onOpenPdfStudio,
   mode,
   onModeChange,
   busy,
@@ -59,6 +65,8 @@ export function PromptComposer({
   onTranscribed: (text: string) => void;
   onOpenLiveVoice?: () => void;
   isLiveVoiceActive?: boolean;
+  onOpenImageStudio?: () => void;
+  onOpenPdfStudio?: () => void;
   mode?: ModeId;
   onModeChange?: (mode: ModeId) => void;
   busy: boolean;
@@ -122,10 +130,16 @@ export function PromptComposer({
   const hasContent = value.trim().length > 0 || files.length > 0;
 
   return (
-    <div className={cn("w-full shrink-0 relative z-10", className)}>
+    <div
+      className={cn(
+        "w-full max-w-full min-w-0 shrink-0 relative",
+        menuOpen ? "z-50" : "z-30",
+        className,
+      )}
+    >
       <div
         className={cn(
-          "glass-panel relative flex flex-col rounded-3xl border border-white/10 p-2 sm:px-3 sm:py-2.5 transition-all shadow-2xl backdrop-blur-2xl",
+          "glass-panel relative flex flex-col rounded-3xl border border-white/10 p-2 sm:px-3 sm:py-2.5 transition-all shadow-2xl backdrop-blur-2xl w-full max-w-full min-w-0",
           busy && "ring-1 ring-cyan-500/50",
           error && "border-destructive/60",
         )}
@@ -150,7 +164,7 @@ export function PromptComposer({
         )}
 
         {/* Horizontal Input Capsule Row matching previous design */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 w-full min-w-0">
           {/* + Button & Dropdown Menu */}
           <div className="relative shrink-0" ref={menuRef}>
             <button
@@ -175,7 +189,7 @@ export function PromptComposer({
               <div
                 role="menu"
                 onPointerDown={(e) => e.stopPropagation()}
-                className="absolute bottom-full left-0 z-50 mb-2 max-h-[60vh] w-56 overflow-y-auto overscroll-contain rounded-2xl border border-white/10 bg-[#0c1322]/95 p-1.5 shadow-2xl backdrop-blur-2xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                className="absolute bottom-full left-0 z-50 mb-2 max-h-[60vh] w-56 overflow-y-auto overscroll-contain rounded-2xl border border-white/20 bg-[#0c1322] p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.95)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               >
                 <p className="text-muted-foreground px-2 pt-1 pb-1 text-[10px] font-semibold tracking-wider uppercase">
                   Bravura Mode
@@ -214,6 +228,40 @@ export function PromptComposer({
 
                 <div className="my-1 border-t border-white/10" />
 
+                {onOpenImageStudio && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onOpenImageStudio();
+                    }}
+                    className="text-muted-foreground hover:bg-white/5 hover:text-white flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer min-h-[38px]"
+                  >
+                    <Sparkles className="size-3.5 text-cyan-400" />
+                    <span className="flex-1">AI Image Studio</span>
+                  </button>
+                )}
+
+                {onOpenPdfStudio && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onOpenPdfStudio();
+                    }}
+                    className="text-muted-foreground hover:bg-white/5 hover:text-white flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer min-h-[38px]"
+                  >
+                    <FileText className="size-3.5 text-emerald-400" />
+                    <span className="flex-1">AI PDF Document Studio</span>
+                  </button>
+                )}
+
+                {(onOpenImageStudio || onOpenPdfStudio) && (
+                  <div className="my-1 border-t border-white/10" />
+                )}
+
                 <button
                   type="button"
                   role="menuitem"
@@ -242,6 +290,38 @@ export function PromptComposer({
               </div>
             )}
           </div>
+
+          {/* Active Mode Chip (Styled like DeepThink when selected) */}
+          {currentMode !== "chat" && (
+            <div
+              onClick={() => setMenuOpen((v) => !v)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-all cursor-pointer shrink-0 select-none",
+                "border-cyan-500/60 bg-cyan-500/20 text-cyan-200 font-medium shadow-[0_0_12px_rgba(6,182,212,0.3)] hover:bg-cyan-500/30",
+              )}
+              title={`Active Mode: ${AGENT_MODES[currentMode]?.label || currentMode}. Click to switch, or × to clear.`}
+            >
+              {(() => {
+                const ActiveIcon = MODE_ICONS[currentMode] || MessageSquare;
+                return <ActiveIcon className="size-3.5 shrink-0 text-cyan-300" />;
+              })()}
+              <span className="truncate max-w-[80px] sm:max-w-none">
+                {AGENT_MODES[currentMode]?.label || currentMode}
+              </span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onModeChange?.("chat");
+                }}
+                className="hover:text-white p-0.5 ml-0.5 rounded-full hover:bg-white/20 text-cyan-300 transition-colors cursor-pointer"
+                title="Reset mode to default"
+                aria-label="Reset mode to default"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          )}
 
           {/* Hidden File and Camera inputs */}
           <input

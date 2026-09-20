@@ -1,18 +1,14 @@
 import { useState, useRef, useEffect } from "react";
-import { Bell, Menu, Search, PanelRight, Volume2, X } from "lucide-react";
+import { Bell, Menu, Search, PanelRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function TopBar({
   onToggleSidebar,
   onToggleContext,
-  onOpenVoiceSettings,
-  isSpeaking,
   onSearch,
 }: {
   onToggleSidebar: () => void;
   onToggleContext: () => void;
-  onOpenVoiceSettings?: () => void;
-  isSpeaking?: boolean;
   onSearch?: (query: string) => void;
 }) {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -120,25 +116,6 @@ export function TopBar({
 
           {/* Right Action Controls */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Voice Agent Control Button */}
-            {onOpenVoiceSettings && (
-              <button
-                onClick={onOpenVoiceSettings}
-                className={cn(
-                  "glass-panel flex h-10 sm:h-11 items-center gap-1.5 sm:gap-2 rounded-full px-2.5 sm:px-3.5 transition-all cursor-pointer shrink-0",
-                  isSpeaking
-                    ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-300 shadow-md shadow-cyan-500/20"
-                    : "text-muted-foreground hover:text-foreground hover:border-cyan-500/30",
-                )}
-                title="Configure Bravura Voice Agent"
-                aria-label="Bravura Voice Agent Settings"
-              >
-                <Volume2 className={cn("size-4", isSpeaking && "text-cyan-300 animate-pulse")} />
-                <span className="hidden sm:inline text-xs font-medium">Bravura Voice</span>
-                <span className="flex size-2 rounded-full bg-emerald-400" />
-              </button>
-            )}
-
             {/* Notifications */}
             <button
               className="glass-panel text-muted-foreground hover:text-foreground relative flex size-10 sm:size-11 items-center justify-center rounded-full cursor-pointer shrink-0"

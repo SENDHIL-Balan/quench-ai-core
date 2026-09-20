@@ -1,0 +1,22 @@
+{
+  "entities": {
+    "User": {
+      "collection": "users",
+      "fields": {
+        "email": { "type": "string", "required": false },
+        "displayName": { "type": "string", "required": false },
+        "photoURL": { "type": "string", "required": false },
+        "createdAt": { "type": "string", "required": false }
+      }
+    },
+    "Chat": {
+      "collection": "chats",
+      "fields": {
+        "userId": { "type": "string", "required": true },
+        "title": { "type": "string", "required": true },
+        "messages": { "type": "array", "required": true },
+        "updatedAt": { "type": "string", "required": true }
+      }
+    }
+  }
+}

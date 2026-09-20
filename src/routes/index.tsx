@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Clock3, Trash2, X, Sparkles, FileText } from "lucide-react";
 import { CosmicBackground } from "@/components/quench/CosmicBackground";
 import { Sidebar } from "@/components/quench/Sidebar";
@@ -22,6 +23,14 @@ import { LiveVoiceAgentModal } from "@/components/quench/LiveVoiceAgentModal";
 import { messageText } from "@/components/quench/ChatView";
 import { ImageStudioModal } from "@/components/quench/ImageStudioModal";
 import { PdfStudioModal } from "@/components/quench/PdfStudioModal";
+import { AppLoadingScreen } from "@/components/quench/AppLoadingScreen";
+import {
+  onAuthState,
+  saveChatToFirestore,
+  deleteChatFromFirestore,
+  subscribeUserChats,
+  type AuthUserProfile,
+} from "@/lib/firebase";
 
 const CHATS_KEY = "quench-ai-chats-v1";
 const ACTIVE_CHAT_KEY = "quench-ai-active-chat";
@@ -33,6 +42,7 @@ const DEFAULT_VOICE_SETTING: VoiceSetting = {
   voiceId: "JBFqnCBsd6RMkjVDRZzb", // George (ElevenLabs)
   provider: "elevenlabs",
   autoSpeak: false,
+  playbackSpeed: 1.0,
 };
 
 type StoredChat = {
@@ -127,8 +137,36 @@ function BravuraApp() {
   const [liveVoiceModalOpen, setLiveVoiceModalOpen] = useState(false);
   const [imageStudioOpen, setImageStudioOpen] = useState(false);
   const [pdfStudioOpen, setPdfStudioOpen] = useState(false);
+  const [authUser, setAuthUser] = useState<AuthUserProfile | null>(null);
+  const [authInitialized, setAuthInitialized] = useState(false);
   const { isSpeaking, playingId, speak, stop: stopSpeech } = useTextToSpeech();
   const lastSpokenMsgIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const startTime = Date.now();
+    const unsubscribe = onAuthState((user) => {
+      setAuthUser(user);
+      const elapsed = Date.now() - startTime;
+      const minDisplay = 2600; // 2 extra seconds for cinematic logo entrance
+      if (elapsed < minDisplay) {
+        setTimeout(() => setAuthInitialized(true), minDisplay - elapsed);
+      } else {
+        setAuthInitialized(true);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Sync chats from Firestore when authenticated
+  useEffect(() => {
+    if (!authUser) return;
+    const unsubscribe = subscribeUserChats(authUser.uid, (remoteChats) => {
+      if (remoteChats.length > 0) {
+        setChats(remoteChats as StoredChat[]);
+      }
+    });
+    return () => unsubscribe();
+  }, [authUser]);
 
   useEffect(() => {
     try {
@@ -190,7 +228,15 @@ function BravuraApp() {
         c.id === activeChatId ? { ...c, messages, updatedAt: new Date().toISOString() } : c,
       ),
     );
-  }, [messages, activeChatId]);
+
+    if (authUser && activeChatId) {
+      const currentChat = chats.find((c) => c.id === activeChatId);
+      const title =
+        currentChat?.title ||
+        (messages[0] ? messageText(messages[0]).slice(0, 45) : "New Conversation");
+      void saveChatToFirestore(authUser.uid, activeChatId, title, messages);
+    }
+  }, [messages, activeChatId, authUser, chats]);
 
   useEffect(() => {
     if (status !== "ready") return;
@@ -227,6 +273,7 @@ function BravuraApp() {
           id: last.id,
           voice: voiceSetting.voiceId,
           provider: voiceSetting.provider,
+          playbackSpeed: voiceSetting.playbackSpeed,
         });
       }
     }
@@ -376,6 +423,9 @@ function BravuraApp() {
 
   const deleteChat = (id: string) => {
     setChats((current) => current.filter((c) => c.id !== id));
+    if (authUser) {
+      void deleteChatFromFirestore(id);
+    }
     if (activeChatId === id) {
       stop();
       setMessages([]);
@@ -386,16 +436,40 @@ function BravuraApp() {
   const conversation = messages.length > 0;
 
   return (
-    <div className="text-foreground h-[100dvh] overflow-hidden flex flex-col">
+    <div className="text-foreground h-[100dvh] w-full max-w-full overflow-hidden flex flex-col">
+      <AnimatePresence>
+        {!authInitialized && (
+          <motion.div
+            key="app-init-loader"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.4, ease: "easeOut" } }}
+            className="fixed inset-0 z-50 pointer-events-auto"
+          >
+            <AppLoadingScreen />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <CosmicBackground />
 
-      <div className="relative z-10 mx-auto flex h-full w-full max-w-[1800px] gap-4 p-2.5 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+      <div className="relative z-10 mx-auto flex h-full w-full max-w-[1800px] min-w-0 overflow-x-hidden gap-2 sm:gap-4 p-2 sm:p-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {/* Desktop sidebar */}
-        <div className="hidden lg:block">
+        <motion.div
+          initial={{ opacity: 0, x: -16 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="hidden lg:block shrink-0"
+        >
           <div className="sticky top-4 h-[calc(100vh-2rem)]">
-            <Sidebar onNewChat={newChat} onHistory={() => setHistoryOpen(true)} />
+            <Sidebar
+              onNewChat={newChat}
+              onHistory={() => setHistoryOpen(true)}
+              onOpenVoiceSettings={() => setVoiceModalOpen(true)}
+              user={authUser}
+              authInitialized={authInitialized}
+            />
           </div>
-        </div>
+        </motion.div>
 
         {/* Mobile sidebar overlay */}
         {sidebarOpen && (
@@ -412,6 +486,12 @@ function BravuraApp() {
                   setHistoryOpen(true);
                   setSidebarOpen(false);
                 }}
+                onOpenVoiceSettings={() => {
+                  setVoiceModalOpen(true);
+                  setSidebarOpen(false);
+                }}
+                user={authUser}
+                authInitialized={authInitialized}
               />
               <button
                 onClick={() => setSidebarOpen(false)}
@@ -425,17 +505,18 @@ function BravuraApp() {
         )}
 
         {/* Central workspace */}
-        <main
+        <motion.main
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
           className={cn(
-            "flex min-h-0 min-w-0 flex-1 flex-col gap-2 sm:gap-3 overflow-hidden",
+            "flex min-h-0 min-w-0 w-full max-w-full flex-1 flex-col gap-2 sm:gap-3 overflow-hidden",
             conversation ? "pb-1 sm:pb-2" : "pb-1 sm:pb-2",
           )}
         >
           <TopBar
             onToggleSidebar={() => setSidebarOpen(true)}
             onToggleContext={() => setContextOpen((v) => !v)}
-            onOpenVoiceSettings={() => setVoiceModalOpen(true)}
-            isSpeaking={isSpeaking}
             onSearch={(q) => {
               if (q.trim()) {
                 const found = chats.find(
@@ -450,8 +531,8 @@ function BravuraApp() {
             }}
           />
 
-          {conversation ? (
-            <div className="flex min-h-0 flex-1 flex-col relative">
+          <div className="flex min-h-0 flex-1 flex-col relative">
+            {conversation ? (
               <div
                 ref={scrollContainerRef}
                 className="min-h-0 flex-1 overflow-y-auto px-1.5 sm:px-4"
@@ -474,61 +555,100 @@ function BravuraApp() {
                       id,
                       voice: voiceSetting.voiceId,
                       provider: voiceSetting.provider,
+                      playbackSpeed: voiceSetting.playbackSpeed,
                     })
                   }
                   onStopSpeak={stopSpeech}
                 />
               </div>
-              <div className="relative mx-auto w-full max-w-4xl shrink-0 pt-2 pb-1 sm:pt-3">
-                {isImageMode && (
-                  <div className="glass-panel border-cyan-500/30 bg-cyan-500/10 mb-3 flex items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-xs text-cyan-200">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="size-4 text-cyan-400 shrink-0" />
-                      <span>
-                        <strong>AI Image Mode:</strong> Enter any prompt to generate with{" "}
-                        <code>gemini-3.1-flash-image-preview</code>, or attach an image to edit it.
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setImageStudioOpen(true)}
-                      className="shrink-0 rounded-xl bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-1 text-[11px] font-medium text-cyan-200 hover:bg-cyan-500/30 transition-colors cursor-pointer"
+            ) : (
+              <motion.div
+                initial="hidden"
+                animate="visible"
+                variants={{
+                  hidden: { opacity: 0 },
+                  visible: {
+                    opacity: 1,
+                    transition: {
+                      staggerChildren: 0.08,
+                      delayChildren: 0.05,
+                    },
+                  },
+                }}
+                className="min-h-0 flex-1 flex flex-col justify-center items-center overflow-y-auto overflow-x-hidden px-1.5 sm:px-4 py-2 sm:py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col items-stretch justify-center gap-3 sm:gap-5 my-auto">
+                  <HeroSection />
+                  <motion.div
+                    variants={{
+                      hidden: { opacity: 0, y: 12 },
+                      visible: {
+                        opacity: 1,
+                        y: 0,
+                        transition: { duration: 0.45, ease: [0.16, 1, 0.3, 1] },
+                      },
+                    }}
+                    className="w-full max-w-full min-w-0 flex justify-center overflow-x-hidden"
+                  >
+                    <ModeSelector mode={mode} onChange={setMode} />
+                  </motion.div>
+                  {isImageMode && (
+                    <motion.div
+                      variants={{
+                        hidden: { opacity: 0, y: 10 },
+                        visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
+                      }}
+                      className="glass-panel border-cyan-500/30 bg-cyan-500/10 flex w-full max-w-full min-w-0 items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-xs text-cyan-200"
                     >
-                      Open Studio Controls
-                    </button>
-                  </div>
-                )}
-                <PromptComposer
-                  value={input}
-                  onChange={setInput}
-                  onSubmit={(files) => void submit(undefined, files)}
-                  onStop={stop}
-                  onTranscribed={handleTranscribed}
-                  onOpenLiveVoice={() => setLiveVoiceModalOpen(true)}
-                  isLiveVoiceActive={liveVoiceModalOpen}
-                  mode={mode}
-                  onModeChange={setMode}
-                  deepThink={deepThink}
-                  onToggleDeepThink={() => setDeepThink((enabled) => !enabled)}
-                  webSearch={webSearch}
-                  onToggleWebSearch={() => setWebSearch((enabled) => !enabled)}
-                  busy={busy}
-                  disabled={false}
-                  error={errorMessage}
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-start gap-3.5 sm:gap-5 overflow-y-auto px-1 sm:px-4 pt-1.5 sm:pt-4 pb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <HeroSection />
-              <ModeSelector mode={mode} onChange={setMode} />
-              {isImageMode && (
-                <div className="glass-panel border-cyan-500/30 bg-cyan-500/10 flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-xs text-cyan-200">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="size-4 text-cyan-400 shrink-0" />
+                        <span>
+                          <strong>AI Image Mode Active:</strong> Prompt to create or attach an image
+                          to edit with <code>gemini-3.1-flash-image-preview</code>.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setImageStudioOpen(true)}
+                        className="shrink-0 rounded-xl bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-1 text-[11px] font-medium text-cyan-200 hover:bg-cyan-500/30 transition-colors cursor-pointer"
+                      >
+                        Open Studio
+                      </button>
+                    </motion.div>
+                  )}
+                  <motion.div
+                    variants={{
+                      hidden: { opacity: 0, y: 12 },
+                      visible: {
+                        opacity: 1,
+                        y: 0,
+                        transition: { duration: 0.45, ease: [0.16, 1, 0.3, 1] },
+                      },
+                    }}
+                    className="w-full max-w-full min-w-0"
+                  >
+                    <QuickActions
+                      onPick={(prompt, autoSubmit) => {
+                        if (autoSubmit) submit(prompt);
+                        else setInput(prompt);
+                      }}
+                      onOpenImageStudio={() => setImageStudioOpen(true)}
+                      onOpenPdfStudio={() => setPdfStudioOpen(true)}
+                    />
+                  </motion.div>
+                </div>
+              </motion.div>
+            )}
+
+            {/* Prompt Composer anchored cleanly at bottom */}
+            <div className="relative mx-auto w-full max-w-4xl shrink-0 pt-2 pb-1 sm:pt-3 z-30">
+              {isImageMode && conversation && (
+                <div className="glass-panel border-cyan-500/30 bg-cyan-500/10 mb-3 flex items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-xs text-cyan-200">
                   <div className="flex items-center gap-2">
                     <Sparkles className="size-4 text-cyan-400 shrink-0" />
                     <span>
-                      <strong>AI Image Mode Active:</strong> Prompt to create or attach an image to
-                      edit with <code>gemini-3.1-flash-image-preview</code>.
+                      <strong>AI Image Mode:</strong> Enter any prompt to generate with{" "}
+                      <code>gemini-3.1-flash-image-preview</code>, or attach an image to edit it.
                     </span>
                   </div>
                   <button
@@ -536,18 +656,10 @@ function BravuraApp() {
                     onClick={() => setImageStudioOpen(true)}
                     className="shrink-0 rounded-xl bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-1 text-[11px] font-medium text-cyan-200 hover:bg-cyan-500/30 transition-colors cursor-pointer"
                   >
-                    Open Studio
+                    Open Studio Controls
                   </button>
                 </div>
               )}
-              <QuickActions
-                onPick={(prompt, autoSubmit) => {
-                  if (autoSubmit) submit(prompt);
-                  else setInput(prompt);
-                }}
-                onOpenImageStudio={() => setImageStudioOpen(true)}
-                onOpenPdfStudio={() => setPdfStudioOpen(true)}
-              />
               <PromptComposer
                 value={input}
                 onChange={setInput}
@@ -556,6 +668,8 @@ function BravuraApp() {
                 onTranscribed={handleTranscribed}
                 onOpenLiveVoice={() => setLiveVoiceModalOpen(true)}
                 isLiveVoiceActive={liveVoiceModalOpen}
+                onOpenImageStudio={() => setImageStudioOpen(true)}
+                onOpenPdfStudio={() => setPdfStudioOpen(true)}
                 mode={mode}
                 onModeChange={setMode}
                 deepThink={deepThink}
@@ -566,15 +680,17 @@ function BravuraApp() {
                 disabled={false}
                 error={errorMessage}
               />
-              <p className="text-muted-foreground mt-2 text-center text-[11px] tracking-[0.25em]">
-                "BRAVURA AI · REAL-TIME INTELLIGENCE & LIVE VOICE"
-              </p>
             </div>
-          )}
-        </main>
+          </div>
+        </motion.main>
 
         {/* Right context panel */}
-        <div className="hidden xl:block">
+        <motion.div
+          initial={{ opacity: 0, x: 16 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+          className="hidden xl:block"
+        >
           <div className="sticky top-4">
             <RightPanel
               state={state}
@@ -586,7 +702,7 @@ function BravuraApp() {
               onOpenVoiceSettings={() => setVoiceModalOpen(true)}
             />
           </div>
-        </div>
+        </motion.div>
       </div>
 
       {/* Mobile context drawer */}

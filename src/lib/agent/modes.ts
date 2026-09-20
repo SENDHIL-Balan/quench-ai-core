@@ -1,4 +1,4 @@
-export type ModeId = "chat" | "research" | "create" | "analyze" | "code" | "image";
+export type ModeId = "chat" | "research" | "create" | "analyze" | "code" | "plan" | "image";
 
 export interface AgentMode {
   id: ModeId;
@@ -49,6 +49,14 @@ export const AGENT_MODES: Record<ModeId, AgentMode> = {
       "Mode: ANALYZE. Break the input down methodically: assumptions, structure, patterns, risks, and a clear conclusion. Prefer tables and bullet structure. Show the reasoning steps that matter.",
     available: true,
   },
+  plan: {
+    id: "plan",
+    label: "Plan",
+    hint: "Turn ideas into step-by-step plans",
+    instruction:
+      "Mode: PLAN. Break down goals, workflows, and ideas into clear, actionable, numbered step-by-step plans with milestones and considerations.",
+    available: true,
+  },
   code: {
     id: "code",
     label: "Code",
@@ -67,7 +75,15 @@ export const AGENT_MODES: Record<ModeId, AgentMode> = {
   },
 };
 
-export const VISIBLE_MODES: ModeId[] = ["chat", "research", "create", "analyze", "code", "image"];
+export const VISIBLE_MODES: ModeId[] = [
+  "chat",
+  "research",
+  "create",
+  "plan",
+  "analyze",
+  "code",
+  "image",
+];
 
 export interface BuildSystemPromptOptions {
   mode: ModeId;

@@ -5,6 +5,7 @@ export interface SpeakOptions {
   id?: string;
   voice?: string;
   provider?: VoiceProvider;
+  playbackSpeed?: number;
 }
 
 interface UseTextToSpeechResult {
@@ -77,6 +78,9 @@ export function useTextToSpeech(): UseTextToSpeechResult {
         urlRef.current = url;
 
         const audio = new Audio(url);
+        if (options.playbackSpeed && options.playbackSpeed > 0) {
+          audio.playbackRate = options.playbackSpeed;
+        }
         audioRef.current = audio;
 
         await new Promise<void>((resolve, reject) => {

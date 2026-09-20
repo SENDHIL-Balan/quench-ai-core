@@ -1,5 +1,18 @@
 import { useState, useEffect } from "react";
-import { X, Volume2, VolumeX, Mic, Sparkles, Check, Radio, Play, Loader2 } from "lucide-react";
+import {
+  X,
+  Volume2,
+  VolumeX,
+  Mic,
+  Sparkles,
+  Check,
+  Radio,
+  Play,
+  Loader2,
+  Gauge,
+  Sliders,
+  RotateCcw,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { VoiceProvider } from "@/lib/voice/types";
 
@@ -7,6 +20,7 @@ export type VoiceSetting = {
   voiceId: string;
   provider: VoiceProvider;
   autoSpeak: boolean;
+  playbackSpeed?: number;
 };
 
 const VOICES = [
@@ -87,6 +101,7 @@ export function VoiceAgentModal({
   const [selectedVoice, setSelectedVoice] = useState(voiceSetting.voiceId);
   const [selectedProvider, setSelectedProvider] = useState<VoiceProvider>(voiceSetting.provider);
   const [autoSpeak, setAutoSpeak] = useState(voiceSetting.autoSpeak);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(voiceSetting.playbackSpeed ?? 1.0);
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   const [previewAudio, setPreviewAudio] = useState<HTMLAudioElement | null>(null);
 
@@ -124,6 +139,7 @@ export function VoiceAgentModal({
           text: `Hello! I am ${name}, your voice agent powered by Bravura AI.`,
           voice: voiceId,
           provider,
+          playbackSpeed,
         }),
       });
 
@@ -134,6 +150,9 @@ export function VoiceAgentModal({
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const audio = new Audio(url);
+      if (playbackSpeed && playbackSpeed > 0) {
+        audio.playbackRate = playbackSpeed;
+      }
       setPreviewAudio(audio);
 
       audio.onended = () => {
@@ -158,6 +177,7 @@ export function VoiceAgentModal({
       voiceId,
       provider,
       autoSpeak,
+      playbackSpeed,
     });
   };
 
@@ -168,6 +188,21 @@ export function VoiceAgentModal({
       voiceId: selectedVoice,
       provider: selectedProvider,
       autoSpeak: next,
+      playbackSpeed,
+    });
+  };
+
+  const handleSpeedChange = (speed: number) => {
+    const clamped = Math.round(Math.max(0.5, Math.min(2.0, speed)) * 20) / 20; // 0.05 increments
+    setPlaybackSpeed(clamped);
+    if (previewAudio) {
+      previewAudio.playbackRate = clamped;
+    }
+    onSaveSetting({
+      voiceId: selectedVoice,
+      provider: selectedProvider,
+      autoSpeak,
+      playbackSpeed: clamped,
     });
   };
 
@@ -176,31 +211,33 @@ export function VoiceAgentModal({
       role="dialog"
       aria-modal="true"
       aria-label="Voice Agent Settings"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-6"
     >
       <div
         onClick={onClose}
         className="absolute inset-0 bg-black/75 backdrop-blur-md transition-opacity"
       />
 
-      <div className="glass-panel relative z-10 flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0c121e]/95 shadow-2xl">
+      <div className="glass-panel relative z-10 flex max-h-[94vh] sm:max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl sm:rounded-3xl border border-white/10 bg-[#0c121e]/95 shadow-2xl">
         {/* Header */}
-        <header className="border-b border-white/10 px-6 py-5">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-emerald-500/20 text-cyan-300 ring-1 ring-cyan-500/30">
-                <Sparkles className="size-5" />
+        <header className="border-b border-white/10 px-4 py-3.5 sm:px-6 sm:py-5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              <div className="flex size-9 sm:size-10 shrink-0 items-center justify-center rounded-xl sm:rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-emerald-500/20 text-cyan-300 ring-1 ring-cyan-500/30">
+                <Sparkles className="size-4 sm:size-5" />
               </div>
-              <div>
-                <h2 className="text-xl font-bold tracking-tight text-white">Bravura Voice Agent</h2>
-                <p className="text-muted-foreground mt-0.5 text-xs">
-                  Real-time live voice intelligence with ultra-low latency audio
+              <div className="min-w-0">
+                <h2 className="text-base sm:text-xl font-bold tracking-tight text-white truncate">
+                  Voice Agent Settings
+                </h2>
+                <p className="text-muted-foreground text-[11px] sm:text-xs truncate">
+                  Real-time live voice intelligence & playback settings
                 </p>
               </div>
             </div>
             <button
               onClick={onClose}
-              className="text-muted-foreground hover:text-foreground flex size-8 items-center justify-center rounded-full bg-white/5 transition-colors hover:bg-white/10"
+              className="text-muted-foreground hover:text-foreground flex size-8 shrink-0 items-center justify-center rounded-full bg-white/5 transition-colors hover:bg-white/10 cursor-pointer"
               aria-label="Close"
             >
               <X className="size-4" />
@@ -208,30 +245,30 @@ export function VoiceAgentModal({
           </div>
 
           {/* Status Pills */}
-          <div className="mt-4 flex flex-wrap gap-2">
-            <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
+          <div className="mt-3 sm:mt-4 flex flex-wrap gap-1.5 sm:gap-2">
+            <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 sm:px-3 py-0.5 sm:py-1 text-[10px] sm:text-xs text-emerald-300">
               <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Real-Time Speech Recognition: Active</span>
+              <span>Voice Recognition: Active</span>
             </div>
-            <div className="flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-xs text-cyan-300">
+            <div className="flex items-center gap-1.5 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2.5 sm:px-3 py-0.5 sm:py-1 text-[10px] sm:text-xs text-cyan-300">
               <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />
-              <span>Bravura Neural Voice Synthesis: Ready</span>
+              <span>Neural Synthesis: Ready</span>
             </div>
           </div>
         </header>
 
         {/* Content Body */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5 space-y-4 sm:space-y-6">
           {/* Auto Read Aloud Toggle */}
-          <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <div className="space-y-0.5">
+          <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 sm:p-4">
+            <div className="space-y-0.5 pr-2">
               <label
                 htmlFor="auto-speak-toggle"
-                className="text-sm font-semibold text-white cursor-pointer"
+                className="text-xs sm:text-sm font-semibold text-white cursor-pointer"
               >
                 Auto-read agent responses
               </label>
-              <p className="text-muted-foreground text-xs">
+              <p className="text-muted-foreground text-[11px] sm:text-xs">
                 Bravura AI will immediately speak out replies aloud as soon as generation completes.
               </p>
             </div>
@@ -253,6 +290,86 @@ export function VoiceAgentModal({
                 )}
               />
             </button>
+          </div>
+
+          {/* Playback Speed Control */}
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 sm:p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex size-7 items-center justify-center rounded-lg bg-cyan-500/15 text-cyan-300 ring-1 ring-cyan-500/30">
+                  <Gauge className="size-3.5" />
+                </div>
+                <div>
+                  <h3 className="text-xs sm:text-sm font-semibold text-white">Playback Speed</h3>
+                  <p className="text-muted-foreground text-[11px]">
+                    Adjust speech rate for live intelligence & voice replies
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-lg bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-1 text-xs font-mono font-bold text-cyan-300">
+                  {playbackSpeed.toFixed(2).replace(/\.?0+$/, "")}x
+                </span>
+                {playbackSpeed !== 1.0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleSpeedChange(1.0)}
+                    className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                    title="Reset to normal speed (1.0x)"
+                    aria-label="Reset speed"
+                  >
+                    <RotateCcw className="size-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Slider with range */}
+            <div className="space-y-1.5 pt-1">
+              <div className="relative flex items-center">
+                <input
+                  id="voice-playback-speed-slider"
+                  type="range"
+                  min="0.5"
+                  max="2.0"
+                  step="0.05"
+                  value={playbackSpeed}
+                  onChange={(e) => handleSpeedChange(parseFloat(e.target.value))}
+                  className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-white/10 accent-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                  aria-label="Voice playback speed slider"
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-muted-foreground font-mono px-0.5">
+                <span>0.5x (Slower)</span>
+                <span className="text-cyan-400/80">1.0x Normal</span>
+                <span>2.0x (Faster)</span>
+              </div>
+            </div>
+
+            {/* Speed Presets Chips */}
+            <div className="flex items-center gap-1.5 pt-1 overflow-x-auto pb-1 sm:pb-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <span className="text-[11px] text-muted-foreground shrink-0 mr-1 hidden sm:inline">
+                Presets:
+              </span>
+              {[0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((preset) => {
+                const isActive = Math.abs(playbackSpeed - preset) < 0.01;
+                return (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => handleSpeedChange(preset)}
+                    className={cn(
+                      "rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all cursor-pointer shrink-0 font-mono",
+                      isActive
+                        ? "bg-cyan-500 text-black font-semibold shadow-sm shadow-cyan-500/30"
+                        : "bg-white/5 text-muted-foreground hover:text-white hover:bg-white/10 border border-white/5",
+                    )}
+                  >
+                    {preset.toFixed(2).replace(/\.?0+$/, "")}x
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Voice Models List */}
@@ -344,15 +461,15 @@ export function VoiceAgentModal({
         </div>
 
         {/* Footer */}
-        <footer className="flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-6 py-4">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Mic className="size-3.5 text-emerald-400" />
-            <span>Bravura High-Fidelity Voice Engine Active</span>
+        <footer className="flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-4 py-3 sm:px-6 sm:py-4">
+          <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-muted-foreground min-w-0 pr-2">
+            <Mic className="size-3.5 text-emerald-400 shrink-0" />
+            <span className="truncate">Bravura Voice Engine Active</span>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 px-5 py-2 text-xs font-semibold text-black transition-transform hover:scale-105 cursor-pointer shadow-lg shadow-cyan-500/20"
+            className="rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-500 px-4 py-2 sm:px-5 sm:py-2 text-xs font-semibold text-black transition-transform hover:scale-105 cursor-pointer shadow-lg shadow-cyan-500/20 shrink-0"
           >
             Done
           </button>

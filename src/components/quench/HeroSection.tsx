@@ -1,14 +1,26 @@
+import { motion } from "motion/react";
+
 export function HeroSection() {
   return (
-    <div className="text-center px-2 w-full shrink-0">
-      <h1 className="text-2xl leading-[1.2] font-semibold tracking-tight sm:text-4xl lg:text-5xl">
+    <motion.div
+      initial={{ opacity: 0, y: 14, scale: 0.985 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+      className="text-center px-2 w-full max-w-full min-w-0 shrink-0"
+    >
+      <h1 className="text-xl leading-[1.25] font-semibold tracking-tight sm:text-4xl lg:text-5xl break-words">
         Let's build something
         <br />
         <span className="text-gradient-brand">incredible.</span>
       </h1>
-      <p className="text-muted-foreground mt-1.5 sm:mt-3 text-xs sm:text-base">
+      <motion.p
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.55, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+        className="text-muted-foreground mt-1.5 sm:mt-3 text-xs sm:text-base"
+      >
         Your ideas. Deeper answers.
-      </p>
-    </div>
+      </motion.p>
+    </motion.div>
   );
 }

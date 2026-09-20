@@ -20,6 +20,7 @@ type SpeakBody = {
   text?: unknown;
   voice?: unknown;
   provider?: "elevenlabs" | "deepgram" | "auto";
+  playbackSpeed?: unknown;
 };
 
 function errorResponse(message: string, status: number) {

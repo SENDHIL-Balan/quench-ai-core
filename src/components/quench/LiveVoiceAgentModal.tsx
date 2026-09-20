@@ -282,6 +282,7 @@ export function LiveVoiceAgentModal({
             text: replyText,
             voice: voiceSetting.voiceId,
             provider: voiceSetting.provider,
+            playbackSpeed: voiceSetting.playbackSpeed,
           }),
         });
 
@@ -293,6 +294,9 @@ export function LiveVoiceAgentModal({
         const url = URL.createObjectURL(blob);
         audioUrlRef.current = url;
         const audio = new Audio(url);
+        if (voiceSetting.playbackSpeed && voiceSetting.playbackSpeed > 0) {
+          audio.playbackRate = voiceSetting.playbackSpeed;
+        }
         audioRef.current = audio;
 
         await new Promise<void>((resolve, reject) => {
@@ -469,7 +473,7 @@ export function LiveVoiceAgentModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-6"
       role="dialog"
       aria-modal="true"
     >
@@ -480,33 +484,33 @@ export function LiveVoiceAgentModal({
       />
 
       {/* Main Live Voice Container */}
-      <div className="relative z-10 flex w-full max-w-lg flex-col overflow-hidden rounded-[32px] border border-cyan-500/30 bg-[#090d16]/95 shadow-[0_0_80px_rgba(6,182,212,0.18)] backdrop-blur-2xl">
+      <div className="relative z-10 flex w-full max-w-lg flex-col overflow-hidden rounded-2xl sm:rounded-[32px] border border-cyan-500/30 bg-[#090d16]/95 shadow-[0_0_80px_rgba(6,182,212,0.18)] backdrop-blur-2xl">
         {/* Top bar */}
-        <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-          <div className="flex items-center gap-2.5">
-            <div className="relative flex size-3 items-center justify-center">
+        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4">
+          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+            <div className="relative flex size-3 shrink-0 items-center justify-center">
               <span className="absolute size-2.5 rounded-full bg-cyan-400 animate-ping opacity-75" />
               <span className="size-2 rounded-full bg-cyan-400" />
             </div>
-            <span className="text-sm font-semibold tracking-wide text-white">
-              Bravura Live Voice
+            <span className="text-xs sm:text-sm font-semibold tracking-wide text-white truncate">
+              Live Voice
             </span>
-            <span className="rounded-full border border-cyan-500/30 bg-cyan-500/15 px-2 py-0.5 text-[10px] font-medium text-cyan-300">
-              Live Two-Way
+            <span className="rounded-full border border-cyan-500/30 bg-cyan-500/15 px-2 py-0.5 text-[10px] font-medium text-cyan-300 shrink-0">
+              Two-Way
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Voice Persona Dropdown */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => setVoiceDropdownOpen((v) => !v)}
-                className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80 hover:bg-white/10 transition-colors"
+                className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 sm:px-3 py-1 text-xs text-white/80 hover:bg-white/10 transition-colors cursor-pointer"
                 title="Change Voice Persona"
               >
-                <span>{currentVoice.name}</span>
-                <ChevronDown className="size-3" />
+                <span className="max-w-[90px] sm:max-w-none truncate">{currentVoice.name}</span>
+                <ChevronDown className="size-3 shrink-0" />
               </button>
 
               {voiceDropdownOpen && (
@@ -523,22 +527,23 @@ export function LiveVoiceAgentModal({
                           voiceId: v.id,
                           provider: v.provider,
                           autoSpeak: voiceSetting.autoSpeak,
+                          playbackSpeed: voiceSetting.playbackSpeed,
                         });
                         setVoiceDropdownOpen(false);
                       }}
                       className={cn(
-                        "flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs transition-colors",
+                        "flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer",
                         voiceSetting.voiceId === v.id
                           ? "bg-cyan-500/20 text-cyan-300 font-medium"
                           : "text-white/80 hover:bg-white/5 hover:text-white",
                       )}
                     >
-                      <div>
-                        <p>{v.name}</p>
-                        <p className="text-[10px] text-muted-foreground">{v.desc}</p>
+                      <div className="min-w-0 pr-1">
+                        <p className="truncate">{v.name}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{v.desc}</p>
                       </div>
                       {voiceSetting.voiceId === v.id && (
-                        <Check className="size-3.5 text-cyan-400" />
+                        <Check className="size-3.5 text-cyan-400 shrink-0" />
                       )}
                     </button>
                   ))}
@@ -550,7 +555,7 @@ export function LiveVoiceAgentModal({
             <button
               type="button"
               onClick={onClose}
-              className="flex size-8 items-center justify-center rounded-full bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-white transition-colors"
+              className="flex size-7 sm:size-8 items-center justify-center rounded-full bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-white transition-colors cursor-pointer shrink-0"
               aria-label="End live session"
             >
               <X className="size-4" />
@@ -696,38 +701,38 @@ export function LiveVoiceAgentModal({
         </div>
 
         {/* Bottom Interactive Controls */}
-        <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-6 py-4">
+        <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-3.5 py-3 sm:px-6 sm:py-4 gap-1.5 sm:gap-2">
           {/* Mute toggle */}
           <button
             type="button"
             onClick={handleToggleMute}
             className={cn(
-              "flex items-center gap-2 rounded-full border px-3.5 py-2 text-xs transition-colors cursor-pointer",
+              "flex items-center gap-1.5 sm:gap-2 rounded-full border px-2.5 sm:px-3.5 py-2 text-xs transition-colors cursor-pointer shrink-0",
               isMuted
                 ? "border-red-500/40 bg-red-500/15 text-red-300"
                 : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white",
             )}
           >
             {isMuted ? <MicOff className="size-3.5" /> : <Mic className="size-3.5" />}
-            <span>{isMuted ? "Unmute" : "Mute"}</span>
+            <span className="hidden xs:inline sm:inline">{isMuted ? "Unmute" : "Mute"}</span>
           </button>
 
           {/* Center Action (Finish Speaking / Interrupt) */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {liveState === "speaking" ? (
               <button
                 type="button"
                 onClick={handleInterrupt}
-                className="flex items-center gap-2 rounded-full bg-cyan-500/20 border border-cyan-500/50 px-4 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/30 transition-colors cursor-pointer animate-pulse"
+                className="flex items-center gap-1.5 sm:gap-2 rounded-full bg-cyan-500/20 border border-cyan-500/50 px-3 sm:px-4 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/30 transition-colors cursor-pointer animate-pulse"
               >
                 <Square className="size-3 fill-current" />
-                <span>Tap to Interrupt</span>
+                <span>Interrupt</span>
               </button>
             ) : liveState === "listening" ? (
               <button
                 type="button"
                 onClick={() => void stopAndTranscribe()}
-                className="flex items-center gap-2 rounded-full bg-gradient-to-r from-cyan-500 to-emerald-500 px-4 py-2 text-xs font-semibold text-black transition-transform hover:scale-105 cursor-pointer shadow-lg shadow-cyan-500/20"
+                className="flex items-center gap-1.5 sm:gap-2 rounded-full bg-gradient-to-r from-cyan-500 to-emerald-500 px-3.5 sm:px-4 py-2 text-xs font-semibold text-black transition-transform hover:scale-105 cursor-pointer shadow-lg shadow-cyan-500/20"
               >
                 <span>Done speaking</span>
               </button>
@@ -735,10 +740,10 @@ export function LiveVoiceAgentModal({
               <button
                 type="button"
                 onClick={() => void startListening()}
-                className="flex items-center gap-2 rounded-full bg-cyan-500 px-4 py-2 text-xs font-semibold text-black transition-transform hover:scale-105 cursor-pointer"
+                className="flex items-center gap-1.5 sm:gap-2 rounded-full bg-cyan-500 px-3.5 sm:px-4 py-2 text-xs font-semibold text-black transition-transform hover:scale-105 cursor-pointer"
               >
                 <Mic className="size-3.5" />
-                <span>Start Talking</span>
+                <span>Talk</span>
               </button>
             )}
           </div>
@@ -747,10 +752,10 @@ export function LiveVoiceAgentModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3.5 py-2 text-xs text-muted-foreground hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+            className="flex items-center gap-1 sm:gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 sm:px-3.5 py-2 text-xs text-muted-foreground hover:bg-white/10 hover:text-white transition-colors cursor-pointer shrink-0"
           >
             <X className="size-3.5" />
-            <span>End Session</span>
+            <span className="hidden xs:inline sm:inline">End</span>
           </button>
         </div>
       </div>
