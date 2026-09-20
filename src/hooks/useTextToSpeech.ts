@@ -90,29 +90,40 @@ export function useTextToSpeech(): UseTextToSpeechResult {
         }
 
         if (!response.ok) {
-          const detail = (await response.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(detail?.error || "Voice agent could not generate speech.");
+          // Fallback to browser SpeechSynthesis
+          await new Promise<void>((resolve, reject) => {
+            if (!("speechSynthesis" in window)) {
+              reject(new Error("Speech synthesis not supported."));
+              return;
+            }
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(trimmed);
+            utterance.rate = options.playbackSpeed || 1.0;
+            utterance.onend = () => resolve();
+            utterance.onerror = () => reject(new Error("Browser speech synthesis failed."));
+            window.speechSynthesis.speak(utterance);
+          });
+        } else {
+          const blob = await response.blob();
+          if (currentSessionIdRef.current !== sessionId) {
+            return;
+          }
+
+          const url = URL.createObjectURL(blob);
+          urlRef.current = url;
+
+          const audio = new Audio(url);
+          if (options.playbackSpeed && options.playbackSpeed > 0) {
+            audio.playbackRate = options.playbackSpeed;
+          }
+          audioRef.current = audio;
+
+          await new Promise<void>((resolve, reject) => {
+            audio.onended = () => resolve();
+            audio.onerror = () => reject(new Error("Audio playback failed."));
+            void audio.play().catch(reject);
+          });
         }
-
-        const blob = await response.blob();
-        if (currentSessionIdRef.current !== sessionId) {
-          return;
-        }
-
-        const url = URL.createObjectURL(blob);
-        urlRef.current = url;
-
-        const audio = new Audio(url);
-        if (options.playbackSpeed && options.playbackSpeed > 0) {
-          audio.playbackRate = options.playbackSpeed;
-        }
-        audioRef.current = audio;
-
-        await new Promise<void>((resolve, reject) => {
-          audio.onended = () => resolve();
-          audio.onerror = () => reject(new Error("Audio playback failed."));
-          void audio.play().catch(reject);
-        });
 
         if (currentSessionIdRef.current === sessionId) {
           setState("idle");
@@ -120,6 +131,28 @@ export function useTextToSpeech(): UseTextToSpeechResult {
         }
       } catch (err) {
         if (currentSessionIdRef.current === sessionId && abortController.signal.aborted !== true) {
+          try {
+            await new Promise<void>((resolve, reject) => {
+              if (!("speechSynthesis" in window)) {
+                reject(err);
+                return;
+              }
+              window.speechSynthesis.cancel();
+              const utterance = new SpeechSynthesisUtterance(trimmed);
+              utterance.rate = options.playbackSpeed || 1.0;
+              utterance.onend = () => resolve();
+              utterance.onerror = () => reject(err);
+              window.speechSynthesis.speak(utterance);
+            });
+            if (currentSessionIdRef.current === sessionId) {
+              setState("idle");
+              setPlayingId(null);
+            }
+            return;
+          } catch (fallbackErr) {
+            console.warn("Browser speech fallback failed:", fallbackErr);
+          }
+
           setErrorMessage(err instanceof Error ? err.message : "Couldn't play audio.");
           setState("error");
           setPlayingId(null);

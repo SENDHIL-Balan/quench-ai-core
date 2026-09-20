@@ -33,6 +33,13 @@ const MODE_ICONS: Record<ModeId, typeof MessageSquare> = {
   image: ImageIcon,
 };
 
+const PHRASES = [
+  "Ask Bravura AI anything...",
+  "Ask me to write code, debug, or analyze data...",
+  "What can I help you build today?",
+  "Ask Bravura AI anything...",
+];
+
 export function PromptComposer({
   value,
   onChange,
@@ -80,6 +87,40 @@ export function PromptComposer({
   const menuRef = useRef<HTMLDivElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
+  const [displayedPlaceholder, setDisplayedPlaceholder] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [typingSpeed, setTypingSpeed] = useState(80);
+
+  useEffect(() => {
+    if (value) {
+      setDisplayedPlaceholder("Ask Bravura AI anything...");
+      return;
+    }
+    const currentPhrase = PHRASES[placeholderIndex];
+    const handleTyping = () => {
+      if (!isDeleting) {
+        const nextText = currentPhrase.substring(0, displayedPlaceholder.length + 1);
+        setDisplayedPlaceholder(nextText);
+        if (nextText === currentPhrase) {
+          setTimeout(() => setIsDeleting(true), 2200);
+          setTypingSpeed(40);
+        }
+      } else {
+        const nextText = currentPhrase.substring(0, displayedPlaceholder.length - 1);
+        setDisplayedPlaceholder(nextText);
+        if (nextText === "") {
+          setIsDeleting(false);
+          setPlaceholderIndex((prev) => (prev + 1) % PHRASES.length);
+          setTypingSpeed(90);
+        }
+      }
+    };
+
+    const timer = setTimeout(handleTyping, typingSpeed);
+    return () => clearTimeout(timer);
+  }, [displayedPlaceholder, isDeleting, placeholderIndex, typingSpeed, value]);
 
   useEffect(() => {
     if (!busy) ref.current?.focus();
@@ -194,7 +235,7 @@ export function PromptComposer({
                 submit();
               }
             }}
-            placeholder="Ask Bravura AI anything..."
+            placeholder={displayedPlaceholder || "Ask Bravura AI anything..."}
             className="placeholder:text-muted-foreground min-h-[44px] max-h-[180px] w-full resize-none bg-transparent px-1.5 py-1 text-base sm:text-[15px] leading-relaxed outline-none disabled:opacity-60 text-foreground [scrollbar-width:thin]"
           />
         </div>

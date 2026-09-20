@@ -322,35 +322,63 @@ export function LiveVoiceAgentModal({
         }
 
         if (!speakRes.ok) {
-          throw new Error("Speech synthesis failed");
-        }
+          // Fallback to browser SpeechSynthesis if server speak fails
+          await new Promise<void>((resolve, reject) => {
+            if (!("speechSynthesis" in window)) {
+              reject(new Error("Speech synthesis failed"));
+              return;
+            }
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(replyText);
+            utterance.rate = voiceSetting.playbackSpeed || 1.0;
+            utterance.onend = () => resolve();
+            utterance.onerror = () => reject(new Error("Browser speech synthesis failed"));
+            window.speechSynthesis.speak(utterance);
+          });
+        } else {
+          const blob = await speakRes.blob();
+          if (
+            !isComponentMounted.current ||
+            !activeSessionRef.current ||
+            audioSessionIdRef.current !== currentSessionId
+          ) {
+            isTurnActiveRef.current = false;
+            return;
+          }
 
-        const blob = await speakRes.blob();
-        if (
-          !isComponentMounted.current ||
-          !activeSessionRef.current ||
-          audioSessionIdRef.current !== currentSessionId
-        ) {
-          isTurnActiveRef.current = false;
-          return;
-        }
+          const url = URL.createObjectURL(blob);
+          audioUrlRef.current = url;
+          const audio = new Audio(url);
+          if (voiceSetting.playbackSpeed && voiceSetting.playbackSpeed > 0) {
+            audio.playbackRate = voiceSetting.playbackSpeed;
+          }
+          audioRef.current = audio;
 
-        const url = URL.createObjectURL(blob);
-        audioUrlRef.current = url;
-        const audio = new Audio(url);
-        if (voiceSetting.playbackSpeed && voiceSetting.playbackSpeed > 0) {
-          audio.playbackRate = voiceSetting.playbackSpeed;
+          await new Promise<void>((resolve, reject) => {
+            audio.onended = () => resolve();
+            audio.onerror = () => reject(new Error("Audio playback failed"));
+            void audio.play().catch(reject);
+          });
         }
-        audioRef.current = audio;
-
-        await new Promise<void>((resolve, reject) => {
-          audio.onended = () => resolve();
-          audio.onerror = () => reject(new Error("Audio playback failed"));
-          void audio.play().catch(reject);
-        });
       } catch (err) {
         if (audioSessionIdRef.current === currentSessionId && !abortController.signal.aborted) {
-          console.warn("Speech playback notice:", err);
+          console.warn("Speech playback notice, attempting browser fallback:", err);
+          try {
+            await new Promise<void>((resolve, reject) => {
+              if (!("speechSynthesis" in window)) {
+                reject(err);
+                return;
+              }
+              window.speechSynthesis.cancel();
+              const utterance = new SpeechSynthesisUtterance(replyText);
+              utterance.rate = voiceSetting.playbackSpeed || 1.0;
+              utterance.onend = () => resolve();
+              utterance.onerror = () => reject(err);
+              window.speechSynthesis.speak(utterance);
+            });
+          } catch (fallbackErr) {
+            console.warn("Browser speech fallback failed:", fallbackErr);
+          }
         }
       } finally {
         if (audioSessionIdRef.current === currentSessionId) {
