@@ -1,7 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-const DEEPGRAM_KEY_FALLBACK = "f864cbf8ef4e61b5cc5f2c7aac27326b24f4ae43";
-
 function errorResponse(message: string, status: number) {
   return new Response(JSON.stringify({ ok: false, error: message }), {
     status,
@@ -13,7 +11,7 @@ export const Route = createFileRoute("/api/transcribe")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const apiKey = (process.env["DEEPGRAM_API_KEY"] || DEEPGRAM_KEY_FALLBACK).trim();
+        const apiKey = (process.env["DEEPGRAM_API_KEY"] || "").trim();
         if (!apiKey) {
           console.error("[quench] DEEPGRAM_API_KEY missing");
           return errorResponse("Voice transcription is not configured on the server.", 503);

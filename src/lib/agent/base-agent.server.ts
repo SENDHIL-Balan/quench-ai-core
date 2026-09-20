@@ -339,7 +339,7 @@ export async function runBaseAgent({
   }
 
   const query = lastUserText(messages);
-  const shouldSearch = Boolean(webSearch || mode === "research" || isRealTimeQuery(query));
+  const shouldSearch = Boolean(webSearch || mode === "research");
 
   // Build the base prompt with real-time search context
   let systemInstruction = buildSystemPrompt({ mode, deepThink, webSearch: shouldSearch });

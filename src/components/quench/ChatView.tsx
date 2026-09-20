@@ -76,7 +76,7 @@ function UserMessage({ message }: { message: UIMessage }) {
 
   return (
     <div className="flex justify-end my-1">
-      <div className="max-w-[85%] sm:max-w-[70%] rounded-[22px] bg-[#242630] border border-white/10 px-4 py-2 sm:py-2.5 text-[15px] leading-relaxed text-[#f4f4f6] shadow-sm whitespace-pre-wrap">
+      <div className="max-w-[85%] sm:max-w-[70%] rounded-[22px] bg-primary/10 dark:bg-[#242630] border border-border px-4 py-2 sm:py-2.5 text-[15px] leading-relaxed text-foreground dark:text-[#f4f4f6] shadow-sm whitespace-pre-wrap">
         {text}
       </div>
     </div>
@@ -118,21 +118,21 @@ const AssistantMessage = memo(function AssistantMessage({
   return (
     <div className="group relative w-full my-1.5 text-left">
       {text ? (
-        <div className="max-w-none text-[15px] sm:text-[15.5px] leading-[1.65] text-[#ececf1]">
+        <div className="max-w-none text-[15px] sm:text-[15.5px] leading-[1.65] text-foreground">
           <MarkdownRenderer content={text} />
         </div>
       ) : (
-        <span className="text-zinc-400 text-sm">Generating…</span>
+        <span className="text-muted-foreground text-sm">Generating…</span>
       )}
       {text && (
-        <div className="mt-2.5 flex items-center gap-2 text-xs text-zinc-400">
+        <div className="mt-2.5 flex items-center gap-2 text-xs text-muted-foreground">
           <button
             type="button"
             onClick={handleCopy}
-            className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors cursor-pointer"
           >
             {copied ? (
-              <Check className="size-3.5 text-emerald-400" />
+              <Check className="size-3.5 text-emerald-500 dark:text-emerald-400" />
             ) : (
               <Copy className="size-3.5" />
             )}
@@ -146,19 +146,19 @@ const AssistantMessage = memo(function AssistantMessage({
               className={cn(
                 "flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-colors cursor-pointer",
                 isPlaying
-                  ? "text-cyan-300 font-medium"
-                  : "text-zinc-400 hover:text-white hover:bg-white/5",
+                  ? "text-cyan-700 dark:text-cyan-300 font-medium"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent",
               )}
               title={isPlaying ? "Stop audio" : "Listen"}
             >
               {isPlaying ? (
                 <>
-                  <VolumeX className="size-3.5 text-cyan-300" />
+                  <VolumeX className="size-3.5 text-cyan-600 dark:text-cyan-300" />
                   <span>Stop</span>
                   <span className="flex items-center gap-0.5 ml-1" aria-hidden="true">
-                    <span className="h-2 w-0.5 rounded-full bg-cyan-400 animate-pulse" />
-                    <span className="h-3.5 w-0.5 rounded-full bg-cyan-400 animate-pulse delay-75" />
-                    <span className="h-2 w-0.5 rounded-full bg-cyan-400 animate-pulse delay-150" />
+                    <span className="h-2 w-0.5 rounded-full bg-cyan-500 animate-pulse" />
+                    <span className="h-3.5 w-0.5 rounded-full bg-cyan-500 animate-pulse delay-75" />
+                    <span className="h-2 w-0.5 rounded-full bg-cyan-500 animate-pulse delay-150" />
                   </span>
                 </>
               ) : (

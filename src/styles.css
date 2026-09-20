@@ -126,6 +126,72 @@
   color-scheme: dark;
 }
 
+html.light,
+:root.light,
+.light {
+  color-scheme: light;
+
+  --background: oklch(0.97 0.006 230);
+  --foreground: oklch(0.18 0.025 240);
+
+  --card: oklch(1 0 0 / 88%);
+  --card-foreground: oklch(0.18 0.025 240);
+  --popover: oklch(0.99 0.003 240);
+  --popover-foreground: oklch(0.18 0.025 240);
+
+  --panel: oklch(1 0 0 / 80%);
+  --panel-foreground: oklch(0.18 0.025 240);
+
+  --primary: oklch(0.48 0.16 182);
+  --primary-foreground: oklch(0.99 0.005 220);
+
+  --secondary: oklch(0.93 0.01 240);
+  --secondary-foreground: oklch(0.22 0.025 240);
+
+  --muted: oklch(0.93 0.01 240);
+  --muted-foreground: oklch(0.46 0.02 240);
+
+  --accent: oklch(0.92 0.015 220);
+  --accent-foreground: oklch(0.2 0.025 240);
+
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(0.99 0.005 220);
+
+  --border: oklch(0.2 0.02 240 / 12%);
+  --input: oklch(0.2 0.02 240 / 14%);
+  --ring: oklch(0.48 0.16 182 / 50%);
+
+  --quench-green: oklch(0.48 0.18 150);
+  --quench-cyan: oklch(0.44 0.15 195);
+  --quench-blue: oklch(0.46 0.16 245);
+
+  --gradient-brand: linear-gradient(
+    100deg,
+    var(--quench-green),
+    var(--quench-cyan) 48%,
+    var(--quench-blue)
+  );
+  --gradient-panel: linear-gradient(160deg, oklch(1 0 0 / 88%), oklch(0.95 0.008 240 / 80%));
+  --glow-primary:
+    0 0 0 1px oklch(0.48 0.16 182 / 20%), 0 10px 30px -10px oklch(0.48 0.16 182 / 25%);
+  --glow-soft: 0 12px 36px -20px oklch(0.2 0.03 240 / 12%);
+
+  --chart-1: oklch(0.48 0.18 150);
+  --chart-2: oklch(0.44 0.15 195);
+  --chart-3: oklch(0.46 0.16 245);
+  --chart-4: oklch(0.52 0.14 210);
+  --chart-5: oklch(0.45 0.14 170);
+
+  --sidebar: oklch(0.97 0.006 240 / 90%);
+  --sidebar-foreground: oklch(0.18 0.025 240);
+  --sidebar-primary: oklch(0.48 0.16 182);
+  --sidebar-primary-foreground: oklch(0.99 0.005 220);
+  --sidebar-accent: oklch(0.92 0.012 240);
+  --sidebar-accent-foreground: oklch(0.2 0.025 240);
+  --sidebar-border: oklch(0.2 0.02 240 / 10%);
+  --sidebar-ring: oklch(0.48 0.16 182 / 40%);
+}
+
 @layer base {
   * {
     border-color: var(--color-border);
@@ -201,6 +267,18 @@ html {
 * {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+}
+
+html.light * {
+  scrollbar-color: rgba(0, 0, 0, 0.16) transparent;
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.16) !important;
+}
+
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.28) !important;
 }
 
 @keyframes quench-orb-spin {

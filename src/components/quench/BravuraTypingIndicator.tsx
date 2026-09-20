@@ -25,8 +25,8 @@ export function BravuraTypingIndicator({ className }: BravuraTypingIndicatorProp
         </span>
       </div>
 
-      <div className="glass-panel flex items-center gap-2.5 rounded-2xl rounded-tl-sm border border-white/10 bg-white/[0.04] px-3.5 py-2.5 shadow-xl backdrop-blur-xl">
-        <span className="text-sm font-medium text-white/85 tracking-tight">
+      <div className="glass-panel flex items-center gap-2.5 rounded-2xl rounded-tl-sm border border-border bg-card/75 dark:border-white/10 dark:bg-white/[0.04] px-3.5 py-2.5 shadow-xl backdrop-blur-xl">
+        <span className="text-sm font-medium text-foreground tracking-tight">
           Bravura is typing<span className="tracking-widest">...</span>
         </span>
 

@@ -127,7 +127,7 @@ function BravuraApp() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [deepThink, setDeepThink] = useState(false);
-  const [webSearch, setWebSearch] = useState(true);
+  const [webSearch, setWebSearch] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [chats, setChats] = useState<StoredChat[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -189,6 +189,11 @@ function BravuraApp() {
     }
   }, []);
 
+  const chatsRef = useRef<StoredChat[]>(chats);
+  useEffect(() => {
+    chatsRef.current = chats;
+  }, [chats]);
+
   useEffect(() => {
     try {
       window.localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
@@ -214,7 +219,7 @@ function BravuraApp() {
 
   useEffect(() => {
     if (!activeChatId) return;
-    const chat = chats.find((c) => c.id === activeChatId);
+    const chat = chatsRef.current.find((c) => c.id === activeChatId);
     if (chat && chat.messages.length > 0) {
       setMessages(chat.messages);
     }
@@ -223,44 +228,31 @@ function BravuraApp() {
 
   useEffect(() => {
     if (!activeChatId || messages.length === 0) return;
-    setChats((current) =>
-      current.map((c) =>
-        c.id === activeChatId ? { ...c, messages, updatedAt: new Date().toISOString() } : c,
-      ),
-    );
 
-    if (authUser && activeChatId) {
-      const currentChat = chats.find((c) => c.id === activeChatId);
+    setChats((current) => {
+      const target = current.find((c) => c.id === activeChatId);
+      if (!target) return current;
+      if (target.messages === messages) return current;
+      if (
+        target.messages.length === messages.length &&
+        target.messages[target.messages.length - 1]?.id === messages[messages.length - 1]?.id &&
+        target.messages[target.messages.length - 1]?.parts === messages[messages.length - 1]?.parts
+      ) {
+        return current;
+      }
+      return current.map((c) =>
+        c.id === activeChatId ? { ...c, messages, updatedAt: new Date().toISOString() } : c,
+      );
+    });
+
+    if (authUser && activeChatId && status === "ready") {
+      const currentChat = chatsRef.current.find((c) => c.id === activeChatId);
       const title =
         currentChat?.title ||
         (messages[0] ? messageText(messages[0]).slice(0, 45) : "New Conversation");
       void saveChatToFirestore(authUser.uid, activeChatId, title, messages);
     }
-  }, [messages, activeChatId, authUser, chats]);
-
-  useEffect(() => {
-    if (status !== "ready") return;
-
-    setMessages((current) => {
-      const hasAttachments = current.some((message) =>
-        message.parts.some((part) => part.type === "file"),
-      );
-      if (!hasAttachments) return current;
-      return current.map((message) => ({
-        ...message,
-        parts: message.parts.flatMap((part) =>
-          part.type === "file"
-            ? [
-                {
-                  type: "text" as const,
-                  text: `Attached file: ${part.filename ?? "document"}`,
-                },
-              ]
-            : [part],
-        ),
-      }));
-    });
-  }, [setMessages, status]);
+  }, [messages, activeChatId, authUser, status]);
 
   useEffect(() => {
     if (!voiceSetting.autoSpeak || status !== "ready" || messages.length === 0) return;
@@ -575,9 +567,9 @@ function BravuraApp() {
                     },
                   },
                 }}
-                className="min-h-0 flex-1 flex flex-col justify-center items-center overflow-y-auto overflow-x-hidden px-1.5 sm:px-4 py-2 sm:py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                className="min-h-0 flex-1 flex flex-col items-center overflow-y-auto overflow-x-hidden px-1.5 sm:px-4 py-3 sm:py-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               >
-                <div className="mx-auto flex w-full max-w-3xl min-w-0 flex-col items-stretch justify-center gap-3 sm:gap-5 my-auto">
+                <div className="mx-auto my-auto flex w-full max-w-3xl min-w-0 flex-col items-stretch gap-3.5 sm:gap-5 py-2">
                   <HeroSection />
                   <motion.div
                     variants={{
@@ -598,10 +590,10 @@ function BravuraApp() {
                         hidden: { opacity: 0, y: 10 },
                         visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
                       }}
-                      className="glass-panel border-cyan-500/30 bg-cyan-500/10 flex w-full max-w-full min-w-0 items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-xs text-cyan-200"
+                      className="glass-panel border-cyan-500/30 bg-cyan-500/10 flex w-full max-w-full min-w-0 items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-xs text-cyan-900 dark:text-cyan-200"
                     >
                       <div className="flex items-center gap-2">
-                        <Sparkles className="size-4 text-cyan-400 shrink-0" />
+                        <Sparkles className="size-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
                         <span>
                           <strong>AI Image Mode Active:</strong> Prompt to create or attach an image
                           to edit with <code>gemini-3.1-flash-image-preview</code>.
@@ -610,7 +602,7 @@ function BravuraApp() {
                       <button
                         type="button"
                         onClick={() => setImageStudioOpen(true)}
-                        className="shrink-0 rounded-xl bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-1 text-[11px] font-medium text-cyan-200 hover:bg-cyan-500/30 transition-colors cursor-pointer"
+                        className="shrink-0 rounded-xl bg-cyan-500/15 dark:bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-1 text-[11px] font-semibold text-cyan-800 dark:text-cyan-200 hover:bg-cyan-500/25 transition-colors cursor-pointer"
                       >
                         Open Studio
                       </button>
@@ -643,9 +635,9 @@ function BravuraApp() {
             {/* Prompt Composer anchored cleanly at bottom */}
             <div className="relative mx-auto w-full max-w-4xl shrink-0 pt-2 pb-1 sm:pt-3 z-30">
               {isImageMode && conversation && (
-                <div className="glass-panel border-cyan-500/30 bg-cyan-500/10 mb-3 flex items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-xs text-cyan-200">
+                <div className="glass-panel border-cyan-500/30 bg-cyan-500/10 mb-3 flex items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-xs text-cyan-900 dark:text-cyan-200">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="size-4 text-cyan-400 shrink-0" />
+                    <Sparkles className="size-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
                     <span>
                       <strong>AI Image Mode:</strong> Enter any prompt to generate with{" "}
                       <code>gemini-3.1-flash-image-preview</code>, or attach an image to edit it.
@@ -654,7 +646,7 @@ function BravuraApp() {
                   <button
                     type="button"
                     onClick={() => setImageStudioOpen(true)}
-                    className="shrink-0 rounded-xl bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-1 text-[11px] font-medium text-cyan-200 hover:bg-cyan-500/30 transition-colors cursor-pointer"
+                    className="shrink-0 rounded-xl bg-cyan-500/15 dark:bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-1 text-[11px] font-semibold text-cyan-800 dark:text-cyan-200 hover:bg-cyan-500/25 transition-colors cursor-pointer"
                   >
                     Open Studio Controls
                   </button>

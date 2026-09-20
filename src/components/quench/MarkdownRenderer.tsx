@@ -106,47 +106,49 @@ function ChatImage({ src, alt }: { src?: string; alt?: string }) {
 
 export function MarkdownRenderer({ content }: { content: string }) {
   return (
-    <div className="text-[15px] sm:text-[15.5px] leading-[1.65] text-[#ececf1] break-words">
+    <div className="text-[15px] sm:text-[15.5px] leading-[1.65] text-foreground break-words">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           h1: (p) => (
             <h1
-              className="mt-4 mb-2 text-[17px] sm:text-[18px] font-bold text-white tracking-tight"
+              className="mt-4 mb-2 text-[17px] sm:text-[18px] font-bold text-foreground tracking-tight"
               {...p}
             />
           ),
           h2: (p) => (
             <h2
-              className="mt-3.5 mb-1.5 text-[16px] sm:text-[16.5px] font-semibold text-white tracking-tight"
+              className="mt-3.5 mb-1.5 text-[16px] sm:text-[16.5px] font-semibold text-foreground tracking-tight"
               {...p}
             />
           ),
           h3: (p) => (
             <h3
-              className="mt-3 mb-1 text-[15px] sm:text-[15.5px] font-semibold text-white"
+              className="mt-3 mb-1 text-[15px] sm:text-[15.5px] font-semibold text-foreground"
               {...p}
             />
           ),
-          h4: (p) => <h4 className="mt-2.5 mb-1 text-[15px] font-semibold text-white" {...p} />,
-          p: (p) => <p className="mb-3 last:mb-0 text-[#ececf1] leading-[1.65]" {...p} />,
-          strong: (p) => <strong className="font-semibold text-white" {...p} />,
+          h4: (p) => (
+            <h4 className="mt-2.5 mb-1 text-[15px] font-semibold text-foreground" {...p} />
+          ),
+          p: (p) => <p className="mb-3 last:mb-0 text-foreground/90 leading-[1.65]" {...p} />,
+          strong: (p) => <strong className="font-semibold text-foreground" {...p} />,
           ul: (p) => (
             <ul
-              className="marker:text-zinc-400 mb-3 list-disc space-y-1 pl-5 leading-[1.65]"
+              className="marker:text-muted-foreground mb-3 list-disc space-y-1 pl-5 leading-[1.65]"
               {...p}
             />
           ),
           ol: (p) => (
             <ol
-              className="marker:text-zinc-400 mb-3 list-decimal space-y-1 pl-5 leading-[1.65]"
+              className="marker:text-muted-foreground mb-3 list-decimal space-y-1 pl-5 leading-[1.65]"
               {...p}
             />
           ),
-          li: (p) => <li className="pl-0.5 text-[#ececf1]" {...p} />,
+          li: (p) => <li className="pl-0.5 text-foreground/90" {...p} />,
           a: (p) => (
             <a
-              className="text-cyan-400 hover:text-cyan-300 underline underline-offset-4"
+              className="text-cyan-600 dark:text-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-300 underline underline-offset-4"
               target="_blank"
               rel="noreferrer"
               {...p}
@@ -154,19 +156,19 @@ export function MarkdownRenderer({ content }: { content: string }) {
           ),
           blockquote: (p) => (
             <blockquote
-              className="border-cyan-500/60 text-zinc-300 my-2.5 border-l-2 pl-3.5 italic"
+              className="border-cyan-500/60 text-muted-foreground my-2.5 border-l-2 pl-3.5 italic"
               {...p}
             />
           ),
           table: (p) => (
-            <div className="border-white/10 my-3 overflow-x-auto rounded-xl border bg-[#16171d]">
+            <div className="border-border my-3 overflow-x-auto rounded-xl border bg-card/60">
               <table className="w-full text-sm" {...p} />
             </div>
           ),
           th: (p) => (
-            <th className="bg-white/5 px-3 py-2 text-left font-medium text-white" {...p} />
+            <th className="bg-muted/50 px-3 py-2 text-left font-semibold text-foreground" {...p} />
           ),
-          td: (p) => <td className="border-white/10 border-t px-3 py-2 text-zinc-300" {...p} />,
+          td: (p) => <td className="border-border border-t px-3 py-2 text-foreground/80" {...p} />,
           img: ({ src, alt }) => <ChatImage src={src} alt={alt} />,
           code: ({ className, children, ...rest }) => {
             const isBlock = /language-/.test(className ?? "");
@@ -179,7 +181,7 @@ export function MarkdownRenderer({ content }: { content: string }) {
             }
             return (
               <code
-                className="rounded-md bg-[#24252e] border border-white/10 px-1.5 py-0.5 font-mono text-[13px] text-[#ececf1] mx-0.5 inline-block font-normal"
+                className="rounded-md bg-muted border border-border px-1.5 py-0.5 font-mono text-[13px] text-foreground mx-0.5 inline-block font-normal"
                 {...rest}
               >
                 {children}

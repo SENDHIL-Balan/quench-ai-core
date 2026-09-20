@@ -35,7 +35,7 @@ const SEARCH_KEY = "quench-tool-websearch";
 const DEEPTHINK_KEY = "quench-tool-deepthink";
 
 function ToolsPage() {
-  const [webSearch, setWebSearch] = useState(true);
+  const [webSearch, setWebSearch] = useState(false);
   const [deepThink, setDeepThink] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
@@ -43,7 +43,7 @@ function ToolsPage() {
   useEffect(() => {
     try {
       const storedSearch = window.localStorage.getItem(SEARCH_KEY);
-      setWebSearch(storedSearch === null ? true : storedSearch === "1");
+      setWebSearch(storedSearch === "1");
       setDeepThink(window.localStorage.getItem(DEEPTHINK_KEY) === "1");
     } catch {
       /* storage unavailable */
@@ -137,8 +137,8 @@ function ToolsPage() {
 
                 <div className="relative min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-white">AI Image Studio</span>
-                    <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-semibold text-cyan-300 border border-cyan-500/30">
+                    <span className="text-sm font-semibold text-foreground">AI Image Studio</span>
+                    <span className="rounded-full bg-cyan-500/15 dark:bg-cyan-500/20 px-2 py-0.5 text-[10px] font-semibold text-cyan-800 dark:text-cyan-300 border border-cyan-500/30">
                       gemini-3.1-flash-image-preview
                     </span>
                   </div>
@@ -146,7 +146,7 @@ function ToolsPage() {
                     Generate images from natural prompts, choose aspect ratios, apply style presets,
                     or upload existing images to edit and transform with AI.
                   </p>
-                  <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-cyan-300 group-hover:text-cyan-200">
+                  <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-cyan-700 dark:text-cyan-300 group-hover:text-cyan-800 dark:group-hover:text-cyan-200">
                     Launch Image Studio <ArrowUpRight className="size-3.5" />
                   </span>
                 </div>
@@ -156,7 +156,7 @@ function ToolsPage() {
               <button
                 type="button"
                 onClick={() => setPdfOpen(true)}
-                className="group hover:border-emerald-400/40 relative flex items-start gap-4 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-left transition-all hover:bg-white/[0.06] cursor-pointer"
+                className="group hover:border-emerald-400/40 relative flex items-start gap-4 overflow-hidden rounded-2xl border border-border bg-card/75 p-5 text-left transition-all hover:bg-card/90 cursor-pointer"
               >
                 <div
                   className="pointer-events-none absolute -top-16 -right-16 size-44 rounded-full opacity-35 blur-3xl transition-opacity group-hover:opacity-70"
@@ -166,14 +166,16 @@ function ToolsPage() {
                   }}
                 />
 
-                <div className="relative flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 ring-1 ring-emerald-400/30 text-emerald-300">
+                <div className="relative flex size-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 ring-1 ring-emerald-400/30 text-emerald-700 dark:text-emerald-300">
                   <FileText className="size-6" />
                 </div>
 
                 <div className="relative min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-semibold text-white">AI PDF Document Studio</span>
-                    <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 border border-emerald-500/30">
+                    <span className="text-sm font-semibold text-foreground">
+                      AI PDF Document Studio
+                    </span>
+                    <span className="rounded-full bg-emerald-500/15 dark:bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:text-emerald-300 border border-emerald-500/30">
                       Prompt to PDF
                     </span>
                   </div>
@@ -181,7 +183,7 @@ function ToolsPage() {
                     Turn prompts into structured, publication-ready PDF documents: business
                     proposals, study guides, invoices, technical specs, and executive reviews.
                   </p>
-                  <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-emerald-300 group-hover:text-emerald-200">
+                  <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 group-hover:text-emerald-800 dark:group-hover:text-emerald-200">
                     Launch PDF Studio <ArrowUpRight className="size-3.5" />
                   </span>
                 </div>
@@ -192,23 +194,23 @@ function ToolsPage() {
           {/* Voice AI Section */}
           <section className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <p className="text-xs tracking-[0.2em] text-cyan-200/60 uppercase">
+              <p className="text-xs tracking-[0.2em] text-muted-foreground font-semibold uppercase">
                 Voice Agentic AI
               </p>
-              <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-                <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
                 Live APIs
               </span>
             </div>
 
             <div className="glass-panel border-primary/30 flex items-start gap-4 rounded-2xl p-4">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/30">
                 <Mic className="size-5" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-semibold">Bravura Speech-to-Text</p>
-                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
                     Connected
                   </span>
                 </div>
@@ -220,7 +222,7 @@ function ToolsPage() {
             </div>
 
             <div className="glass-panel border-primary/30 flex items-start gap-4 rounded-2xl p-4">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-400 ring-1 ring-cyan-500/30">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-600 dark:text-cyan-400 ring-1 ring-cyan-500/30">
                 <Volume2 className="size-5" />
               </div>
               <div className="min-w-0 flex-1">
@@ -228,7 +230,7 @@ function ToolsPage() {
                   <p className="text-sm font-semibold">
                     Bravura Live Voice Synthesis & Two-Way Agent
                   </p>
-                  <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">
+                  <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-700 dark:text-cyan-300">
                     Connected
                   </span>
                 </div>
@@ -243,7 +245,7 @@ function ToolsPage() {
 
           {/* Reasoning & Search Section */}
           <section className="flex flex-col gap-3 pb-8">
-            <p className="text-xs tracking-[0.2em] text-cyan-200/60 uppercase">
+            <p className="text-xs tracking-[0.2em] text-muted-foreground font-semibold uppercase">
               Reasoning & Search
             </p>
 

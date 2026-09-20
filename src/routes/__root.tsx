@@ -112,6 +112,11 @@ function RootShell({ children }: { children: ReactNode }) {
     <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
       <head>
         <HeadContent />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("bravura-theme");if(t==="light"){document.documentElement.classList.remove("dark");document.documentElement.classList.add("light");document.documentElement.style.colorScheme="light";}else{document.documentElement.classList.add("dark");document.documentElement.classList.remove("light");document.documentElement.style.colorScheme="dark";}}catch(e){}})();`,
+          }}
+        />
       </head>
       <body>
         {children}
