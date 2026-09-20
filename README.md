@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Bravura AI Core
 
 BRAVURA AI — REAL WORKING BASE AI AGENT + EXACT UI/UX
@@ -5,12 +6,25 @@ BRAVURA AI — REAL WORKING BASE AI AGENT + EXACT UI/UX
 IMPORTANT:
 
 Build Bravura AI as a REAL WORKING BASE AI AGENT.
+=======
+# Quench AI Core
+
+QUENCH AI — REAL WORKING BASE AI AGENT + EXACT UI/UX
+
+IMPORTANT:
+
+Build Quench AI as a REAL WORKING BASE AI AGENT.
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 This is NOT just a static UI mockup.
 
 I want two things in this first version:
 
+<<<<<<< HEAD
 1. The frontend must closely reproduce the attached Bravura AI reference image.
+=======
+1. The frontend must closely reproduce the attached Quench AI reference image.
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 2. The application must contain a basic REAL AI agent that can receive a user prompt, reason about it, and return an actual AI-generated response.
 
@@ -24,11 +38,19 @@ CORE REQUIREMENT
 
 ==================================================
 
+<<<<<<< HEAD
 Build a functional MVP of Bravura AI.
 
 The user should be able to:
 
 1. Open Bravura AI.
+=======
+Build a functional MVP of Quench AI.
+
+The user should be able to:
+
+1. Open Quench AI.
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 2. Type a prompt.
 
@@ -40,7 +62,11 @@ The user should be able to:
 
 6. The LLM generates a real response.
 
+<<<<<<< HEAD
 7. The response appears in the Bravura AI chat/workspace.
+=======
+7. The response appears in the Quench AI chat/workspace.
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 8. The interface shows loading/thinking state while the AI is responding.
 
@@ -64,6 +90,7 @@ Prefer a simple integration that can later be replaced or expanded.
 
 Use:
 
+<<<<<<< HEAD
 Groq API
 
 Design the code so the LLM provider can later be replaced with:
@@ -73,6 +100,17 @@ Design the code so the LLM provider can later be replaced with:
 - Anthropic
 
 - Other providers can be added behind the provider boundary later.
+=======
+Google Gemini API
+
+Design the code so the LLM provider can later be replaced with:
+
+- OpenAI
+
+- Anthropic
+
+- Gemini
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 - Open-source models
 
@@ -84,7 +122,11 @@ Use environment variables / secure server-side handling.
 
 Create an appropriate environment variable such as:
 
+<<<<<<< HEAD
 GROQ_API_KEY
+=======
+GEMINI_API_KEY
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 Never expose the secret API key to the browser.
 
@@ -118,7 +160,11 @@ Response
 
 User
 
+<<<<<<< HEAD
 The agent should have a basic system instruction establishing Bravura AI as an intelligent assistant.
+=======
+The agent should have a basic system instruction establishing Quench AI as an intelligent assistant.
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 The agent should be capable of:
 
@@ -248,11 +294,19 @@ Display on the right or appropriate modern chat alignment.
 
 Assistant response:
 
+<<<<<<< HEAD
 Display in a premium Bravura AI assistant message panel.
 
 Include:
 
 - Bravura orb/avatar
+=======
+Display in a premium Quench AI assistant message panel.
+
+Include:
+
+- Quench orb/avatar
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 - response text
 
@@ -284,7 +338,11 @@ STREAMING
 
 ==================================================
 
+<<<<<<< HEAD
 If supported by the selected Groq integration, implement streaming responses.
+=======
+If supported by the selected Gemini integration, implement streaming responses.
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 The user should see the response being generated progressively.
 
@@ -374,7 +432,11 @@ Recreate the following visual characteristics closely:
 
 - large flowing cyan/blue/green curves
 
+<<<<<<< HEAD
 - futuristic Bravura AI orb
+=======
+- futuristic Quench AI orb
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 - premium dark UI
 
@@ -394,7 +456,11 @@ Recreate the following visual characteristics closely:
 
 Do NOT create a generic ChatGPT clone.
 
+<<<<<<< HEAD
 Bravura AI should have its own identity.
+=======
+Quench AI should have its own identity.
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 ==================================================
 
@@ -418,7 +484,11 @@ LEFT SIDEBAR
 
 Logo:
 
+<<<<<<< HEAD
 BRAVURA AI
+=======
+QUENCH AI
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 Navigation:
 
@@ -500,7 +570,11 @@ Current Agent Run
 
 Recent Projects
 
+<<<<<<< HEAD
 Bravura Core
+=======
+Quench Core
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 The "Current Agent Run" panel should reflect REAL application state.
 
@@ -616,7 +690,11 @@ SECURITY
 
 IMPORTANT:
 
+<<<<<<< HEAD
 Never put GROQ_API_KEY directly in React client-side code.
+=======
+Never put GEMINI_API_KEY directly in React client-side code.
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 Use secure server-side environment handling.
 
@@ -656,7 +734,11 @@ LLM Provider
 
     ↓
 
+<<<<<<< HEAD
 Groq
+=======
+Gemini
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 Keep LLM-specific logic isolated from the UI.
 
@@ -670,7 +752,11 @@ agent/
 
 lib/
 
+<<<<<<< HEAD
 Do not tightly couple React components directly to Groq.
+=======
+Do not tightly couple React components directly to Gemini.
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 ==================================================
 
@@ -876,9 +962,15 @@ Do NOT build:
 
 ONLY BUILD:
 
+<<<<<<< HEAD
 ✅ Exact Bravura AI frontend
 
 ✅ Real Groq LLM connection
+=======
+✅ Exact Quench AI frontend
+
+✅ Real Gemini LLM connection
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 ✅ Basic agent
 
@@ -904,7 +996,11 @@ FINAL OBJECTIVE
 
 The finished application should feel like:
 
+<<<<<<< HEAD
 BRAVURA AI
+=======
+QUENCH AI
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 A real, functioning AI assistant with a premium futuristic interface.
 
@@ -922,7 +1018,11 @@ The user must be able to open the application, type:
 
 "Explain machine learning to me like I'm a beginner."
 
+<<<<<<< HEAD
 and receive a REAL response from Groq inside the Bravura AI interface.
+=======
+and receive a REAL response from Gemini inside the Quench AI interface.
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 Build the frontend and base AI agent now.
 

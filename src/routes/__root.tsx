@@ -77,10 +77,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
+<<<<<<< HEAD
       { title: "Bravura AI" },
       { name: "description", content: "Curiosity, fully satisfied." },
       { name: "author", content: "Bravura AI" },
       { property: "og:title", content: "Bravura AI" },
+=======
+      { title: "Quench AI" },
+      { name: "description", content: "Curiosity, fully satisfied." },
+      { name: "author", content: "Quench AI" },
+      { property: "og:title", content: "Quench AI" },
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
       { property: "og:description", content: "Curiosity, fully satisfied." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

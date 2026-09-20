@@ -30,9 +30,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+<<<<<<< HEAD
 
 .vercel
 .env*
 .env
 .env.local
 test-*.mp3
+=======
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39

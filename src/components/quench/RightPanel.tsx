@@ -4,7 +4,11 @@ import { QuenchOrb } from "./QuenchOrb";
 import type { ModeId } from "@/lib/agent/modes";
 
 const PROJECTS = [
+<<<<<<< HEAD
   { name: "Bravura AI", sub: "AI Agent Platform", icon: LayoutGrid },
+=======
+  { name: "Quench AI", sub: "AI Agent Platform", icon: LayoutGrid },
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
   { name: "Software Engineer Agent", sub: "Autonomous Development", icon: Bot },
   { name: "Data Intelligence", sub: "Analytics Workspace", icon: LineChart },
 ];
@@ -52,11 +56,19 @@ export function RightPanel({
         <div className="mb-4 flex items-center gap-2">
           <QuenchOrb className="size-5" />
           <p className="text-xs font-semibold tracking-[0.18em]">
+<<<<<<< HEAD
             BRAVURA <span className="text-gradient-brand">CORE</span>
           </p>
         </div>
         <h3 className="max-w-[70%] text-xl leading-snug font-semibold">Turn ideas into impact.</h3>
         <p className="text-gradient-brand mt-1 text-sm font-medium">With Bravura AI.</p>
+=======
+            QUENCH <span className="text-gradient-brand">CORE</span>
+          </p>
+        </div>
+        <h3 className="max-w-[70%] text-xl leading-snug font-semibold">Turn ideas into impact.</h3>
+        <p className="text-gradient-brand mt-1 text-sm font-medium">With Quench AI.</p>
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
         <p className="text-muted-foreground mt-5 text-[10px] tracking-[0.22em]">
           A SMARTER
           <br />
@@ -65,7 +77,11 @@ export function RightPanel({
         <QuenchOrb className="absolute right-4 bottom-10 size-24 opacity-70" />
         <button
           className="border-border bg-card/70 hover:border-primary/40 absolute right-4 bottom-4 flex size-9 items-center justify-center rounded-full border transition-colors"
+<<<<<<< HEAD
             aria-label="Explore Bravura Core"
+=======
+          aria-label="Explore Quench Core"
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
         >
           <ArrowRight className="size-4" />
         </button>

@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { useEffect, useRef, useState } from "react";
 import {
   Plus,
@@ -28,12 +29,18 @@ const MODE_ICONS: Record<ModeId, typeof MessageSquare> = {
   code: Code2,
   image: ImageIcon,
 };
+=======
+import { useEffect, useRef } from "react";
+import { Plus, Search, BrainCircuit, Paperclip, ArrowUp, Square } from "lucide-react";
+import { cn } from "@/lib/utils";
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 export function PromptComposer({
   value,
   onChange,
   onSubmit,
   onStop,
+<<<<<<< HEAD
   deepThink,
   onToggleDeepThink,
   webSearch,
@@ -41,6 +48,8 @@ export function PromptComposer({
   onTranscribed,
   mode,
   onModeChange,
+=======
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
   busy,
   disabled,
   error,
@@ -48,6 +57,7 @@ export function PromptComposer({
 }: {
   value: string;
   onChange: (v: string) => void;
+<<<<<<< HEAD
   onSubmit: (files?: File[]) => void;
   onStop: () => void;
   deepThink: boolean;
@@ -57,17 +67,24 @@ export function PromptComposer({
    onTranscribed: (text: string) => void;
   mode?: ModeId;
   onModeChange?: (mode: ModeId) => void;
+=======
+  onSubmit: () => void;
+  onStop: () => void;
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
   busy: boolean;
   disabled?: boolean;
   error?: string | null;
   className?: string;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+<<<<<<< HEAD
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+=======
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
   useEffect(() => {
     if (!busy) ref.current?.focus();
@@ -77,6 +94,7 @@ export function PromptComposer({
     const el = ref.current;
     if (!el) return;
     el.style.height = "auto";
+<<<<<<< HEAD
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
   }, [value]);
 
@@ -109,15 +127,25 @@ export function PromptComposer({
   const currentMode: ModeId = mode ?? "chat";
   const modesEnabled = typeof onModeChange === "function";
   const hasContent = value.trim().length > 0 || files.length > 0;
+=======
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [value]);
+
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
   return (
     <div className={cn("w-full", className)}>
       <div
         className={cn(
+<<<<<<< HEAD
           "glass-panel rounded-2xl p-3 transition-shadow",
+=======
+          "glass-panel rounded-3xl p-4 transition-shadow",
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
           busy && "glow-ring",
           error && "border-destructive/60",
         )}
       >
+<<<<<<< HEAD
         {files.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
             {files.map((file, index) => (
@@ -137,12 +165,18 @@ export function PromptComposer({
         <textarea
           ref={ref}
           rows={1}
+=======
+        <textarea
+          ref={ref}
+          rows={2}
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
+<<<<<<< HEAD
               submit();
             }
           }}
@@ -313,6 +347,41 @@ export function PromptComposer({
           )}
         </div>
       </div>
+=======
+              onSubmit();
+            }
+          }}
+          placeholder="Ask anything..."
+          className="placeholder:text-muted-foreground max-h-[200px] w-full resize-none bg-transparent px-1 text-[15px] leading-relaxed outline-none disabled:opacity-60"
+        />
+
+        <div className="mt-3 flex items-center gap-2">
+          <ComposerChip icon={Plus} label="" />
+          <ComposerChip icon={Search} label="Search" />
+          <ComposerChip icon={BrainCircuit} label="Deep Think" />
+          <ComposerChip icon={Paperclip} label="Attach" />
+
+          <button
+            onClick={busy ? onStop : onSubmit}
+            disabled={!busy && (disabled || value.trim().length === 0)}
+            aria-label={busy ? "Stop generating" : "Send message"}
+            className="bg-gradient-brand text-primary-foreground glow-ring ml-auto flex size-12 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:scale-100 disabled:opacity-40"
+          >
+            {busy ? <Square className="size-4 fill-current" /> : <ArrowUp className="size-5" />}
+          </button>
+        </div>
+      </div>
+
+      {error ? (
+        <p className="text-destructive mt-2 px-2 text-sm" role="alert">
+          {error}
+        </p>
+      ) : (
+        <p className="text-muted-foreground mt-2 px-2 text-xs">
+          Enter to send · Shift + Enter for a new line
+        </p>
+      )}
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
     </div>
   );
 }
@@ -320,6 +389,7 @@ export function PromptComposer({
 function ComposerChip({
   icon: Icon,
   label,
+<<<<<<< HEAD
   active,
   onClick,
 }: {
@@ -327,10 +397,16 @@ function ComposerChip({
   label: string;
   active?: boolean;
   onClick?: () => void;
+=======
+}: {
+  icon: typeof Plus;
+  label: string;
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 }) {
   return (
     <button
       type="button"
+<<<<<<< HEAD
       onClick={onClick}
             aria-pressed={
         label === "Deep Think" || label === "Search" ? active : undefined
@@ -346,3 +422,15 @@ function ComposerChip({
     </button>
   );
 }
+=======
+      className={cn(
+        "border-border bg-card/60 text-muted-foreground hover:text-foreground hover:border-primary/30 flex items-center gap-2 rounded-full border transition-colors",
+        label ? "hidden px-3.5 py-2 text-xs sm:flex sm:text-sm" : "size-10 justify-center",
+      )}
+    >
+      <Icon className="size-4" />
+      {label}
+    </button>
+  );
+}
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39

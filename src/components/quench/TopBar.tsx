@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 import { Bell, Menu, PanelRight } from "lucide-react";
+=======
+import { Bell, Menu, Search, PanelRight } from "lucide-react";
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 
 export function TopBar({
   onToggleSidebar,
@@ -17,6 +21,17 @@ export function TopBar({
         <Menu className="size-5" />
       </button>
 
+<<<<<<< HEAD
+=======
+      <label className="glass-panel flex h-11 flex-1 items-center gap-3 rounded-full px-4">
+        <Search className="text-muted-foreground size-4 shrink-0" />
+        <input
+          className="placeholder:text-muted-foreground w-full bg-transparent text-sm outline-none"
+          placeholder="Search conversations, tasks, or anything..."
+        />
+      </label>
+
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
       <button
         className="glass-panel text-muted-foreground hover:text-foreground relative flex size-11 items-center justify-center rounded-full"
         aria-label="Notifications"

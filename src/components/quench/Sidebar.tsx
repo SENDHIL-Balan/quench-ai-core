@@ -7,6 +7,7 @@ import {
   Plug,
   Plus,
   Crown,
+<<<<<<< HEAD
   ChevronRight,
   LogIn,
   LogOut,
@@ -95,15 +96,53 @@ export function Sidebar({
         <aside
       className={cn(
         "glass-panel flex min-h-full w-full flex-col gap-6 overflow-y-auto rounded-3xl p-4 lg:h-full lg:w-[260px]",
+=======
+  MoreVertical,
+  ChevronRight,
+} from "lucide-react";
+import { QuenchOrb } from "./QuenchOrb";
+import { cn } from "@/lib/utils";
+
+const NAV = [
+  { label: "Explore", icon: Compass },
+  { label: "Library", icon: BookMarked },
+  { label: "Agents", icon: Bot },
+  { label: "Tools", icon: Wrench },
+  { label: "Projects", icon: Folder },
+  { label: "Integrations", icon: Plug },
+];
+
+export function Sidebar({
+  onNewChat,
+  className,
+}: {
+  onNewChat: () => void;
+  className?: string;
+}) {
+  return (
+    <aside
+      className={cn(
+        "glass-panel flex h-full w-full flex-col gap-6 rounded-3xl p-4 lg:w-[260px]",
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
         className,
       )}
     >
       <div className="flex items-center gap-3 px-1 pt-2">
+<<<<<<< HEAD
         <img
           src="/ai-logo.jpg"
           alt="AI logo"
           className="h-20 w-auto max-w-full rounded-xl object-contain"
         />
+=======
+        <QuenchOrb className="size-11" />
+        <div>
+          <p className="text-[1.35rem] leading-none font-semibold tracking-wide">
+            QUENCH <span className="text-gradient-brand">AI</span>
+          </p>
+          <p className="text-muted-foreground mt-1 text-[11px]">Curiosity, fully satisfied.</p>
+        </div>
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
       </div>
 
       <button
@@ -117,6 +156,7 @@ export function Sidebar({
       </button>
 
       <nav className="flex flex-col gap-1">
+<<<<<<< HEAD
         {NAV.map(({ label, icon: Icon, to }) => {
           const baseClass =
             "text-muted-foreground hover:bg-accent/60 hover:text-foreground flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors";
@@ -151,6 +191,17 @@ export function Sidebar({
           <History className="size-[18px]" />
           History
         </button>
+=======
+        {NAV.map(({ label, icon: Icon }) => (
+          <button
+            key={label}
+            className="text-muted-foreground hover:bg-accent/60 hover:text-foreground flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors"
+          >
+            <Icon className="size-[18px]" />
+            {label}
+          </button>
+        ))}
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
       </nav>
 
       <div className="mt-auto flex flex-col gap-3">
@@ -163,6 +214,7 @@ export function Sidebar({
           <ChevronRight className="text-muted-foreground size-4" />
         </button>
 
+<<<<<<< HEAD
         {user ? (
           <div className="border-border/60 flex items-center gap-3 border-t px-1 pt-3">
             {user.avatarUrl ? (
@@ -208,3 +260,19 @@ export function Sidebar({
     </aside>
   );
 }
+=======
+        <div className="border-border/60 flex items-center gap-3 border-t px-1 pt-3">
+          <span className="bg-gradient-brand text-primary-foreground flex size-9 items-center justify-center rounded-full text-sm font-semibold">
+            A
+          </span>
+          <span className="flex-1">
+            <span className="block text-sm font-medium">Aditya</span>
+            <span className="text-muted-foreground block text-xs">Free Plan</span>
+          </span>
+          <MoreVertical className="text-muted-foreground size-4" />
+        </div>
+      </div>
+    </aside>
+  );
+}
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39

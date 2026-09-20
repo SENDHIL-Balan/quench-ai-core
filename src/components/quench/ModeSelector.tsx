@@ -1,4 +1,7 @@
+<<<<<<< HEAD
 import { useState } from "react";
+=======
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 import {
   MessageSquare,
   Search,
@@ -6,7 +9,11 @@ import {
   BarChart3,
   Code2,
   Image as ImageIcon,
+<<<<<<< HEAD
   ChevronDown,
+=======
+  MoreHorizontal,
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 } from "lucide-react";
 import { AGENT_MODES, VISIBLE_MODES, type ModeId } from "@/lib/agent/modes";
 import { cn } from "@/lib/utils";
@@ -18,6 +25,10 @@ const ICONS: Record<ModeId, typeof MessageSquare> = {
   analyze: BarChart3,
   code: Code2,
   image: ImageIcon,
+<<<<<<< HEAD
+=======
+  more: MoreHorizontal,
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
 };
 
 export function ModeSelector({
@@ -29,6 +40,7 @@ export function ModeSelector({
   onChange: (mode: ModeId) => void;
   className?: string;
 }) {
+<<<<<<< HEAD
   const [open, setOpen] = useState(false);
   const ActiveIcon = ICONS[mode];
 
@@ -79,6 +91,30 @@ export function ModeSelector({
           })}
         </div>
       )}
+=======
+  return (
+    <div className={cn("flex flex-wrap justify-center gap-2 lg:flex-nowrap", className)}>
+      {VISIBLE_MODES.map((id) => {
+        const Icon = ICONS[id];
+        const active = mode === id;
+        return (
+          <button
+            key={id}
+            onClick={() => onChange(id)}
+            title={AGENT_MODES[id].hint}
+            className={cn(
+              "flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm transition-all",
+              active
+                ? "glow-ring border-primary/40 bg-primary/15 text-foreground"
+                : "border-border bg-card/60 text-muted-foreground hover:text-foreground hover:border-primary/25",
+            )}
+          >
+            <Icon className={cn("size-4", active && "text-primary")} />
+            {AGENT_MODES[id].label}
+          </button>
+        );
+      })}
+>>>>>>> 139dbab44bd11806e24f3bbbca6f38a5e766ff39
     </div>
   );
 }
