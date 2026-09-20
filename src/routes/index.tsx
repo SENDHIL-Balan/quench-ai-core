@@ -255,9 +255,15 @@ function BravuraApp() {
   }, [messages, activeChatId, authUser, status]);
 
   useEffect(() => {
-    if (!voiceSetting.autoSpeak || status !== "ready" || messages.length === 0) return;
+    if (liveVoiceModalOpen || !voiceSetting.autoSpeak || status !== "ready" || messages.length === 0) return;
     const last = messages[messages.length - 1];
-    if (last && last.role === "assistant" && last.id !== lastSpokenMsgIdRef.current) {
+    if (!last || last.role !== "assistant") return;
+    // Never auto-speak messages produced inside the live voice session (it speaks internally)
+    if (last.id.startsWith("live-assistant-")) {
+      lastSpokenMsgIdRef.current = last.id;
+      return;
+    }
+    if (last.id !== lastSpokenMsgIdRef.current) {
       const text = messageText(last);
       if (text) {
         lastSpokenMsgIdRef.current = last.id;
@@ -269,7 +275,7 @@ function BravuraApp() {
         });
       }
     }
-  }, [status, messages, voiceSetting, speak]);
+  }, [liveVoiceModalOpen, status, messages, voiceSetting, speak]);
 
   const lastAssistantHasText =
     messages.length > 0 &&
@@ -658,7 +664,10 @@ function BravuraApp() {
                 onSubmit={(files) => void submit(undefined, files)}
                 onStop={stop}
                 onTranscribed={handleTranscribed}
-                onOpenLiveVoice={() => setLiveVoiceModalOpen(true)}
+                onOpenLiveVoice={() => {
+                  stopSpeech();
+                  setLiveVoiceModalOpen(true);
+                }}
                 isLiveVoiceActive={liveVoiceModalOpen}
                 onOpenImageStudio={() => setImageStudioOpen(true)}
                 onOpenPdfStudio={() => setPdfStudioOpen(true)}
@@ -817,7 +826,10 @@ function BravuraApp() {
       {/* Live Voice Agent interactive conversation modal */}
       <LiveVoiceAgentModal
         isOpen={liveVoiceModalOpen}
-        onClose={() => setLiveVoiceModalOpen(false)}
+        onClose={() => {
+          stopSpeech();
+          setLiveVoiceModalOpen(false);
+        }}
         voiceSetting={voiceSetting}
         onVoiceSettingChange={(newSetting) => {
           setVoiceSetting(newSetting);
@@ -828,6 +840,8 @@ function BravuraApp() {
           }
         }}
         onTranscriptReady={(userText, assistantReply) => {
+          const assistantMsgId = `live-assistant-${Date.now() + 1}`;
+          lastSpokenMsgIdRef.current = assistantMsgId;
           setMessages((prev) => [
             ...prev,
             {
@@ -836,7 +850,7 @@ function BravuraApp() {
               parts: [{ type: "text", text: userText }],
             },
             {
-              id: `live-assistant-${Date.now() + 1}`,
+              id: assistantMsgId,
               role: "assistant",
               parts: [{ type: "text", text: assistantReply }],
             },

@@ -92,6 +92,9 @@ export function LiveVoiceAgentModal({
   const recorderRef = useRef<VoiceRecorder | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
+  const audioAbortRef = useRef<AbortController | null>(null);
+  const audioSessionIdRef = useRef<number>(0);
+  const isTurnActiveRef = useRef<boolean>(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const freqDataRef = useRef<Uint8Array | null>(null);
   const animFrameRef = useRef<number | null>(null);
@@ -100,7 +103,15 @@ export function LiveVoiceAgentModal({
 
   // Clean audio helper
   const cleanupAudio = useCallback(() => {
+    if (audioAbortRef.current) {
+      audioAbortRef.current.abort();
+      audioAbortRef.current = null;
+    }
+    audioSessionIdRef.current += 1;
+
     if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
       audioRef.current.pause();
       audioRef.current.src = "";
       audioRef.current = null;
@@ -193,10 +204,17 @@ export function LiveVoiceAgentModal({
   const processUserSpeech = useCallback(
     async (spokenText: string) => {
       if (!isComponentMounted.current || !activeSessionRef.current) return;
+      if (isTurnActiveRef.current) return;
       if (!spokenText.trim()) {
         void startListening();
         return;
       }
+
+      isTurnActiveRef.current = true;
+      cleanupAudio();
+      const currentSessionId = audioSessionIdRef.current;
+      const abortController = new AbortController();
+      audioAbortRef.current = abortController;
 
       setUserTranscript(spokenText);
       setLiveState("thinking");
@@ -266,7 +284,14 @@ export function LiveVoiceAgentModal({
           "I heard your question, but encountered a connection issue. Please try speaking again.";
       }
 
-      if (!isComponentMounted.current || !activeSessionRef.current) return;
+      if (
+        !isComponentMounted.current ||
+        !activeSessionRef.current ||
+        audioSessionIdRef.current !== currentSessionId
+      ) {
+        isTurnActiveRef.current = false;
+        return;
+      }
 
       setAgentResponse(replyText);
       setConversationTurns((prev) => [...prev, { role: "assistant", text: replyText }]);
@@ -284,13 +309,32 @@ export function LiveVoiceAgentModal({
             provider: voiceSetting.provider,
             playbackSpeed: voiceSetting.playbackSpeed,
           }),
+          signal: abortController.signal,
         });
+
+        if (
+          !isComponentMounted.current ||
+          !activeSessionRef.current ||
+          audioSessionIdRef.current !== currentSessionId
+        ) {
+          isTurnActiveRef.current = false;
+          return;
+        }
 
         if (!speakRes.ok) {
           throw new Error("Speech synthesis failed");
         }
 
         const blob = await speakRes.blob();
+        if (
+          !isComponentMounted.current ||
+          !activeSessionRef.current ||
+          audioSessionIdRef.current !== currentSessionId
+        ) {
+          isTurnActiveRef.current = false;
+          return;
+        }
+
         const url = URL.createObjectURL(blob);
         audioUrlRef.current = url;
         const audio = new Audio(url);
@@ -305,9 +349,14 @@ export function LiveVoiceAgentModal({
           void audio.play().catch(reject);
         });
       } catch (err) {
-        console.warn("Speech playback notice:", err);
+        if (audioSessionIdRef.current === currentSessionId && !abortController.signal.aborted) {
+          console.warn("Speech playback notice:", err);
+        }
       } finally {
-        cleanupAudio();
+        if (audioSessionIdRef.current === currentSessionId) {
+          cleanupAudio();
+        }
+        isTurnActiveRef.current = false;
       }
 
       // Automatically cycle back to listening for continuous hands-free conversation!
@@ -323,6 +372,7 @@ export function LiveVoiceAgentModal({
 
   // Stop recording and transcribe user speech
   const stopAndTranscribe = useCallback(async () => {
+    if (isTurnActiveRef.current || !activeSessionRef.current) return;
     const recorder = recorderRef.current;
     if (!recorder) return;
 
@@ -335,6 +385,8 @@ export function LiveVoiceAgentModal({
       return;
     }
     recorderRef.current = null;
+
+    if (!activeSessionRef.current) return;
 
     if (result.blob.size < 1200) {
       // Audio was too short or silence
@@ -384,7 +436,7 @@ export function LiveVoiceAgentModal({
 
   // Start listening to user microphone
   const startListening = useCallback(async () => {
-    if (isMuted) return;
+    if (isMuted || !activeSessionRef.current) return;
     cleanupAudio();
     setErrorMessage(null);
     setLiveState("listening");
@@ -398,6 +450,11 @@ export function LiveVoiceAgentModal({
       silenceMs: 1400,
       silenceThreshold: 0.025,
       maxDurationMs: 45_000,
+      onSilence: () => {
+        if (!isTurnActiveRef.current && activeSessionRef.current) {
+          void stopAndTranscribe();
+        }
+      },
     });
     recorderRef.current = recorder;
 
@@ -408,7 +465,7 @@ export function LiveVoiceAgentModal({
       setLiveState("error");
       setErrorMessage(err instanceof Error ? err.message : "Microphone unavailable.");
     }
-  }, [cleanupAudio, isMuted]);
+  }, [cleanupAudio, isMuted, stopAndTranscribe]);
 
   // Interrupt AI playback immediately and listen
   const handleInterrupt = useCallback(() => {

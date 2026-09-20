@@ -143,6 +143,34 @@ function mapUiMessagesToGeminiContents(messages: UIMessage[]) {
 }
 
 /**
+ * Cleans out any residual robotic AI chatbot artifacts to guarantee 100% human delivery.
+ */
+export function cleanHumanTone(text: string): string {
+  if (!text) return text;
+  let cleaned = text.trim();
+
+  // Strip robotic prefix greetings / canned bot filler at start
+  cleaned = cleaned.replace(
+    /^(?:Certainly[!,.]|Sure thing[!,.]|I'd be glad to help with that[!,.]|I can help with that[!,.]|Great question[!,.]|Sure[!,.]|I would be happy to assist you[!,.]|Certainly, here is the information:?)\s*/i,
+    "",
+  );
+
+  // Strip "As an AI..." self-disclaimers at beginning of response
+  cleaned = cleaned.replace(
+    /^(?:As an AI(?: language model)?|As an artificial intelligence)[^.!\n]*[.!\n]\s*/i,
+    "",
+  );
+
+  // Strip canned chatbot endings (before citations or sources)
+  cleaned = cleaned.replace(
+    /\n*(?:(?:I )?hope this helps!|Let me know if you (?:have|need) (?:any )?(?:other |further )?questions!|Feel free to ask (?:if you need )?anything else!|Is there anything else I can (?:help|assist) (?:you )?with(?: today)?\??|Happy to help!)\s*$/i,
+    "",
+  );
+
+  return cleaned.trim();
+}
+
+/**
  * Attempts real-time search grounding with Gemini 3.5 Flash using the Google Search tool.
  * Returns grounded response text with live web source citations, or null if unauthenticated/unavailable.
  */
@@ -171,11 +199,13 @@ async function tryGeminiSearchGrounding({
       config: {
         systemInstruction,
         tools: [{ googleSearch: {} }],
+        temperature: 0.72,
       },
     });
 
-    let text = response.text?.trim();
-    if (!text) return null;
+    const rawText = response.text?.trim();
+    if (!rawText) return null;
+    let text = cleanHumanTone(rawText);
 
     // Extract real-time search grounding metadata from Gemini response
     const candidate = response.candidates?.[0];
@@ -383,12 +413,14 @@ export async function runBaseAgent({
   }
 
   try {
-    let text = await provider.generateText({
+    const rawGenerated = await provider.generateText({
       systemPrompt: systemInstruction,
       messages,
       deepThink,
       ...(abortSignal ? { abortSignal } : {}),
     });
+
+    let text = cleanHumanTone(rawGenerated);
 
     // If search sources were retrieved and not yet linked in text, append real-time citations
     if (searchSources.length > 0 && !text.includes(searchSources[0].url)) {

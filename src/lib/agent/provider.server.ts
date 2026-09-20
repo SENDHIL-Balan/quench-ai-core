@@ -285,7 +285,7 @@ export class ModelProvider implements LLMProvider {
         system: systemPrompt,
         messages: await mapUiMessagesToGroq(messages),
         maxOutputTokens: maxOutputTokens ?? defaultMaxTokens,
-        temperature: temperature ?? (deepThink ? 0.45 : 0.3),
+        temperature: temperature ?? (deepThink ? 0.55 : 0.72),
         maxRetries: 0,
         ...(abortSignal ? { abortSignal } : {}),
         ...(groqProviderOptions ? { providerOptions: groqProviderOptions } : {}),

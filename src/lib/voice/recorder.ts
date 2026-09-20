@@ -21,6 +21,8 @@ export type RecorderOptions = {
   silenceThreshold?: number;
   /** Maximum recording length in ms. Default 60000 (60s). */
   maxDurationMs?: number;
+  /** Callback triggered when silence threshold has been exceeded */
+  onSilence?: () => void;
 };
 
 export type RecorderResult = {
@@ -180,6 +182,7 @@ export class VoiceRecorder {
           now - this.lastLoudAt > this.options.silenceMs &&
           now - this.startedAt > 500 // don't stop within first 0.5s
         ) {
+          this.options.onSilence?.();
           void this.stop();
           return;
         }

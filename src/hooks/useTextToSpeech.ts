@@ -24,9 +24,21 @@ export function useTextToSpeech(): UseTextToSpeechResult {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const urlRef = useRef<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const currentSessionIdRef = useRef<number>(0);
 
   const cleanup = useCallback(() => {
+    // Abort in-flight synthesis fetch
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    // Invalidate session so pending promises bail out
+    currentSessionIdRef.current += 1;
+
     if (audioRef.current) {
+      audioRef.current.onended = null;
+      audioRef.current.onerror = null;
       audioRef.current.pause();
       audioRef.current.src = "";
       audioRef.current = null;
@@ -49,6 +61,10 @@ export function useTextToSpeech(): UseTextToSpeechResult {
       if (!trimmed) return;
 
       cleanup();
+      const sessionId = currentSessionIdRef.current;
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
       setErrorMessage(null);
       setState("speaking");
       setPlayingId(options.id ?? null);
@@ -66,7 +82,12 @@ export function useTextToSpeech(): UseTextToSpeechResult {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(requestBody),
+          signal: abortController.signal,
         });
+
+        if (currentSessionIdRef.current !== sessionId) {
+          return; // Session aborted or superseded
+        }
 
         if (!response.ok) {
           const detail = (await response.json().catch(() => null)) as { error?: string } | null;
@@ -74,6 +95,10 @@ export function useTextToSpeech(): UseTextToSpeechResult {
         }
 
         const blob = await response.blob();
+        if (currentSessionIdRef.current !== sessionId) {
+          return;
+        }
+
         const url = URL.createObjectURL(blob);
         urlRef.current = url;
 
@@ -89,14 +114,20 @@ export function useTextToSpeech(): UseTextToSpeechResult {
           void audio.play().catch(reject);
         });
 
-        setState("idle");
-        setPlayingId(null);
+        if (currentSessionIdRef.current === sessionId) {
+          setState("idle");
+          setPlayingId(null);
+        }
       } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : "Couldn't play audio.");
-        setState("error");
-        setPlayingId(null);
+        if (currentSessionIdRef.current === sessionId && abortController.signal.aborted !== true) {
+          setErrorMessage(err instanceof Error ? err.message : "Couldn't play audio.");
+          setState("error");
+          setPlayingId(null);
+        }
       } finally {
-        cleanup();
+        if (currentSessionIdRef.current === sessionId) {
+          cleanup();
+        }
       }
     },
     [cleanup],
