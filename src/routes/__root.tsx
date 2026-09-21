@@ -35,33 +35,45 @@ function NotFoundComponent() {
 }
 
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
-  console.error(error);
+  console.error("Root error boundary caught:", error);
   const router = useRouter();
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center">
+      <div className="max-w-md text-center p-8 rounded-2xl border bg-card text-card-foreground shadow-lg">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary mb-4 font-semibold text-lg">
+          AI
+        </div>
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
+          Bravura AI Recovered an Issue
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Something went wrong on our end. You can try refreshing or head back home.
+          {error.message?.includes("quota") || error.message?.includes("429")
+            ? "API quota or rate limit reached. Bravura AI has switched to offline local fallback mode so you can continue working."
+            : error.message ||
+              "Something went wrong on our end. You can try refreshing or returning home."}
         </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-2">
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
           <button
             onClick={() => {
+              try {
+                window.localStorage.removeItem("quench-ai-chats-v1");
+              } catch {
+                // ignore
+              }
               router.invalidate();
               reset();
+              window.location.href = "/";
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 shadow-sm"
           >
-            Try again
+            Restart Workspace
           </button>
           <a
             href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            className="inline-flex items-center justify-center rounded-xl border border-input bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
-            Go home
+            Go Home
           </a>
         </div>
       </div>

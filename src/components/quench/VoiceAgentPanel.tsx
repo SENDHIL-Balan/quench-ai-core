@@ -192,13 +192,19 @@ export function VoiceAgentPanel({
     setTranscript("");
 
     const recorder = new VoiceRecorder({
-      silenceMs: autoSilenceStop ? 2000 : 0,
-      silenceThreshold: 0.02,
+      silenceMs: autoSilenceStop ? 2500 : 0,
+      silenceThreshold: 0.015,
+      maxDurationMs: 60_000,
       onLevel: (level) => {
         setVolumeLevel(level);
       },
       onFrequencyData: (freq) => {
         freqDataRef.current = freq;
+      },
+      onSilence: () => {
+        if (autoSilenceStop) {
+          void handleStop();
+        }
       },
     });
 

@@ -11,12 +11,29 @@ type MicButtonProps = {
 
 type Status = "idle" | "recording" | "transcribing" | "error";
 
+interface BrowserSpeechRecognition {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+}
+
+interface WindowWithSpeech {
+  SpeechRecognition?: new () => BrowserSpeechRecognition;
+  webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
+}
+
 export function MicButton({ onTranscribed, onCancel, disabled }: MicButtonProps) {
   const [status, setStatus] = useState<Status>("idle");
   const [level, setLevel] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const recorderRef = useRef<VoiceRecorder | null>(null);
+  const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const recognizedTextRef = useRef<string>("");
   const errorTimerRef = useRef<number | null>(null);
 
   const showError = useCallback((message: string) => {
@@ -34,36 +51,33 @@ export function MicButton({ onTranscribed, onCancel, disabled }: MicButtonProps)
     return () => {
       recorderRef.current?.cancel();
       recorderRef.current = null;
+      if (speechRecognitionRef.current) {
+        try {
+          speechRecognitionRef.current.stop();
+        } catch {
+          // ignore
+        }
+        speechRecognitionRef.current = null;
+      }
       if (errorTimerRef.current) window.clearTimeout(errorTimerRef.current);
     };
   }, []);
 
-  const startRecording = useCallback(async () => {
-    setErrorMessage(null);
-    setStatus("recording");
-    setLevel(0);
-
-    const recorder = new VoiceRecorder({
-      onLevel: (l) => setLevel(l),
-      silenceMs: 1500,
-      silenceThreshold: 0.02,
-      maxDurationMs: 60_000,
-    });
-    recorderRef.current = recorder;
-
-    try {
-      await recorder.start();
-    } catch (error) {
-      recorderRef.current = null;
-      const message = error instanceof Error ? error.message : "Could not start the microphone.";
-      showError(message);
-    }
-  }, [showError]);
-
   const stopAndTranscribe = useCallback(async () => {
+    // Stop browser recognition if active
+    if (speechRecognitionRef.current) {
+      try {
+        speechRecognitionRef.current.stop();
+      } catch {
+        // ignore
+      }
+      speechRecognitionRef.current = null;
+    }
+
     const recorder = recorderRef.current;
     if (!recorder) return;
 
+    setStatus("transcribing");
     let result: RecorderResult;
     try {
       result = await recorder.stop();
@@ -75,9 +89,19 @@ export function MicButton({ onTranscribed, onCancel, disabled }: MicButtonProps)
     }
     recorderRef.current = null;
 
-    if (result.blob.size < 1500) {
+    // If browser speech recognition captured the text, use it directly!
+    const clientText = recognizedTextRef.current.trim();
+    if (clientText) {
       setStatus("idle");
       setLevel(0);
+      onTranscribed(clientText);
+      return;
+    }
+
+    if (result.blob.size < 200) {
+      setStatus("idle");
+      setLevel(0);
+      showError("No sound detected. Click mic to speak.");
       return;
     }
 
@@ -97,10 +121,16 @@ export function MicButton({ onTranscribed, onCancel, disabled }: MicButtonProps)
         { ok: true; text: string } | { ok: false; error: string } | null;
 
       if (!res.ok || !payload || !("ok" in payload) || !payload.ok) {
+        if (clientText) {
+          setStatus("idle");
+          setLevel(0);
+          onTranscribed(clientText);
+          return;
+        }
         const message =
           payload && "error" in payload && payload.error
             ? payload.error
-            : "Voice service could not transcribe that audio.";
+            : "Voice input recorded. Type or speak more clearly into the mic.";
         showError(message);
         return;
       }
@@ -111,13 +141,82 @@ export function MicButton({ onTranscribed, onCancel, disabled }: MicButtonProps)
 
       if (text) {
         onTranscribed(text);
+      } else if (clientText) {
+        onTranscribed(clientText);
       } else {
         showError("Nothing was heard. Try speaking a bit louder.");
       }
     } catch {
-      showError("Network issue — check your connection and try again.");
+      if (clientText) {
+        setStatus("idle");
+        setLevel(0);
+        onTranscribed(clientText);
+      } else {
+        showError("Network issue — check your connection and try again.");
+      }
     }
   }, [onTranscribed, showError]);
+
+  const startRecording = useCallback(async () => {
+    setErrorMessage(null);
+    setStatus("recording");
+    setLevel(0);
+    recognizedTextRef.current = "";
+
+    // Launch browser SpeechRecognition in parallel if available for zero-token real-time capture
+    try {
+      const speechWindow = window as unknown as WindowWithSpeech;
+      const SpeechRecognitionClass =
+        speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition;
+
+      if (SpeechRecognitionClass) {
+        const recognition = new SpeechRecognitionClass();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = "en-US";
+        recognition.onresult = (event: {
+          results: ArrayLike<ArrayLike<{ transcript: string }>>;
+        }) => {
+          let currentTranscript = "";
+          for (let i = 0; i < event.results.length; i++) {
+            const item = event.results[i]?.[0];
+            if (item?.transcript) {
+              currentTranscript += item.transcript;
+            }
+          }
+          if (currentTranscript.trim()) {
+            recognizedTextRef.current = currentTranscript.trim();
+          }
+        };
+        recognition.onerror = () => {
+          // fail silently to audio blob fallback
+        };
+        recognition.start();
+        speechRecognitionRef.current = recognition;
+      }
+    } catch {
+      // ignore
+    }
+
+    const recorder = new VoiceRecorder({
+      onLevel: (l) => setLevel(l),
+      silenceMs: 2400,
+      silenceThreshold: 0.015,
+      maxDurationMs: 60_000,
+      onSilence: () => {
+        void stopAndTranscribe();
+      },
+    });
+    recorderRef.current = recorder;
+
+    try {
+      await recorder.start();
+    } catch (error) {
+      recorderRef.current = null;
+      const message = error instanceof Error ? error.message : "Could not start the microphone.";
+      showError(message);
+    }
+  }, [showError, stopAndTranscribe]);
 
   const cancelRecording = useCallback(() => {
     recorderRef.current?.cancel();

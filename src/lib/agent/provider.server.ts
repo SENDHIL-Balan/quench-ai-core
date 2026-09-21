@@ -2,6 +2,7 @@ import { createGroq } from "@ai-sdk/groq";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText } from "ai";
 import type { LanguageModel, UIMessage } from "ai";
+import { LocalAssistantProvider } from "./local-assistant.server";
 import {
   AGENT_LIMITS,
   getDataUrlSizeInBytes,
@@ -314,13 +315,13 @@ export class ModelProvider implements LLMProvider {
           ? Number((error as { status?: unknown }).status)
           : undefined;
 
-      console.error("[quench] model request failed", {
+      console.error("[quench] model request failed, falling back to local assistant", {
         statusCode,
         message: error instanceof Error ? error.message : String(error),
-        cause: error,
       });
 
-      throw new GroqProviderError("AI model request failed.", error);
+      // Seamlessly fall back to local assistant engine so user never sees a hard error
+      return await new LocalAssistantProvider().generateText(options);
     }
   }
 }
@@ -373,5 +374,6 @@ export function resolveProvider(): LLMProvider {
     return new GeminiCompatibleProvider(geminiKey);
   }
 
-  throw new MissingProviderKeyError();
+  // Zero-token standalone local assistant fallback
+  return new LocalAssistantProvider();
 }

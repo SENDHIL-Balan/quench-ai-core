@@ -45,13 +45,15 @@ export const Route = createFileRoute("/api/transcribe")({
           // 1. Try Deepgram if configured
           if (deepgramKey) {
             try {
+              // Deepgram expects pure mime type e.g. "audio/webm" without codec parameters
+              const cleanMime = mimeType.split(";")[0]?.trim() || "audio/webm";
               const response = await fetch(
                 "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true",
                 {
                   method: "POST",
                   headers: {
                     Authorization: `Token ${deepgramKey}`,
-                    "Content-Type": mimeType,
+                    "Content-Type": cleanMime,
                   },
                   body: audioBuffer,
                 },
@@ -86,21 +88,57 @@ export const Route = createFileRoute("/api/transcribe")({
               try {
                 const ai = new GoogleGenAI({ apiKey: geminiKey });
                 const base64Audio = Buffer.from(audioBuffer).toString("base64");
-                const res = await ai.models.generateContent({
-                  model: "gemini-2.5-flash",
-                  contents: [
-                    {
-                      inlineData: {
-                        mimeType: mimeType.includes("mp4") ? "audio/mp4" : "audio/webm",
-                        data: base64Audio,
+                const safeMime = mimeType.includes("mp4")
+                  ? "audio/mp4"
+                  : mimeType.includes("wav")
+                    ? "audio/wav"
+                    : "audio/webm";
+
+                // First attempt dedicated transcribe model
+                try {
+                  const res = await ai.models.generateContent({
+                    model: "gemini-3.5-transcribe",
+                    contents: {
+                      parts: [
+                        { inlineData: { mimeType: safeMime, data: base64Audio } },
+                        {
+                          text: "Transcribe the spoken words in this audio recording accurately. Return ONLY the transcribed text without any extra commentary, markdown, or quotation marks.",
+                        },
+                      ],
+                    },
+                  });
+                  transcript = res.text?.trim() || "";
+                } catch {
+                  try {
+                    // Fallback to gemini-3.1-flash-lite
+                    const res2 = await ai.models.generateContent({
+                      model: "gemini-3.1-flash-lite",
+                      contents: {
+                        parts: [
+                          { inlineData: { mimeType: safeMime, data: base64Audio } },
+                          {
+                            text: "Transcribe the spoken words in this audio recording accurately. Return ONLY the transcribed text. If silence or no speech, return nothing.",
+                          },
+                        ],
                       },
-                    },
-                    {
-                      text: "Transcribe the spoken words in this audio recording accurately. Return ONLY the transcribed text without any extra commentary, markdown, or quotation marks.",
-                    },
-                  ],
-                });
-                transcript = res.text?.trim() || "";
+                    });
+                    transcript = res2.text?.trim() || "";
+                  } catch {
+                    // Final fallback to gemini-2.5-flash
+                    const res3 = await ai.models.generateContent({
+                      model: "gemini-2.5-flash",
+                      contents: {
+                        parts: [
+                          { inlineData: { mimeType: safeMime, data: base64Audio } },
+                          {
+                            text: "Transcribe the spoken words in this audio recording accurately. Return ONLY the transcribed text. If silence or no speech, return nothing.",
+                          },
+                        ],
+                      },
+                    });
+                    transcript = res3.text?.trim() || "";
+                  }
+                }
               } catch (geminiErr) {
                 console.error("[quench] Gemini audio transcription error:", geminiErr);
               }
