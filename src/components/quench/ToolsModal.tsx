@@ -1,4 +1,3 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import {
   Search,
@@ -10,54 +9,76 @@ import {
   Mic,
   Sparkles,
   ArrowUpRight,
+  X,
 } from "lucide-react";
-import { CosmicBackground } from "@/components/quench/CosmicBackground";
-import { Sidebar } from "@/components/quench/Sidebar";
 import { cn } from "@/lib/utils";
 import { PdfStudioModal } from "@/components/quench/PdfStudioModal";
 import { ImageStudioModal } from "@/components/quench/ImageStudioModal";
 
-export const Route = createFileRoute("/tools")({
-  head: () => ({
-    meta: [
-      { title: "Tools & AI Studios — Bravura AI" },
-      {
-        name: "description",
-        content:
-          "Enable and configure agentic tools, AI Image Studio, and AI PDF Generation in Bravura AI.",
-      },
-    ],
-  }),
-  component: ToolsPage,
-});
-
 const SEARCH_KEY = "quench-tool-websearch";
 const DEEPTHINK_KEY = "quench-tool-deepthink";
 
-function ToolsPage() {
-  const router = useRouter();
+interface ToolsModalProps {
+  onClose: () => void;
+  onOpenLiveVoice?: () => void;
+  onTogglesChange?: (search: boolean, deepThink: boolean) => void;
+}
+
+export function ToolsModal({ onClose, onOpenLiveVoice, onTogglesChange }: ToolsModalProps) {
   const [webSearch, setWebSearch] = useState(false);
   const [deepThink, setDeepThink] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
 
-  const handleBack = () => {
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      window.history.back();
-    } else {
-      void router.navigate({ to: "/" });
-    }
-  };
-
   useEffect(() => {
     try {
       const storedSearch = window.localStorage.getItem(SEARCH_KEY);
-      setWebSearch(storedSearch === "1");
-      setDeepThink(window.localStorage.getItem(DEEPTHINK_KEY) === "1");
+      const isSearch = storedSearch === "1";
+      const isThink = window.localStorage.getItem(DEEPTHINK_KEY) === "1";
+      setWebSearch(isSearch);
+      setDeepThink(isThink);
     } catch {
       /* storage unavailable */
     }
   }, []);
+
+  // Sync with browser history so the browser back button closes this modal cleanly
+  useEffect(() => {
+    let pushed = false;
+    try {
+      window.history.pushState({ toolsModal: true }, "");
+      pushed = true;
+    } catch {
+      // ignore
+    }
+
+    const handlePopState = () => {
+      onClose();
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+      if (pushed && window.history.state?.toolsModal) {
+        try {
+          window.history.back();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, [onClose]);
+
+  // Handle escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   const toggleSearch = () => {
     setWebSearch((v) => {
@@ -67,6 +88,7 @@ function ToolsPage() {
       } catch {
         /* ignore */
       }
+      onTogglesChange?.(next, deepThink);
       return next;
     });
   };
@@ -79,49 +101,53 @@ function ToolsPage() {
       } catch {
         /* ignore */
       }
+      onTogglesChange?.(webSearch, next);
       return next;
     });
   };
 
   return (
-    <div className="text-foreground h-screen overflow-hidden">
-      <CosmicBackground />
+    <div
+      id="tools-modal-overlay"
+      className="fixed inset-0 z-50 flex flex-col bg-black/80 backdrop-blur-xl animate-in fade-in duration-200"
+    >
+      {/* Top Bar with Back to Chat */}
+      <div className="sticky top-0 z-20 flex items-center justify-between border-b border-white/10 bg-black/60 px-4 py-3 backdrop-blur-md sm:px-6">
+        <button
+          id="tools-back-btn"
+          type="button"
+          onClick={onClose}
+          className="group inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.05] px-3.5 py-1.5 text-xs font-medium text-white/90 shadow-sm transition hover:border-cyan-400/40 hover:bg-cyan-500/15 hover:text-cyan-200 cursor-pointer"
+        >
+          <ArrowLeft className="size-4 transition-transform group-hover:-translate-x-0.5" />
+          <span>Back to chat</span>
+        </button>
 
-      <div className="relative z-10 mx-auto flex h-full max-w-[1800px] gap-4 p-3 sm:p-4">
-        <div className="hidden lg:block">
-          <div className="sticky top-4 h-[calc(100vh-2rem)]">
-            <Sidebar
-              onNewChat={() => {
-                try {
-                  window.localStorage.removeItem("bravura-active-chat-id");
-                } catch {
-                  /* ignore */
-                }
-                void router.navigate({ to: "/" });
-              }}
-              onHistory={() => {
-                void router.navigate({ to: "/" });
-              }}
-            />
-          </div>
+        <div className="text-center">
+          <p className="text-[11px] font-semibold tracking-[0.25em] text-cyan-300 uppercase">
+            Workspace Tools
+          </p>
         </div>
 
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-y-auto px-2 sm:px-4">
-          <header className="pt-4">
-            <button
-              id="tools-page-back-btn"
-              type="button"
-              onClick={handleBack}
-              className="text-muted-foreground hover:text-cyan-200 mb-3 inline-flex items-center gap-1.5 text-xs transition-colors cursor-pointer group"
-            >
-              <ArrowLeft className="size-3.5 transition-transform group-hover:-translate-x-0.5" />
-              Back to chat
-            </button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close tools"
+          className="flex size-8 items-center justify-center rounded-lg text-white/60 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-8">
+        <div className="mx-auto max-w-4xl space-y-6">
+          <header>
             <p className="text-xs tracking-[0.3em] text-cyan-200/60 uppercase">Workspace</p>
-            <h1 className="text-gradient-brand text-3xl font-semibold sm:text-4xl">
+            <h1 className="text-gradient-brand text-2xl font-bold sm:text-3xl">
               Tools & Generative AI Studios
             </h1>
-            <p className="text-muted-foreground mt-1.5 text-sm">
+            <p className="text-muted-foreground mt-1 text-sm">
               Explore generative AI capabilities, multimodal creation studios, and voice agents in
               Bravura AI.
             </p>
@@ -247,11 +273,25 @@ function ToolsPage() {
                 <Volume2 className="size-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold">Live Voice Synthesis & Two-Way Agent</p>
-                  <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">
-                    Connected
-                  </span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold">Live Voice Synthesis & Two-Way Agent</p>
+                    <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">
+                      Connected
+                    </span>
+                  </div>
+                  {onOpenLiveVoice && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenLiveVoice();
+                      }}
+                      className="text-xs text-cyan-300 hover:text-cyan-200 underline font-medium cursor-pointer"
+                    >
+                      Open Voice Agent
+                    </button>
+                  )}
                 </div>
                 <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
                   Ultra-realistic voice personas (Jeff besos, Shakira, Melodi, Nikki bella, Elon
@@ -268,14 +308,14 @@ function ToolsPage() {
               Reasoning & Search
             </p>
 
-            <ToolToggle
+            <ToolToggleItem
               icon={Search}
               title="Web Search"
               description="Searches the live web for the latest information before answering."
               enabled={webSearch}
               onToggle={toggleSearch}
             />
-            <ToolToggle
+            <ToolToggleItem
               icon={BrainCircuit}
               title="Deep Think"
               description="Spends extra reasoning time on hard questions."
@@ -288,7 +328,7 @@ function ToolsPage() {
               More tools will land here as we ship them.
             </div>
           </section>
-        </main>
+        </div>
       </div>
 
       {pdfOpen && <PdfStudioModal onClose={() => setPdfOpen(false)} />}
@@ -297,7 +337,7 @@ function ToolsPage() {
   );
 }
 
-function ToolToggle({
+function ToolToggleItem({
   icon: Icon,
   title,
   description,

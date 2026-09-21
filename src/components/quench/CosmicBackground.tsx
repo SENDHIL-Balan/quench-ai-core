@@ -298,29 +298,13 @@ export function CosmicBackground() {
 
   return (
     <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
-      {/* Dark mode cosmic scene */}
-      <div className="absolute inset-0 dark:block hidden">
-        <div className="absolute inset-0" style={{ background: BASE }} />
-        <canvas
-          ref={canvasRef}
-          className="absolute inset-0 size-full"
-          style={{ display: "block" }}
-        />
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(ellipse 58% 48% at 50% 43%, rgba(1, 5, 9, 0) 0%, rgba(1, 5, 9, 0.38) 67%, rgba(1, 5, 9, 0.8) 100%)",
-          }}
-        />
-      </div>
-
-      {/* Light mode ambient background */}
+      <div className="absolute inset-0" style={{ background: BASE }} />
+      <canvas ref={canvasRef} className="absolute inset-0 size-full" style={{ display: "block" }} />
       <div
-        className="absolute inset-0 dark:hidden block"
+        className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(6, 182, 212, 0.1), transparent 70%), radial-gradient(ellipse 60% 45% at 95% 95%, rgba(16, 185, 129, 0.08), transparent 65%), linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)",
+            "radial-gradient(ellipse 58% 48% at 50% 43%, rgba(1, 5, 9, 0) 0%, rgba(1, 5, 9, 0.38) 67%, rgba(1, 5, 9, 0.8) 100%)",
         }}
       />
     </div>

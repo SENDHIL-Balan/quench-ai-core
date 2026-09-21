@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   Plus,
   Search,
@@ -32,13 +33,6 @@ const MODE_ICONS: Record<ModeId, typeof MessageSquare> = {
   code: Code2,
   image: ImageIcon,
 };
-
-const PHRASES = [
-  "Ask Bravura AI anything...",
-  "Ask me to write code, debug, or analyze data...",
-  "What can I help you build today?",
-  "Ask Bravura AI anything...",
-];
 
 export function PromptComposer({
   value,
@@ -88,40 +82,6 @@ export function PromptComposer({
   const [files, setFiles] = useState<File[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const [placeholderIndex, setPlaceholderIndex] = useState(0);
-  const [displayedPlaceholder, setDisplayedPlaceholder] = useState("");
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [typingSpeed, setTypingSpeed] = useState(80);
-
-  useEffect(() => {
-    if (value) {
-      setDisplayedPlaceholder("Ask Bravura AI anything...");
-      return;
-    }
-    const currentPhrase = PHRASES[placeholderIndex];
-    const handleTyping = () => {
-      if (!isDeleting) {
-        const nextText = currentPhrase.substring(0, displayedPlaceholder.length + 1);
-        setDisplayedPlaceholder(nextText);
-        if (nextText === currentPhrase) {
-          setTimeout(() => setIsDeleting(true), 2200);
-          setTypingSpeed(40);
-        }
-      } else {
-        const nextText = currentPhrase.substring(0, displayedPlaceholder.length - 1);
-        setDisplayedPlaceholder(nextText);
-        if (nextText === "") {
-          setIsDeleting(false);
-          setPlaceholderIndex((prev) => (prev + 1) % PHRASES.length);
-          setTypingSpeed(90);
-        }
-      }
-    };
-
-    const timer = setTimeout(handleTyping, typingSpeed);
-    return () => clearTimeout(timer);
-  }, [displayedPlaceholder, isDeleting, placeholderIndex, typingSpeed, value]);
-
   useEffect(() => {
     if (!busy) ref.current?.focus();
   }, [busy]);
@@ -161,7 +121,7 @@ export function PromptComposer({
 
   const currentMode: ModeId = mode ?? "chat";
   const modesEnabled = typeof onModeChange === "function";
-  const hasContent = value.trim().length > 0 || files.length > 0;
+  const hasContent = value.length > 0 || files.length > 0;
 
   return (
     <div
@@ -171,9 +131,19 @@ export function PromptComposer({
         className,
       )}
     >
-      <div
+      <motion.div
+        layout
+        transition={{
+          layout: { duration: 0.26, ease: [0.16, 1, 0.3, 1] },
+        }}
+        animate={{
+          borderColor: hasContent ? "rgba(6, 182, 212, 0.35)" : "rgba(255, 255, 255, 0.1)",
+          boxShadow: hasContent
+            ? "0 10px 35px rgba(6,182,212,0.12), inset 0 0 16px rgba(6,182,212,0.03)"
+            : "0 10px 30px rgba(0,0,0,0.35)",
+        }}
         className={cn(
-          "glass-panel relative flex flex-col rounded-2xl sm:rounded-3xl border border-white/10 p-2.5 sm:p-3.5 transition-all shadow-2xl backdrop-blur-2xl w-full max-w-full min-w-0",
+          "glass-panel relative flex flex-col rounded-2xl sm:rounded-3xl border p-2.5 sm:p-3.5 backdrop-blur-2xl w-full max-w-full min-w-0 transition-colors duration-200",
           busy && "ring-1 ring-cyan-500/50",
           error && "border-destructive/60",
         )}
@@ -235,13 +205,13 @@ export function PromptComposer({
                 submit();
               }
             }}
-            placeholder={displayedPlaceholder || "Ask Bravura AI anything..."}
-            className="placeholder:text-muted-foreground min-h-[44px] max-h-[180px] w-full resize-none bg-transparent px-1.5 py-1 text-base sm:text-[15px] leading-relaxed outline-none disabled:opacity-60 text-foreground [scrollbar-width:thin]"
+            placeholder="Ask Bravura AI anything..."
+            className="placeholder:text-white/40 min-h-[44px] max-h-[180px] w-full resize-none bg-transparent px-1.5 py-1 text-base sm:text-[15px] leading-relaxed outline-none disabled:opacity-60 text-white [scrollbar-width:thin] transition-[height] duration-200 ease-out"
           />
         </div>
 
         {/* Bottom Actions Row matching Google AI Studio */}
-        <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/50 w-full min-w-0">
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/5 w-full min-w-0">
           {/* Left Action Controls (+ menu, mode chip, search, think) */}
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-wrap">
             {/* + Button & Dropdown Menu */}
@@ -256,8 +226,8 @@ export function PromptComposer({
                 aria-expanded={menuOpen}
                 aria-haspopup="menu"
                 className={cn(
-                  "border-border bg-card/60 dark:bg-white/5 text-muted-foreground hover:text-foreground hover:border-primary/40 flex size-9 shrink-0 items-center justify-center rounded-full border transition-colors cursor-pointer",
-                  menuOpen && "border-cyan-400/60 text-cyan-600 dark:text-cyan-300",
+                  "border-border bg-white/5 text-muted-foreground hover:text-foreground hover:border-white/20 flex size-9 shrink-0 items-center justify-center rounded-full border transition-colors cursor-pointer",
+                  menuOpen && "border-cyan-400/60 text-cyan-300",
                 )}
                 title="Add mode, file, or camera"
               >
@@ -268,7 +238,7 @@ export function PromptComposer({
                 <div
                   role="menu"
                   onPointerDown={(e) => e.stopPropagation()}
-                  className="absolute bottom-full left-0 z-50 mb-2 max-h-[60vh] w-56 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-popover text-popover-foreground p-1.5 shadow-2xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  className="absolute bottom-full left-0 z-50 mb-2 max-h-[60vh] w-56 overflow-y-auto overscroll-contain rounded-2xl border border-white/20 bg-[#0c1322] p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.95)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 >
                   <p className="text-muted-foreground px-2 pt-1 pb-1 text-[10px] font-semibold tracking-wider uppercase">
                     Bravura Mode
@@ -294,23 +264,18 @@ export function PromptComposer({
                           "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer min-h-[38px]",
                           !available && "opacity-40 cursor-not-allowed",
                           active
-                            ? "bg-cyan-500/20 text-cyan-800 dark:text-cyan-300 font-semibold"
-                            : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                            ? "bg-cyan-500/20 text-cyan-300 font-medium"
+                            : "text-muted-foreground hover:bg-white/5 hover:text-white",
                         )}
                       >
-                        <Icon
-                          className={cn(
-                            "size-3.5",
-                            active ? "text-cyan-700 dark:text-cyan-400" : "text-muted-foreground",
-                          )}
-                        />
+                        <Icon className={cn("size-3.5", active && "text-cyan-400")} />
                         <span className="flex-1">{AGENT_MODES[id].label}</span>
-                        {active && <Check className="text-cyan-600 dark:text-cyan-400 size-3" />}
+                        {active && <Check className="text-cyan-400 size-3" />}
                       </button>
                     );
                   })}
 
-                  <div className="my-1 border-t border-border" />
+                  <div className="my-1 border-t border-white/10" />
 
                   {onOpenImageStudio && (
                     <button
@@ -320,9 +285,9 @@ export function PromptComposer({
                         setMenuOpen(false);
                         onOpenImageStudio();
                       }}
-                      className="text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer min-h-[38px]"
+                      className="text-muted-foreground hover:bg-white/5 hover:text-white flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer min-h-[38px]"
                     >
-                      <Sparkles className="size-3.5 text-cyan-600 dark:text-cyan-400" />
+                      <Sparkles className="size-3.5 text-cyan-400" />
                       <span className="flex-1">AI Image Studio</span>
                     </button>
                   )}
@@ -335,15 +300,15 @@ export function PromptComposer({
                         setMenuOpen(false);
                         onOpenPdfStudio();
                       }}
-                      className="text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer min-h-[38px]"
+                      className="text-muted-foreground hover:bg-white/5 hover:text-white flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer min-h-[38px]"
                     >
-                      <FileText className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <FileText className="size-3.5 text-emerald-400" />
                       <span className="flex-1">AI PDF Document Studio</span>
                     </button>
                   )}
 
                   {(onOpenImageStudio || onOpenPdfStudio) && (
-                    <div className="my-1 border-t border-border" />
+                    <div className="my-1 border-t border-white/10" />
                   )}
 
                   <button
@@ -353,9 +318,9 @@ export function PromptComposer({
                       setMenuOpen(false);
                       fileInputRef.current?.click();
                     }}
-                    className="text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer min-h-[38px]"
+                    className="text-muted-foreground hover:bg-white/5 hover:text-white flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer min-h-[38px]"
                   >
-                    <Paperclip className="size-3.5 text-cyan-600 dark:text-cyan-400" />
+                    <Paperclip className="size-3.5 text-cyan-400" />
                     <span className="flex-1">Upload File or Image</span>
                   </button>
 
@@ -366,9 +331,9 @@ export function PromptComposer({
                       setMenuOpen(false);
                       cameraInputRef.current?.click();
                     }}
-                    className="text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer min-h-[38px]"
+                    className="text-muted-foreground hover:bg-white/5 hover:text-white flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer min-h-[38px]"
                   >
-                    <Camera className="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                    <Camera className="size-3.5 text-emerald-400" />
                     <span className="flex-1">Camera Capture</span>
                   </button>
                 </div>
@@ -381,15 +346,13 @@ export function PromptComposer({
                 onClick={() => setMenuOpen((v) => !v)}
                 className={cn(
                   "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-all cursor-pointer shrink-0 select-none",
-                  "border-cyan-500/60 bg-cyan-500/20 text-cyan-900 dark:text-cyan-200 font-medium shadow-[0_0_12px_rgba(6,182,212,0.3)] hover:bg-cyan-500/30",
+                  "border-cyan-500/60 bg-cyan-500/20 text-cyan-200 font-medium shadow-[0_0_12px_rgba(6,182,212,0.3)] hover:bg-cyan-500/30",
                 )}
                 title={`Active Mode: ${AGENT_MODES[currentMode]?.label || currentMode}. Click to switch, or × to clear.`}
               >
                 {(() => {
                   const ActiveIcon = MODE_ICONS[currentMode] || MessageSquare;
-                  return (
-                    <ActiveIcon className="size-3.5 shrink-0 text-cyan-700 dark:text-cyan-300" />
-                  );
+                  return <ActiveIcon className="size-3.5 shrink-0 text-cyan-300" />;
                 })()}
                 <span className="truncate max-w-[80px] sm:max-w-none">
                   {AGENT_MODES[currentMode]?.label || currentMode}
@@ -400,7 +363,7 @@ export function PromptComposer({
                     e.stopPropagation();
                     onModeChange?.("chat");
                   }}
-                  className="hover:text-foreground p-0.5 ml-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/20 text-cyan-700 dark:text-cyan-300 transition-colors cursor-pointer"
+                  className="hover:text-white p-0.5 ml-0.5 rounded-full hover:bg-white/20 text-cyan-300 transition-colors cursor-pointer"
                   title="Reset mode to default"
                   aria-label="Reset mode to default"
                 >
@@ -420,18 +383,18 @@ export function PromptComposer({
               className={cn(
                 "flex items-center gap-1 sm:gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors cursor-pointer",
                 webSearch
-                  ? "border-cyan-500/60 bg-cyan-500/20 text-cyan-900 dark:text-cyan-200 font-medium shadow-[0_0_12px_rgba(6,182,212,0.3)]"
-                  : "border-border bg-card/60 dark:bg-white/5 text-muted-foreground hover:bg-accent hover:text-foreground",
+                  ? "border-cyan-500/60 bg-cyan-500/20 text-cyan-200 font-medium shadow-[0_0_12px_rgba(6,182,212,0.3)]"
+                  : "border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-white",
               )}
             >
               <Search
                 className={cn(
                   "size-3.5 shrink-0",
-                  webSearch ? "text-cyan-700 dark:text-cyan-300" : "text-muted-foreground",
+                  webSearch ? "text-cyan-300" : "text-muted-foreground",
                 )}
               />
               <span>Search</span>
-              {webSearch && <span className="size-1.5 rounded-full bg-cyan-500 animate-pulse" />}
+              {webSearch && <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />}
             </button>
 
             {/* Think Chip (Brain icon + Think) */}
@@ -447,66 +410,87 @@ export function PromptComposer({
               className={cn(
                 "flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors cursor-pointer sm:gap-1.5",
                 deepThink
-                  ? "border-purple-500/60 bg-purple-500/20 text-purple-900 dark:text-purple-200 font-medium shadow-[0_0_12px_rgba(168,85,247,0.3)]"
-                  : "border-border bg-card/60 dark:bg-white/5 text-muted-foreground hover:bg-accent hover:text-foreground",
+                  ? "border-purple-500/60 bg-purple-500/20 text-purple-200 font-medium shadow-[0_0_12px_rgba(168,85,247,0.3)]"
+                  : "border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-white",
               )}
             >
               <Brain
                 className={cn(
                   "size-3.5 shrink-0",
-                  deepThink ? "text-purple-700 dark:text-purple-300" : "text-muted-foreground",
+                  deepThink ? "text-purple-300" : "text-muted-foreground",
                 )}
               />
               <span className="hidden sm:inline">Think</span>
             </button>
           </div>
 
-          {/* Right Action Controls:
-              - When there is text/files or busy: show only Send / Stop button. Voice & transcribe buttons are gone.
-              - When empty: show only transcribe (MicButton) and voice agent (LiveVoiceAgentButton). No send button.
-          */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {busy ? (
-              <button
-                type="button"
-                onClick={onStop}
-                aria-label="Stop generating"
-                className="bg-cyan-500 text-black flex size-9 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 cursor-pointer shadow-md shadow-cyan-500/30 animate-in fade-in zoom-in-90 duration-150"
-              >
-                <Square className="size-3.5 fill-current" />
-              </button>
-            ) : hasContent ? (
-              <button
-                type="button"
-                onClick={submit}
-                disabled={disabled}
-                aria-label="Send message"
-                className="bg-gradient-to-tr from-cyan-500 to-emerald-400 text-black flex size-9 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:scale-100 disabled:opacity-40 cursor-pointer shadow-md shadow-cyan-500/25 animate-in fade-in zoom-in-90 duration-150"
-              >
-                <ArrowUp className="size-4 stroke-[2.5]" />
-              </button>
-            ) : (
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 animate-in fade-in zoom-in-90 duration-150">
-                {/* Voice to Text (transcribe button) */}
-                <MicButton onTranscribed={onTranscribed} disabled={disabled} />
+          {/* Right Action Controls: If chatbox has letter/content, ONLY send button is shown; if empty, ONLY voice agent & transcribe are shown */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 min-h-[36px]">
+            <AnimatePresence mode="wait" initial={false}>
+              {busy ? (
+                <motion.button
+                  key="stop-btn"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  transition={{ duration: 0.18, ease: "easeOut" }}
+                  type="button"
+                  onClick={onStop}
+                  aria-label="Stop generating"
+                  className="bg-cyan-500 text-black flex size-9 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 cursor-pointer shadow-md shadow-cyan-500/30"
+                >
+                  <Square className="size-3.5 fill-current" />
+                </motion.button>
+              ) : hasContent ? (
+                <motion.button
+                  key="send-btn"
+                  initial={{ opacity: 0, scale: 0.75 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.75 }}
+                  transition={{ type: "spring", stiffness: 450, damping: 26 }}
+                  type="button"
+                  onClick={submit}
+                  disabled={disabled}
+                  aria-label="Send message"
+                  className="bg-gradient-to-tr from-cyan-500 to-emerald-400 text-black flex size-9 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 disabled:scale-100 disabled:opacity-40 cursor-pointer shadow-md shadow-cyan-500/25"
+                >
+                  <ArrowUp className="size-4 stroke-[2.5]" />
+                </motion.button>
+              ) : (
+                <motion.div
+                  key="voice-controls"
+                  initial={{ opacity: 0, scale: 0.85 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.85 }}
+                  transition={{ duration: 0.18, ease: "easeOut" }}
+                  className="flex items-center gap-1.5 sm:gap-2"
+                >
+                  {/* Voice to Text (MicButton) */}
+                  <MicButton onTranscribed={onTranscribed} disabled={disabled || busy} />
 
-                {/* Live Voice Agent button */}
-                {onOpenLiveVoice && (
-                  <LiveVoiceAgentButton
-                    onClick={onOpenLiveVoice}
-                    disabled={disabled}
-                    isActive={isLiveVoiceActive}
-                  />
-                )}
-              </div>
-            )}
+                  {/* Live Voice Agent button to talk in live */}
+                  {onOpenLiveVoice && (
+                    <LiveVoiceAgentButton
+                      onClick={onOpenLiveVoice}
+                      disabled={disabled}
+                      isActive={isLiveVoiceActive}
+                    />
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
-      </div>
+      </motion.div>
 
-      {error && (
+      {error ? (
         <p className="text-destructive mt-2 px-2 text-sm" role="alert">
           {error}
+        </p>
+      ) : (
+        <p className="text-muted-foreground mt-2 px-2 text-[11px]">
+          Enter to send · Shift + Enter for newline · Tap{" "}
+          <span className="text-cyan-400 font-medium">blue orb</span> to talk in live
         </p>
       )}
     </div>

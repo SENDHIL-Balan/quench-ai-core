@@ -308,33 +308,26 @@ Include relevant sections, metrics, realistic data tables, and key takeaways.`;
         const geminiKey = process.env.GEMINI_API_KEY?.trim();
         const isStandardGeminiKey = Boolean(geminiKey && geminiKey.startsWith("AIzaSy"));
         if (isStandardGeminiKey) {
-          const candidateGeminiModels = [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-          ];
-          for (const modelName of candidateGeminiModels) {
-            try {
-              const ai = new GoogleGenAI({
-                apiKey: geminiKey!,
-                httpOptions: { headers: { "User-Agent": "aistudio-build" } },
-              });
-              const response = await ai.models.generateContent({
-                model: modelName,
-                contents: `${systemPrompt}\n\nUser Request: ${userPrompt}`,
-                config: {
-                  responseMimeType: "application/json",
-                },
-              });
+          try {
+            const ai = new GoogleGenAI({
+              apiKey: geminiKey!,
+              httpOptions: { headers: { "User-Agent": "aistudio-build" } },
+            });
+            const response = await ai.models.generateContent({
+              model: "gemini-3.8-flash",
+              contents: `${systemPrompt}\n\nUser Request: ${userPrompt}`,
+              config: {
+                responseMimeType: "application/json",
+              },
+            });
 
-              rawText = response.text?.trim() || "";
-              if (rawText) break;
-            } catch (geminiError) {
-              const errStr =
-                geminiError instanceof Error ? geminiError.message : String(geminiError);
-              const isAuthError = /UNAUTHENTICATED|invalid authentication|401/i.test(errStr);
-              if (isAuthError) break;
-              console.warn(`[bravura-pdf] Gemini model ${modelName} failed, trying next:`, errStr);
+            rawText = response.text?.trim() || "";
+          } catch (geminiError) {
+            const isAuthError =
+              geminiError instanceof Error &&
+              /UNAUTHENTICATED|invalid authentication|401/i.test(geminiError.message);
+            if (!isAuthError) {
+              console.warn("[bravura-pdf] Gemini call failed, attempting fallback:", geminiError);
             }
           }
         }

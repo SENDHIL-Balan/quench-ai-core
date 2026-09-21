@@ -1,234 +1,121 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   X,
   Mic,
   MicOff,
-  Volume2,
-  VolumeX,
-  Sparkles,
-  Loader2,
-  Radio,
-  RotateCcw,
   Square,
+  Sparkles,
+  Volume2,
+  Sliders,
+  PhoneOff,
+  Copy,
   Check,
-  ChevronDown,
+  RotateCcw,
+  ThumbsUp,
+  ThumbsDown,
 } from "lucide-react";
-import { VoiceRecorder, type RecorderResult } from "@/lib/voice/recorder";
-import type { VoiceSetting } from "./VoiceAgentModal";
-import type { ModeId } from "@/lib/agent/modes";
 import { cn } from "@/lib/utils";
+import type { ModeId } from "@/lib/agent/modes";
+import { VoiceRecorder, type RecorderResult } from "@/lib/voice/recorder";
+import { playVoiceAudio, unlockAudio, type AudioPlaybackController } from "@/lib/voice/player";
+import { VoiceAgentModal, VOICES, type VoiceSetting } from "./VoiceAgentModal";
+import { FluidVoiceOrb } from "./FluidVoiceOrb";
 
-export interface LiveVoiceAgentModalProps {
+type LiveState = "idle" | "listening" | "transcribing" | "thinking" | "speaking" | "error";
+
+type TranscribeResult = { ok: true; text: string } | { ok: false; error: string } | null;
+
+interface ConversationTurn {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+}
+
+interface LiveVoiceAgentModalProps {
   isOpen: boolean;
   onClose: () => void;
   voiceSetting: VoiceSetting;
   onVoiceSettingChange?: (setting: VoiceSetting) => void;
-  onTranscriptReady?: (userText: string, assistantReply: string) => void;
   mode?: ModeId;
   deepThink?: boolean;
+  onTranscriptReady?: (userText: string, assistantReply: string) => void;
 }
-
-type LiveState = "idle" | "listening" | "transcribing" | "thinking" | "speaking" | "error";
-
-const BRAVURA_VOICES = [
-  {
-    id: "JBFqnCBsd6RMkjVDRZzb",
-    name: "Bravura George",
-    provider: "elevenlabs" as const,
-    desc: "Warm & Conversational",
-  },
-  {
-    id: "EXAVITQu4vr4xnSDxMaL",
-    name: "Bravura Sarah",
-    provider: "elevenlabs" as const,
-    desc: "Mature & Reassuring",
-  },
-  {
-    id: "Xb7hH8MSUJpSbSDYk0k2",
-    name: "Bravura Alice",
-    provider: "elevenlabs" as const,
-    desc: "Crisp & Articulate",
-  },
-  {
-    id: "aura-asteria-en",
-    name: "Bravura Asteria",
-    provider: "deepgram" as const,
-    desc: "Fast & Natural",
-  },
-  {
-    id: "aura-orion-en",
-    name: "Bravura Orion",
-    provider: "deepgram" as const,
-    desc: "Deep & Professional",
-  },
-  {
-    id: "aura-luna-en",
-    name: "Bravura Luna",
-    provider: "deepgram" as const,
-    desc: "Gentle & Smooth",
-  },
-];
 
 export function LiveVoiceAgentModal({
   isOpen,
   onClose,
   voiceSetting,
   onVoiceSettingChange,
-  onTranscriptReady,
   mode = "chat",
   deepThink = false,
+  onTranscriptReady,
 }: LiveVoiceAgentModalProps) {
   const [liveState, setLiveState] = useState<LiveState>("idle");
-  const [volumeLevel, setVolumeLevel] = useState<number>(0);
-  const [userTranscript, setUserTranscript] = useState<string>("");
-  const [agentResponse, setAgentResponse] = useState<string>("");
+  const [isMuted, setIsMuted] = useState(false);
+  const [volumeLevel, setVolumeLevel] = useState(0);
+  const [freqData, setFreqData] = useState<Uint8Array | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [voiceDropdownOpen, setVoiceDropdownOpen] = useState(false);
-  const [conversationTurns, setConversationTurns] = useState<
-    Array<{ role: "user" | "assistant"; text: string }>
-  >([]);
+
+  // Active streaming buffers
+  const [currentAgentStream, setCurrentAgentStream] = useState<string>("");
+
+  // ChatGPT-style back-and-forth transcript history
+  const [conversationTurns, setConversationTurns] = useState<ConversationTurn[]>([]);
+
+  // Sub-modal for Voice Configuration Overlay
+  const [configOverlayOpen, setConfigOverlayOpen] = useState(false);
+
+  // Copied turn feedback
+  const [copiedTurnId, setCopiedTurnId] = useState<string | null>(null);
+
+  // Thumbs feedback state
+  const [feedbackState, setFeedbackState] = useState<Record<string, "up" | "down">>({});
 
   const recorderRef = useRef<VoiceRecorder | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioUrlRef = useRef<string | null>(null);
-  const audioAbortRef = useRef<AbortController | null>(null);
-  const audioSessionIdRef = useRef<number>(0);
-  const isTurnActiveRef = useRef<boolean>(false);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const freqDataRef = useRef<Uint8Array | null>(null);
-  const animFrameRef = useRef<number | null>(null);
-  const isComponentMounted = useRef<boolean>(true);
-  const activeSessionRef = useRef<boolean>(false);
+  const playbackControllerRef = useRef<AudioPlaybackController | null>(null);
+  const isComponentMounted = useRef(true);
+  const activeSessionRef = useRef(false);
+  const scrollEndRef = useRef<HTMLDivElement | null>(null);
 
-  // Clean audio helper
+  // Auto scroll to latest speech turn
+  useEffect(() => {
+    if (scrollEndRef.current) {
+      scrollEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [conversationTurns, currentAgentStream, liveState]);
+
+  // Cleanup audio players
   const cleanupAudio = useCallback(() => {
-    if (audioAbortRef.current) {
-      audioAbortRef.current.abort();
-      audioAbortRef.current = null;
-    }
-    audioSessionIdRef.current += 1;
-
-    if (audioRef.current) {
-      audioRef.current.onended = null;
-      audioRef.current.onerror = null;
-      audioRef.current.pause();
-      audioRef.current.src = "";
-      audioRef.current = null;
-    }
-    if (audioUrlRef.current) {
-      URL.revokeObjectURL(audioUrlRef.current);
-      audioUrlRef.current = null;
+    if (playbackControllerRef.current) {
+      playbackControllerRef.current.stop();
+      playbackControllerRef.current = null;
     }
   }, []);
 
-  // Canvas waveform visualizer
-  const renderVisualizer = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const width = canvas.width;
-    const height = canvas.height;
-    ctx.clearRect(0, 0, width, height);
-
-    const isLiveListening = liveState === "listening";
-    const isAiSpeaking = liveState === "speaking";
-    const isBusy = liveState === "transcribing" || liveState === "thinking";
-    const freq = freqDataRef.current;
-
-    const numBars = 36;
-    const barWidth = Math.max(3, (width - (numBars - 1) * 3.5) / numBars);
-    const gap = 3.5;
-
-    for (let i = 0; i < numBars; i++) {
-      let barHeight = 6;
-      const t = Date.now() / 180;
-
-      if (isLiveListening && freq && freq.length > 0) {
-        const sampleIdx = Math.floor((i / numBars) * (freq.length * 0.7));
-        const val = freq[sampleIdx] ?? 0;
-        const normalized = val / 255;
-        barHeight = Math.max(6, normalized * (height * 0.85) * (0.3 + volumeLevel * 0.8));
-      } else if (isAiSpeaking) {
-        const wave = Math.sin(t + i * 0.35) * 0.5 + 0.5;
-        barHeight = Math.max(6, wave * (height * 0.7) + 8);
-      } else if (isBusy) {
-        const wave = Math.sin(t * 1.5 + i * 0.4) * 0.5 + 0.5;
-        barHeight = Math.max(4, wave * 22 + 6);
-      } else {
-        const idleWave = Math.sin(t * 0.5 + i * 0.2) * 3 + 6;
-        barHeight = Math.max(4, idleWave);
-      }
-
-      const x = i * (barWidth + gap);
-      const y = (height - barHeight) / 2;
-
-      const gradient = ctx.createLinearGradient(0, y, 0, y + barHeight);
-      if (isLiveListening) {
-        gradient.addColorStop(0, "#38bdf8"); // sky-400
-        gradient.addColorStop(0.5, "#22d3ee"); // cyan-400
-        gradient.addColorStop(1, "#34d399"); // emerald-400
-      } else if (isAiSpeaking) {
-        gradient.addColorStop(0, "#818cf8"); // indigo-400
-        gradient.addColorStop(0.5, "#38bdf8"); // sky-400
-        gradient.addColorStop(1, "#06b6d4"); // cyan-500
-      } else if (isBusy) {
-        gradient.addColorStop(0, "#c084fc"); // purple-400
-        gradient.addColorStop(1, "#38bdf8"); // sky-400
-      } else {
-        gradient.addColorStop(0, "rgba(255,255,255,0.2)");
-        gradient.addColorStop(1, "rgba(255,255,255,0.08)");
-      }
-
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.roundRect(x, y, barWidth, barHeight, 3);
-      ctx.fill();
-    }
-
-    animFrameRef.current = requestAnimationFrame(renderVisualizer);
-  }, [liveState, volumeLevel]);
-
-  useEffect(() => {
-    if (isOpen) {
-      animFrameRef.current = requestAnimationFrame(renderVisualizer);
-    }
-    return () => {
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    };
-  }, [isOpen, renderVisualizer]);
-
-  // Turn execution: generate AI reply and speak it aloud
+  // Process user speech turn with human-like conversation prompt
   const processUserSpeech = useCallback(
     async (spokenText: string) => {
       if (!isComponentMounted.current || !activeSessionRef.current) return;
-      if (isTurnActiveRef.current) return;
-      if (!spokenText.trim()) {
-        void startListening();
-        return;
-      }
 
-      isTurnActiveRef.current = true;
-      cleanupAudio();
-      const currentSessionId = audioSessionIdRef.current;
-      const abortController = new AbortController();
-      audioAbortRef.current = abortController;
-
-      setUserTranscript(spokenText);
+      const userTurnId = `user-${Date.now()}`;
+      setConversationTurns((prev) => [...prev, { id: userTurnId, role: "user", text: spokenText }]);
       setLiveState("thinking");
+      setCurrentAgentStream("");
       setErrorMessage(null);
 
-      // Build message array with recent history for context
-      const newHistory = [...conversationTurns, { role: "user" as const, text: spokenText }];
-      setConversationTurns(newHistory);
-
-      const uiMessages = newHistory.map((item, idx) => ({
-        id: `turn-${idx}`,
-        role: item.role,
-        parts: [{ type: "text" as const, text: item.text }],
-      }));
+      // Construct messages payload for base-agent
+      const uiMessages = [
+        ...conversationTurns.map((t) => ({
+          id: t.id,
+          role: t.role,
+          parts: [{ type: "text" as const, text: t.text }],
+        })),
+        {
+          id: userTurnId,
+          role: "user" as const,
+          parts: [{ type: "text" as const, text: spokenText }],
+        },
+      ];
 
       let replyText = "";
       try {
@@ -239,34 +126,43 @@ export function LiveVoiceAgentModal({
             messages: uiMessages,
             mode,
             deepThink,
+            voiceMode: true, // triggers natural 1-2 sentence human voice mode
           }),
         });
 
         if (!chatRes.ok) {
           const errDetail = await chatRes.json().catch(() => null);
-          throw new Error(errDetail?.error || "Bravura AI could not process your voice request.");
+          throw new Error(
+            errDetail?.error || "The AI voice agent could not process your voice request.",
+          );
         }
 
         const reader = chatRes.body?.getReader();
         if (reader) {
           const decoder = new TextDecoder();
           let done = false;
+          let buffer = "";
+
           while (!done) {
             const { value, done: isDone } = await reader.read();
             done = isDone;
             if (value) {
-              const chunk = decoder.decode(value, { stream: true });
-              // Simple text extraction from UI stream protocol
-              const lines = chunk.split("\n");
+              buffer += decoder.decode(value, { stream: !isDone });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() ?? "";
+
               for (const line of lines) {
                 if (line.startsWith("data: ")) {
+                  const payload = line.slice(6).trim();
+                  if (payload === "[DONE]") continue;
                   try {
-                    const parsed = JSON.parse(line.slice(6));
+                    const parsed = JSON.parse(payload);
                     if (parsed.type === "text-delta" && parsed.delta) {
                       replyText += parsed.delta;
+                      setCurrentAgentStream((prev) => prev + parsed.delta);
                     }
                   } catch {
-                    // skip non-JSON stream ping
+                    // skip non-JSON
                   }
                 }
               }
@@ -274,121 +170,53 @@ export function LiveVoiceAgentModal({
           }
         }
 
-        // If reply text was not in SSE format or stream format, fallback to full text
         if (!replyText.trim()) {
-          replyText = "I heard you clearly. How else can I assist you with Bravura AI?";
+          replyText = "I'm right here with you. What would you like to explore next?";
         }
       } catch (err) {
         console.error("Live voice chat error:", err);
-        replyText =
-          "I heard your question, but encountered a connection issue. Please try speaking again.";
+        replyText = "I heard you, but hit a slight bump. Could you say that one more time?";
       }
 
-      if (
-        !isComponentMounted.current ||
-        !activeSessionRef.current ||
-        audioSessionIdRef.current !== currentSessionId
-      ) {
-        isTurnActiveRef.current = false;
-        return;
-      }
+      if (!isComponentMounted.current || !activeSessionRef.current) return;
 
-      setAgentResponse(replyText);
-      setConversationTurns((prev) => [...prev, { role: "assistant", text: replyText }]);
+      const assistantTurnId = `asst-${Date.now()}`;
+      setConversationTurns((prev) => [
+        ...prev,
+        { id: assistantTurnId, role: "assistant", text: replyText },
+      ]);
+      setCurrentAgentStream("");
       onTranscriptReady?.(spokenText, replyText);
 
-      // Speak AI response aloud
+      // Vocalize AI answer with high fidelity audio engine
       setLiveState("speaking");
       try {
-        const speakRes = await fetch("/api/speak", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: replyText,
-            voice: voiceSetting.voiceId,
-            provider: voiceSetting.provider,
-            playbackSpeed: voiceSetting.playbackSpeed,
-          }),
-          signal: abortController.signal,
+        const controller = playVoiceAudio({
+          text: replyText,
+          voiceId: voiceSetting.voiceId,
+          provider: voiceSetting.provider,
+          playbackSpeed: voiceSetting.playbackSpeed ?? 1.0,
+          onStart: () => {
+            if (isComponentMounted.current && activeSessionRef.current) {
+              setLiveState("speaking");
+            }
+          },
+          onEnded: () => {
+            // Handled when promise finishes
+          },
         });
 
-        if (
-          !isComponentMounted.current ||
-          !activeSessionRef.current ||
-          audioSessionIdRef.current !== currentSessionId
-        ) {
-          isTurnActiveRef.current = false;
-          return;
-        }
-
-        if (!speakRes.ok) {
-          // Fallback to browser SpeechSynthesis if server speak fails
-          await new Promise<void>((resolve, reject) => {
-            if (!("speechSynthesis" in window)) {
-              reject(new Error("Speech synthesis failed"));
-              return;
-            }
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(replyText);
-            utterance.rate = voiceSetting.playbackSpeed || 1.0;
-            utterance.onend = () => resolve();
-            utterance.onerror = () => reject(new Error("Browser speech synthesis failed"));
-            window.speechSynthesis.speak(utterance);
-          });
-        } else {
-          const blob = await speakRes.blob();
-          if (
-            !isComponentMounted.current ||
-            !activeSessionRef.current ||
-            audioSessionIdRef.current !== currentSessionId
-          ) {
-            isTurnActiveRef.current = false;
-            return;
-          }
-
-          const url = URL.createObjectURL(blob);
-          audioUrlRef.current = url;
-          const audio = new Audio(url);
-          if (voiceSetting.playbackSpeed && voiceSetting.playbackSpeed > 0) {
-            audio.playbackRate = voiceSetting.playbackSpeed;
-          }
-          audioRef.current = audio;
-
-          await new Promise<void>((resolve, reject) => {
-            audio.onended = () => resolve();
-            audio.onerror = () => reject(new Error("Audio playback failed"));
-            void audio.play().catch(reject);
-          });
-        }
+        playbackControllerRef.current = controller;
+        await controller.promise;
       } catch (err) {
-        if (audioSessionIdRef.current === currentSessionId && !abortController.signal.aborted) {
-          console.warn("Speech playback notice, attempting browser fallback:", err);
-          try {
-            await new Promise<void>((resolve, reject) => {
-              if (!("speechSynthesis" in window)) {
-                reject(err);
-                return;
-              }
-              window.speechSynthesis.cancel();
-              const utterance = new SpeechSynthesisUtterance(replyText);
-              utterance.rate = voiceSetting.playbackSpeed || 1.0;
-              utterance.onend = () => resolve();
-              utterance.onerror = () => reject(err);
-              window.speechSynthesis.speak(utterance);
-            });
-          } catch (fallbackErr) {
-            console.warn("Browser speech fallback failed:", fallbackErr);
-          }
-        }
+        console.warn("Speech playback notice:", err);
       } finally {
-        if (audioSessionIdRef.current === currentSessionId) {
-          cleanupAudio();
-        }
-        isTurnActiveRef.current = false;
+        cleanupAudio();
       }
 
-      // Automatically cycle back to listening for continuous hands-free conversation!
-      if (isComponentMounted.current && activeSessionRef.current && !isMuted) {
+      // Continuous dialogue: auto-resume microphone if hands-free is enabled
+      const handsFree = voiceSetting.handsFreeListen ?? true;
+      if (isComponentMounted.current && activeSessionRef.current && !isMuted && handsFree) {
         void startListening();
       } else {
         setLiveState("idle");
@@ -398,50 +226,12 @@ export function LiveVoiceAgentModal({
     [conversationTurns, mode, deepThink, voiceSetting, isMuted, onTranscriptReady],
   );
 
-  // Stop recording and transcribe user speech
-  const stopAndTranscribe = useCallback(async () => {
-    if (isTurnActiveRef.current || !activeSessionRef.current) return;
-    const recorder = recorderRef.current;
-    if (!recorder) return;
+  // Handle recorded audio
+  const handleAudioRecorded = useCallback(
+    async (result: RecorderResult) => {
+      if (!isComponentMounted.current || !activeSessionRef.current) return;
 
-    let result: RecorderResult;
-    try {
-      result = await recorder.stop();
-    } catch {
-      recorderRef.current = null;
-      setLiveState("idle");
-      return;
-    }
-    recorderRef.current = null;
-
-    if (!activeSessionRef.current) return;
-
-    if (result.blob.size < 1200) {
-      // Audio was too short or silence
-      if (activeSessionRef.current && !isMuted) {
-        void startListening();
-      } else {
-        setLiveState("idle");
-      }
-      return;
-    }
-
-    setLiveState("transcribing");
-    try {
-      const formData = new FormData();
-      const ext = result.mimeType.includes("mp4") ? "mp4" : "webm";
-      formData.append("audio", result.blob, `recording.${ext}`);
-
-      const res = await fetch("/api/transcribe", {
-        method: "POST",
-        body: formData,
-      });
-
-      const payload = (await res.json().catch(() => null)) as
-        { ok: true; text: string } | { ok: false; error: string } | null;
-
-      if (!res.ok || !payload || !payload.ok || !payload.text?.trim()) {
-        // Did not catch speech, resume listening smoothly
+      if (result.blob.size < 1000) {
         if (activeSessionRef.current && !isMuted) {
           void startListening();
         } else {
@@ -450,39 +240,64 @@ export function LiveVoiceAgentModal({
         return;
       }
 
-      void processUserSpeech(payload.text.trim());
-    } catch (err) {
-      console.error("Transcribe error in live voice:", err);
-      if (activeSessionRef.current && !isMuted) {
-        void startListening();
-      } else {
-        setLiveState("idle");
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMuted, processUserSpeech]);
+      setLiveState("transcribing");
+      try {
+        const formData = new FormData();
+        const ext = result.mimeType.includes("mp4") ? "mp4" : "webm";
+        formData.append("audio", result.blob, `recording.${ext}`);
 
-  // Start listening to user microphone
+        const res = await fetch("/api/transcribe", {
+          method: "POST",
+          body: formData,
+        });
+
+        const payload = (await res.json().catch(() => null)) as TranscribeResult;
+
+        if (!res.ok || !payload || !payload.ok || !payload.text?.trim()) {
+          if (activeSessionRef.current && !isMuted) {
+            void startListening();
+          } else {
+            setLiveState("idle");
+          }
+          return;
+        }
+
+        void processUserSpeech(payload.text.trim());
+      } catch (err) {
+        console.error("Transcribe error in live voice:", err);
+        if (activeSessionRef.current && !isMuted) {
+          void startListening();
+        } else {
+          setLiveState("idle");
+        }
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isMuted, processUserSpeech],
+  );
+
+  // Start microphone listening
   const startListening = useCallback(async () => {
-    if (isMuted || !activeSessionRef.current) return;
+    if (isMuted) return;
     cleanupAudio();
+    unlockAudio();
     setErrorMessage(null);
     setLiveState("listening");
     setVolumeLevel(0);
+    setFreqData(null);
 
     const recorder = new VoiceRecorder({
       onLevel: (lvl) => setVolumeLevel(lvl),
-      onFrequencyData: (data) => {
-        freqDataRef.current = data;
+      onFrequencyData: (data) => setFreqData(data),
+      onAutoStop: (result) => {
+        recorderRef.current = null;
+        if (activeSessionRef.current && !isMuted) {
+          void handleAudioRecorded(result);
+        }
       },
       silenceMs: 1400,
       silenceThreshold: 0.025,
       maxDurationMs: 45_000,
-      onSilence: () => {
-        if (!isTurnActiveRef.current && activeSessionRef.current) {
-          void stopAndTranscribe();
-        }
-      },
     });
     recorderRef.current = recorder;
 
@@ -491,11 +306,13 @@ export function LiveVoiceAgentModal({
     } catch (err) {
       recorderRef.current = null;
       setLiveState("error");
-      setErrorMessage(err instanceof Error ? err.message : "Microphone unavailable.");
+      setErrorMessage(
+        err instanceof Error ? err.message : "Microphone access denied or unavailable.",
+      );
     }
-  }, [cleanupAudio, isMuted, stopAndTranscribe]);
+  }, [cleanupAudio, isMuted, handleAudioRecorded]);
 
-  // Interrupt AI playback immediately and listen
+  // Interrupt AI playback and resume listening immediately
   const handleInterrupt = useCallback(() => {
     cleanupAudio();
     if (recorderRef.current) {
@@ -505,42 +322,95 @@ export function LiveVoiceAgentModal({
     void startListening();
   }, [cleanupAudio, startListening]);
 
+  // Replay a specific assistant message
+  const handleReplayTurn = useCallback(
+    async (text: string) => {
+      cleanupAudio();
+      unlockAudio();
+      setLiveState("speaking");
+
+      try {
+        const controller = playVoiceAudio({
+          text,
+          voiceId: voiceSetting.voiceId,
+          provider: voiceSetting.provider,
+          playbackSpeed: voiceSetting.playbackSpeed ?? 1.0,
+          onEnded: () => {
+            if (activeSessionRef.current && !isMuted) {
+              void startListening();
+            } else {
+              setLiveState("idle");
+            }
+          },
+        });
+        playbackControllerRef.current = controller;
+        await controller.promise;
+      } catch {
+        // ignore
+      } finally {
+        cleanupAudio();
+      }
+    },
+    [cleanupAudio, voiceSetting, isMuted, startListening],
+  );
+
+  // Copy turn text to clipboard
+  const handleCopyTurn = (turnId: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedTurnId(turnId);
+    setTimeout(() => setCopiedTurnId(null), 2000);
+  };
+
   // Toggle mute
   const handleToggleMute = useCallback(() => {
     setIsMuted((prev) => {
       const next = !prev;
       if (next) {
-        // Muting: stop recording/playback
         recorderRef.current?.cancel();
         recorderRef.current = null;
         cleanupAudio();
         setLiveState("idle");
       } else {
-        // Unmuting: start listening
         setTimeout(() => void startListening(), 50);
       }
       return next;
     });
   }, [cleanupAudio, startListening]);
 
-  // Auto-start when modal opens
+  // Keyboard shortcuts: Space to mute/interrupt, Esc to close
   useEffect(() => {
-    isComponentMounted.current = true;
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (configOverlayOpen) return;
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      } else if (e.code === "Space" && e.target === document.body) {
+        e.preventDefault();
+        if (liveState === "speaking") {
+          handleInterrupt();
+        } else {
+          handleToggleMute();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, configOverlayOpen, liveState, handleInterrupt, handleToggleMute, onClose]);
+
+  // Lifecycle on modal open/close
+  useEffect(() => {
     if (isOpen) {
+      isComponentMounted.current = true;
       activeSessionRef.current = true;
-      setIsMuted(false);
-      setUserTranscript("");
-      setAgentResponse("");
+      unlockAudio();
       const timer = setTimeout(() => {
         void startListening();
       }, 200);
       return () => clearTimeout(timer);
-    } else {
-      activeSessionRef.current = false;
-      recorderRef.current?.cancel();
-      recorderRef.current = null;
-      cleanupAudio();
-      setLiveState("idle");
     }
     return () => {
       isComponentMounted.current = false;
@@ -553,297 +423,305 @@ export function LiveVoiceAgentModal({
 
   if (!isOpen) return null;
 
-  const currentVoice =
-    BRAVURA_VOICES.find((v) => v.id === voiceSetting.voiceId) || BRAVURA_VOICES[0];
+  const currentVoiceObj = VOICES.find((v) => v.id === voiceSetting.voiceId) || VOICES[0];
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-6"
       role="dialog"
       aria-modal="true"
+      aria-label="Live Voice Agent"
+      className="fixed inset-0 z-50 flex flex-col bg-black text-white select-none overflow-hidden"
     >
-      {/* Dimmed backdrop */}
-      <div
-        onClick={onClose}
-        className="absolute inset-0 bg-black/85 backdrop-blur-xl transition-opacity"
-      />
+      {/* Subtle atmospheric radial lighting behind the fluid orb */}
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-blue-950/30 via-black to-black opacity-80" />
 
-      {/* Main Live Voice Container */}
-      <div className="relative z-10 flex w-full max-w-lg flex-col overflow-hidden rounded-2xl sm:rounded-[32px] border border-cyan-500/30 bg-[#090d16]/95 shadow-[0_0_80px_rgba(6,182,212,0.18)] backdrop-blur-2xl">
-        {/* Top bar */}
-        <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-6 sm:py-4">
-          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-            <div className="relative flex size-3 shrink-0 items-center justify-center">
-              <span className="absolute size-2.5 rounded-full bg-cyan-400 animate-ping opacity-75" />
-              <span className="size-2 rounded-full bg-cyan-400" />
-            </div>
-            <span className="text-xs sm:text-sm font-semibold tracking-wide text-white truncate">
-              Live Voice
-            </span>
-            <span className="rounded-full border border-cyan-500/30 bg-cyan-500/15 px-2 py-0.5 text-[10px] font-medium text-cyan-300 shrink-0">
-              Two-Way
+      {/* Top Floating Bar */}
+      <header className="relative z-20 flex items-center justify-between px-4 py-3 sm:px-8 sm:py-4 border-b border-white/[0.06] bg-black/40 backdrop-blur-md">
+        {/* Left: Status Pill */}
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs">
+            <span
+              className={cn(
+                "size-2 rounded-full",
+                liveState === "listening" && "bg-cyan-400 animate-pulse",
+                liveState === "speaking" && "bg-blue-400 animate-bounce",
+                liveState === "thinking" && "bg-purple-400 animate-spin",
+                liveState === "transcribing" && "bg-amber-400 animate-pulse",
+                liveState === "idle" && "bg-white/40",
+                liveState === "error" && "bg-red-400",
+              )}
+            />
+            <span className="font-medium text-white/90">
+              {liveState === "listening" && "Listening..."}
+              {liveState === "speaking" && `${currentVoiceObj.name} speaking`}
+              {liveState === "thinking" && "Thinking..."}
+              {liveState === "transcribing" && "Processing speech..."}
+              {liveState === "idle" && (isMuted ? "Microphone muted" : "Paused")}
+              {liveState === "error" && "Mic error"}
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Voice Persona Dropdown */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setVoiceDropdownOpen((v) => !v)}
-                className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 sm:px-3 py-1 text-xs text-white/80 hover:bg-white/10 transition-colors cursor-pointer"
-                title="Change Voice Persona"
-              >
-                <span className="max-w-[90px] sm:max-w-none truncate">{currentVoice.name}</span>
-                <ChevronDown className="size-3 shrink-0" />
-              </button>
+          <span className="hidden sm:inline-block text-[11px] text-white/40 font-mono">
+            {voiceSetting.playbackSpeed ?? 1.0}x
+          </span>
+        </div>
 
-              {voiceDropdownOpen && (
-                <div className="absolute right-0 top-full mt-1.5 z-50 w-52 rounded-2xl border border-white/10 bg-[#0c1322] p-1.5 shadow-2xl">
-                  <p className="px-2.5 py-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Bravura Voice Persona
+        {/* Center: Current Voice Persona Pill (click to configure) */}
+        <button
+          type="button"
+          onClick={() => setConfigOverlayOpen(true)}
+          className="flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3.5 py-1 text-xs text-cyan-200 hover:bg-cyan-500/20 hover:border-cyan-500/50 transition-all cursor-pointer shadow-sm shadow-cyan-500/10"
+          title="Open Voice Configuration"
+        >
+          <Sparkles className="size-3 text-cyan-400" />
+          <span className="font-medium truncate max-w-[120px] sm:max-w-none">
+            {currentVoiceObj.name}
+          </span>
+          <Sliders className="size-3 text-cyan-400/80" />
+        </button>
+
+        {/* Right: Close & End Call */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex size-9 items-center justify-center rounded-full bg-white/10 text-white/70 hover:bg-white/20 hover:text-white transition-colors cursor-pointer"
+            aria-label="End live voice session"
+            title="End Session (Esc)"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+      </header>
+
+      {/* Center: ChatGPT-style Conversational Message Stream */}
+      <main className="relative z-10 flex-1 overflow-y-auto px-4 py-6 sm:px-8 md:px-20 lg:px-44 space-y-6">
+        {conversationTurns.length === 0 && !currentAgentStream && (
+          <div className="flex h-full min-h-[300px] flex-col items-center justify-center text-center px-4">
+            <div className="mb-4 flex size-14 items-center justify-center rounded-full bg-white/5 border border-white/10 text-cyan-400">
+              <Mic className="size-6 animate-pulse" />
+            </div>
+            <h3 className="text-xl sm:text-2xl font-medium text-white/90 mb-2">
+              Voice Agent is listening
+            </h3>
+            <p className="text-sm text-white/50 max-w-sm leading-relaxed">
+              Speak naturally just like talking to a real human. Try saying:
+              <br />
+              <span className="text-cyan-300/80 italic mt-2 inline-block">
+                "Yo what's good bro? Tell me something dope today."
+              </span>
+            </p>
+          </div>
+        )}
+
+        {/* Conversation Turns List */}
+        {conversationTurns.map((turn) => {
+          const isUser = turn.role === "user";
+          const isCopied = copiedTurnId === turn.id;
+          const userFeedback = feedbackState[turn.id];
+
+          return (
+            <div
+              key={turn.id}
+              className={cn("flex w-full animate-in fade-in slide-in-from-bottom-2 duration-300", {
+                "justify-end": isUser,
+                "justify-start": !isUser,
+              })}
+            >
+              {isUser ? (
+                /* User bubble: sleek blue capsule matching image.png */
+                <div className="max-w-[85%] sm:max-w-[70%] rounded-[22px] bg-blue-600 px-5 py-3 text-sm sm:text-base text-white shadow-lg shadow-blue-600/20 leading-relaxed font-normal">
+                  {turn.text}
+                </div>
+              ) : (
+                /* Assistant message: clean typography with action feedback */
+                <div className="group max-w-[88%] sm:max-w-[75%] space-y-2">
+                  <p className="text-base sm:text-lg text-white/95 leading-relaxed font-normal">
+                    {turn.text}
                   </p>
-                  {BRAVURA_VOICES.map((v) => (
+
+                  {/* Message Action Bar (Copy, Replay, Thumbs) */}
+                  <div className="flex items-center gap-1.5 pt-1 text-white/40 transition-opacity">
                     <button
-                      key={v.id}
                       type="button"
-                      onClick={() => {
-                        onVoiceSettingChange?.({
-                          voiceId: v.id,
-                          provider: v.provider,
-                          autoSpeak: voiceSetting.autoSpeak,
-                          playbackSpeed: voiceSetting.playbackSpeed,
-                        });
-                        setVoiceDropdownOpen(false);
-                      }}
-                      className={cn(
-                        "flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left text-xs transition-colors cursor-pointer",
-                        voiceSetting.voiceId === v.id
-                          ? "bg-cyan-500/20 text-cyan-300 font-medium"
-                          : "text-white/80 hover:bg-white/5 hover:text-white",
-                      )}
+                      onClick={() => handleCopyTurn(turn.id, turn.text)}
+                      className="flex size-7 items-center justify-center rounded-lg hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+                      title="Copy response"
                     >
-                      <div className="min-w-0 pr-1">
-                        <p className="truncate">{v.name}</p>
-                        <p className="text-[10px] text-muted-foreground truncate">{v.desc}</p>
-                      </div>
-                      {voiceSetting.voiceId === v.id && (
-                        <Check className="size-3.5 text-cyan-400 shrink-0" />
+                      {isCopied ? (
+                        <Check className="size-3.5 text-emerald-400" />
+                      ) : (
+                        <Copy className="size-3.5" />
                       )}
                     </button>
-                  ))}
+
+                    <button
+                      type="button"
+                      onClick={() => void handleReplayTurn(turn.text)}
+                      className="flex size-7 items-center justify-center rounded-lg hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
+                      title="Replay speech"
+                    >
+                      <RotateCcw className="size-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFeedbackState((prev) => ({
+                          ...prev,
+                          [turn.id]: prev[turn.id] === "up" ? undefined! : "up",
+                        }))
+                      }
+                      className={cn(
+                        "flex size-7 items-center justify-center rounded-lg hover:bg-white/10 transition-colors cursor-pointer",
+                        userFeedback === "up" ? "text-cyan-400" : "hover:text-white",
+                      )}
+                      title="Good response"
+                    >
+                      <ThumbsUp className="size-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFeedbackState((prev) => ({
+                          ...prev,
+                          [turn.id]: prev[turn.id] === "down" ? undefined! : "down",
+                        }))
+                      }
+                      className={cn(
+                        "flex size-7 items-center justify-center rounded-lg hover:bg-white/10 transition-colors cursor-pointer",
+                        userFeedback === "down" ? "text-red-400" : "hover:text-white",
+                      )}
+                      title="Bad response"
+                    >
+                      <ThumbsDown className="size-3.5" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
+          );
+        })}
 
-            {/* Close Button */}
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex size-7 sm:size-8 items-center justify-center rounded-full bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-white transition-colors cursor-pointer shrink-0"
-              aria-label="End live session"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Central Visualizer Area */}
-        <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
-          {/* Animated Central Glowing Orb */}
-          <div className="relative mb-8 flex size-40 items-center justify-center">
-            {/* Outer dynamic rings */}
-            <div
-              className={cn(
-                "absolute inset-0 rounded-full transition-all duration-300",
-                liveState === "listening" &&
-                  "bg-gradient-to-tr from-cyan-500/20 via-sky-500/20 to-emerald-500/20 animate-pulse",
-                liveState === "speaking" &&
-                  "bg-gradient-to-tr from-indigo-500/25 via-cyan-500/25 to-sky-500/25 animate-pulse",
-                liveState === "thinking" &&
-                  "bg-gradient-to-tr from-purple-500/30 to-cyan-500/30 animate-spin",
-                liveState === "idle" && "bg-white/5",
-              )}
-              style={{
-                transform: `scale(${1 + Math.min(volumeLevel, 0.5) * 0.35})`,
-              }}
-            />
-
-            <div
-              className={cn(
-                "absolute size-32 rounded-full border transition-all duration-300",
-                liveState === "listening" &&
-                  "border-cyan-400/40 shadow-[0_0_40px_rgba(34,211,238,0.3)]",
-                liveState === "speaking" &&
-                  "border-indigo-400/50 shadow-[0_0_50px_rgba(99,102,241,0.4)]",
-                liveState === "thinking" &&
-                  "border-purple-400/50 shadow-[0_0_40px_rgba(168,85,247,0.3)]",
-                liveState === "idle" && "border-white/10",
-              )}
-            />
-
-            {/* Inner Core */}
-            <div
-              className={cn(
-                "relative z-10 flex size-24 items-center justify-center rounded-full transition-transform duration-200 shadow-2xl",
-                liveState === "listening" &&
-                  "bg-gradient-to-br from-cyan-500 to-emerald-500 text-black",
-                liveState === "speaking" &&
-                  "bg-gradient-to-br from-indigo-500 via-sky-500 to-cyan-400 text-white",
-                liveState === "thinking" &&
-                  "bg-gradient-to-br from-purple-500 to-cyan-500 text-white animate-pulse",
-                liveState === "transcribing" &&
-                  "bg-gradient-to-br from-sky-500 to-indigo-500 text-white animate-pulse",
-                liveState === "idle" && "bg-white/10 text-white/60",
-                liveState === "error" && "bg-red-500/20 text-red-400 border border-red-500/40",
-              )}
-              style={{
-                transform: `scale(${1 + Math.min(volumeLevel, 0.4) * 0.2})`,
-              }}
-            >
-              {liveState === "thinking" || liveState === "transcribing" ? (
-                <Loader2 className="size-8 animate-spin" />
-              ) : liveState === "speaking" ? (
-                <Volume2 className="size-9 animate-bounce" />
-              ) : isMuted ? (
-                <MicOff className="size-8 text-white/50" />
-              ) : (
-                <Mic className="size-8" />
-              )}
-            </div>
-          </div>
-
-          {/* Real-time Frequency Waveform Bars */}
-          <div className="w-full max-w-sm px-4">
-            <canvas ref={canvasRef} width={320} height={50} className="h-12 w-full" />
-          </div>
-
-          {/* Live Status Label */}
-          <div className="mt-4 flex flex-col items-center gap-1.5">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-1 text-xs">
-              {liveState === "listening" && (
-                <>
-                  <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="font-medium text-emerald-300">
-                    Listening to you… speak naturally
-                  </span>
-                </>
-              )}
-              {liveState === "transcribing" && (
-                <>
-                  <Loader2 className="size-3 animate-spin text-sky-400" />
-                  <span className="font-medium text-sky-300">Transcribing speech…</span>
-                </>
-              )}
-              {liveState === "thinking" && (
-                <>
-                  <Sparkles className="size-3 text-purple-400 animate-pulse" />
-                  <span className="font-medium text-purple-300">Bravura AI is reasoning…</span>
-                </>
-              )}
-              {liveState === "speaking" && (
-                <>
-                  <Volume2 className="size-3 text-cyan-300 animate-pulse" />
-                  <span className="font-medium text-cyan-300">Bravura Speaking aloud…</span>
-                </>
-              )}
-              {liveState === "idle" && (
-                <span className="text-white/60">
-                  {isMuted ? "Microphone muted" : "Tap Talk to start speaking"}
-                </span>
-              )}
-              {liveState === "error" && (
-                <span className="text-red-400">{errorMessage || "Voice connection issue"}</span>
-              )}
-            </div>
-
-            <p className="text-[11px] text-muted-foreground">
-              Hands-free two-way voice loop · Auto-resumes listening after speaking
-            </p>
-          </div>
-
-          {/* Live Subtitle Transcript Display */}
-          <div className="mt-6 w-full max-h-36 overflow-y-auto rounded-2xl border border-white/10 bg-white/[0.03] p-3.5 text-left text-xs">
-            {userTranscript && (
-              <div className="mb-2">
-                <span className="font-semibold text-cyan-400">You: </span>
-                <span className="text-white/90">{userTranscript}</span>
-              </div>
-            )}
-            {agentResponse && (
-              <div>
-                <span className="font-semibold text-indigo-300">Bravura AI: </span>
-                <span className="text-white/80">{agentResponse}</span>
-              </div>
-            )}
-            {!userTranscript && !agentResponse && (
-              <p className="text-center italic text-muted-foreground">
-                Say something to Bravura AI — for example: "What are your core capabilities?" or
-                "Tell me about yourself."
+        {/* Live streaming assistant text before turn finishes */}
+        {currentAgentStream && (
+          <div className="flex w-full justify-start animate-in fade-in duration-200">
+            <div className="max-w-[88%] sm:max-w-[75%] space-y-2">
+              <p className="text-base sm:text-lg text-white/90 leading-relaxed font-normal">
+                {currentAgentStream}
+                <span className="inline-block size-2 ml-1 rounded-full bg-cyan-400 animate-pulse" />
               </p>
-            )}
+            </div>
           </div>
+        )}
+
+        {/* Error message toast */}
+        {errorMessage && (
+          <div className="mx-auto my-2 max-w-md rounded-2xl border border-red-500/40 bg-red-950/40 p-3 text-center text-xs text-red-300">
+            {errorMessage}
+          </div>
+        )}
+
+        <div ref={scrollEndRef} className="h-6" />
+      </main>
+
+      {/* Bottom Area: The Iconic ChatGPT-style Fluid Plasma Orb & Controls */}
+      <footer className="relative z-20 flex flex-col items-center justify-center pb-6 pt-2">
+        {/* The Fluid Glowing Orb (matches image.png) */}
+        <div className="relative flex items-center justify-center">
+          <FluidVoiceOrb
+            state={liveState}
+            volumeLevel={volumeLevel}
+            frequencyData={freqData}
+            size={170}
+            onClick={() => {
+              if (liveState === "speaking") {
+                handleInterrupt();
+              } else if (liveState === "listening") {
+                // Keep listening or manually stop
+              } else {
+                void startListening();
+              }
+            }}
+          />
         </div>
 
-        {/* Bottom Interactive Controls */}
-        <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-3.5 py-3 sm:px-6 sm:py-4 gap-1.5 sm:gap-2">
-          {/* Mute toggle */}
+        {/* Orb status hint */}
+        <p className="mt-2 text-xs text-white/50 tracking-wide font-normal">
+          {liveState === "speaking" && "Tap orb to interrupt"}
+          {liveState === "listening" && "Listening to you... speak naturally"}
+          {liveState === "thinking" && "AI is reasoning..."}
+          {liveState === "transcribing" && "Understanding..."}
+          {liveState === "idle" && (isMuted ? "Unmute to speak" : "Tap orb to speak")}
+          {liveState === "error" && "Microphone issue"}
+        </p>
+
+        {/* Floating Controls Bar */}
+        <div className="mt-4 flex items-center gap-3 sm:gap-4 rounded-full border border-white/10 bg-white/[0.05] p-2 backdrop-blur-xl shadow-2xl">
+          {/* Mute / Unmute Button */}
           <button
             type="button"
             onClick={handleToggleMute}
             className={cn(
-              "flex items-center gap-1.5 sm:gap-2 rounded-full border px-2.5 sm:px-3.5 py-2 text-xs transition-colors cursor-pointer shrink-0",
+              "flex size-11 items-center justify-center rounded-full transition-all cursor-pointer",
               isMuted
-                ? "border-red-500/40 bg-red-500/15 text-red-300"
-                : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white",
+                ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/40"
+                : "bg-white/10 text-white hover:bg-white/20",
             )}
+            title={isMuted ? "Unmute Microphone" : "Mute Microphone"}
+            aria-label={isMuted ? "Unmute Microphone" : "Mute Microphone"}
           >
-            {isMuted ? <MicOff className="size-3.5" /> : <Mic className="size-3.5" />}
-            <span className="hidden xs:inline sm:inline">{isMuted ? "Unmute" : "Mute"}</span>
+            {isMuted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
           </button>
 
-          {/* Center Action (Finish Speaking / Interrupt) */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {liveState === "speaking" ? (
-              <button
-                type="button"
-                onClick={handleInterrupt}
-                className="flex items-center gap-1.5 sm:gap-2 rounded-full bg-cyan-500/20 border border-cyan-500/50 px-3 sm:px-4 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/30 transition-colors cursor-pointer animate-pulse"
-              >
-                <Square className="size-3 fill-current" />
-                <span>Interrupt</span>
-              </button>
-            ) : liveState === "listening" ? (
-              <button
-                type="button"
-                onClick={() => void stopAndTranscribe()}
-                className="flex items-center gap-1.5 sm:gap-2 rounded-full bg-gradient-to-r from-cyan-500 to-emerald-500 px-3.5 sm:px-4 py-2 text-xs font-semibold text-black transition-transform hover:scale-105 cursor-pointer shadow-lg shadow-cyan-500/20"
-              >
-                <span>Done speaking</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void startListening()}
-                className="flex items-center gap-1.5 sm:gap-2 rounded-full bg-cyan-500 px-3.5 sm:px-4 py-2 text-xs font-semibold text-black transition-transform hover:scale-105 cursor-pointer"
-              >
-                <Mic className="size-3.5" />
-                <span>Talk</span>
-              </button>
-            )}
-          </div>
+          {/* Interrupt AI playback button (visible when speaking or thinking) */}
+          {(liveState === "speaking" || liveState === "thinking") && (
+            <button
+              type="button"
+              onClick={handleInterrupt}
+              className="flex size-11 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25 transition-all cursor-pointer animate-in zoom-in-75 duration-200"
+              title="Interrupt AI"
+              aria-label="Interrupt AI"
+            >
+              <Square className="size-4 fill-current" />
+            </button>
+          )}
 
-          {/* End Session Button */}
+          {/* Voice Configuration Overlay Button */}
+          <button
+            type="button"
+            onClick={() => setConfigOverlayOpen(true)}
+            className="flex size-11 items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20 hover:text-white transition-all cursor-pointer"
+            title="Voice & Speed Settings"
+            aria-label="Voice & Speed Settings"
+          >
+            <Sliders className="size-5" />
+          </button>
+
+          {/* End Call / Close Button */}
           <button
             type="button"
             onClick={onClose}
-            className="flex items-center gap-1 sm:gap-1.5 rounded-full border border-white/10 bg-white/5 px-2.5 sm:px-3.5 py-2 text-xs text-muted-foreground hover:bg-white/10 hover:text-white transition-colors cursor-pointer shrink-0"
+            className="flex size-11 items-center justify-center rounded-full bg-red-600/80 text-white hover:bg-red-600 transition-all cursor-pointer shadow-lg shadow-red-600/30"
+            title="End Call"
+            aria-label="End Call"
           >
-            <X className="size-3.5" />
-            <span className="hidden xs:inline sm:inline">End</span>
+            <PhoneOff className="size-5" />
           </button>
         </div>
-      </div>
+      </footer>
+
+      {/* Seamless Voice Configuration Overlay on top of live session */}
+      {configOverlayOpen && (
+        <VoiceAgentModal
+          onClose={() => setConfigOverlayOpen(false)}
+          voiceSetting={voiceSetting}
+          onSaveSetting={(newSetting) => {
+            onVoiceSettingChange?.(newSetting);
+          }}
+        />
+      )}
     </div>
   );
 }

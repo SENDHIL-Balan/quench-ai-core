@@ -17,6 +17,7 @@ import {
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { QuenchOrb } from "./QuenchOrb";
 import { cn } from "@/lib/utils";
 import { signInWithGoogle, signOutUser, onAuthState, type AuthUserProfile } from "@/lib/firebase";
 
@@ -33,6 +34,7 @@ export function Sidebar({
   onNewChat,
   onHistory,
   onOpenVoiceSettings,
+  onOpenTools,
   className,
   user: userProp,
   authInitialized: authInitializedProp,
@@ -40,6 +42,7 @@ export function Sidebar({
   onNewChat: () => void;
   onHistory: () => void;
   onOpenVoiceSettings?: () => void;
+  onOpenTools?: () => void;
   className?: string;
   user?: AuthUserProfile | null;
   authInitialized?: boolean;
@@ -93,13 +96,14 @@ export function Sidebar({
         className,
       )}
     >
-      <div className="flex items-center px-1 pt-2 pb-1">
-        <img
-          src="/ai-logo.jpg"
-          alt="Bravura AI"
-          className="h-14 sm:h-16 w-auto max-w-[215px] sm:max-w-[225px] object-contain object-left drop-shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-transform hover:scale-[1.02]"
-          referrerPolicy="no-referrer"
-        />
+      <div className="flex items-center gap-3 px-1 pt-2">
+        <QuenchOrb className="size-11" />
+        <div>
+          <p className="text-[1.35rem] leading-none font-semibold tracking-wide">
+            BRAVURA <span className="text-gradient-brand">AI</span>
+          </p>
+          <p className="text-muted-foreground mt-1 text-[11px]">Intelligent Voice & Workspace</p>
+        </div>
       </div>
 
       <button
@@ -116,6 +120,15 @@ export function Sidebar({
         {NAV.map(({ label, icon: Icon, to }) => {
           const baseClass =
             "text-muted-foreground hover:bg-accent/60 hover:text-foreground flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors cursor-pointer";
+
+          if (label === "Tools" && onOpenTools) {
+            return (
+              <button key={label} type="button" onClick={onOpenTools} className={baseClass}>
+                <Icon className="size-[18px]" />
+                {label}
+              </button>
+            );
+          }
 
           if (to) {
             return (

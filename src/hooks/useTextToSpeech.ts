@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from "react";
-import type { SpeakRequestBody, VoiceProvider, VoiceState } from "@/lib/voice/types";
+import type { VoiceProvider, VoiceState } from "@/lib/voice/types";
+import { playVoiceAudio, type AudioPlaybackController } from "@/lib/voice/player";
 
 export interface SpeakOptions {
   id?: string;
@@ -17,154 +18,65 @@ interface UseTextToSpeechResult {
   stop: () => void;
 }
 
-/** Sends text to /api/speak with ElevenLabs or Deepgram, plays audio, and tracks state. */
+/**
+ * Sends text to /api/speak (ElevenLabs or Deepgram) with Web Audio API,
+ * HTMLAudio, and Web Speech API fallback.
+ */
 export function useTextToSpeech(): UseTextToSpeechResult {
   const [state, setState] = useState<UseTextToSpeechResult["state"]>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const urlRef = useRef<string | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const currentSessionIdRef = useRef<number>(0);
-
-  const cleanup = useCallback(() => {
-    // Abort in-flight synthesis fetch
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-    // Invalidate session so pending promises bail out
-    currentSessionIdRef.current += 1;
-
-    if (audioRef.current) {
-      audioRef.current.onended = null;
-      audioRef.current.onerror = null;
-      audioRef.current.pause();
-      audioRef.current.src = "";
-      audioRef.current = null;
-    }
-    if (urlRef.current) {
-      URL.revokeObjectURL(urlRef.current);
-      urlRef.current = null;
-    }
-  }, []);
+  const controllerRef = useRef<AudioPlaybackController | null>(null);
 
   const stop = useCallback(() => {
-    cleanup();
+    if (controllerRef.current) {
+      controllerRef.current.stop();
+      controllerRef.current = null;
+    }
     setState("idle");
     setPlayingId(null);
-  }, [cleanup]);
+  }, []);
 
-  const speak = useCallback(
-    async (text: string, options: SpeakOptions = {}) => {
-      const trimmed = text.trim();
-      if (!trimmed) return;
+  const speak = useCallback(async (text: string, options: SpeakOptions = {}) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
 
-      cleanup();
-      const sessionId = currentSessionIdRef.current;
-      const abortController = new AbortController();
-      abortControllerRef.current = abortController;
+    // Stop any existing playback
+    if (controllerRef.current) {
+      controllerRef.current.stop();
+      controllerRef.current = null;
+    }
 
-      setErrorMessage(null);
-      setState("speaking");
-      setPlayingId(options.id ?? null);
+    setErrorMessage(null);
+    setState("speaking");
+    setPlayingId(options.id ?? null);
 
-      try {
-        const requestBody: SpeakRequestBody = { text: trimmed };
-        if (options.voice) {
-          requestBody.voice = options.voice;
-        }
-        if (options.provider) {
-          requestBody.provider = options.provider;
-        }
-
-        const response = await fetch("/api/speak", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestBody),
-          signal: abortController.signal,
-        });
-
-        if (currentSessionIdRef.current !== sessionId) {
-          return; // Session aborted or superseded
-        }
-
-        if (!response.ok) {
-          // Fallback to browser SpeechSynthesis
-          await new Promise<void>((resolve, reject) => {
-            if (!("speechSynthesis" in window)) {
-              reject(new Error("Speech synthesis not supported."));
-              return;
-            }
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(trimmed);
-            utterance.rate = options.playbackSpeed || 1.0;
-            utterance.onend = () => resolve();
-            utterance.onerror = () => reject(new Error("Browser speech synthesis failed."));
-            window.speechSynthesis.speak(utterance);
-          });
-        } else {
-          const blob = await response.blob();
-          if (currentSessionIdRef.current !== sessionId) {
-            return;
-          }
-
-          const url = URL.createObjectURL(blob);
-          urlRef.current = url;
-
-          const audio = new Audio(url);
-          if (options.playbackSpeed && options.playbackSpeed > 0) {
-            audio.playbackRate = options.playbackSpeed;
-          }
-          audioRef.current = audio;
-
-          await new Promise<void>((resolve, reject) => {
-            audio.onended = () => resolve();
-            audio.onerror = () => reject(new Error("Audio playback failed."));
-            void audio.play().catch(reject);
-          });
-        }
-
-        if (currentSessionIdRef.current === sessionId) {
+    try {
+      const controller = playVoiceAudio({
+        text: trimmed,
+        voiceId: options.voice,
+        provider: options.provider,
+        playbackSpeed: options.playbackSpeed,
+        onStart: () => {
+          setState("speaking");
+        },
+        onEnded: () => {
           setState("idle");
           setPlayingId(null);
-        }
-      } catch (err) {
-        if (currentSessionIdRef.current === sessionId && abortController.signal.aborted !== true) {
-          try {
-            await new Promise<void>((resolve, reject) => {
-              if (!("speechSynthesis" in window)) {
-                reject(err);
-                return;
-              }
-              window.speechSynthesis.cancel();
-              const utterance = new SpeechSynthesisUtterance(trimmed);
-              utterance.rate = options.playbackSpeed || 1.0;
-              utterance.onend = () => resolve();
-              utterance.onerror = () => reject(err);
-              window.speechSynthesis.speak(utterance);
-            });
-            if (currentSessionIdRef.current === sessionId) {
-              setState("idle");
-              setPlayingId(null);
-            }
-            return;
-          } catch (fallbackErr) {
-            console.warn("Browser speech fallback failed:", fallbackErr);
-          }
+          controllerRef.current = null;
+        },
+      });
 
-          setErrorMessage(err instanceof Error ? err.message : "Couldn't play audio.");
-          setState("error");
-          setPlayingId(null);
-        }
-      } finally {
-        if (currentSessionIdRef.current === sessionId) {
-          cleanup();
-        }
-      }
-    },
-    [cleanup],
-  );
+      controllerRef.current = controller;
+      await controller.promise;
+    } catch (err) {
+      console.warn("[voice] Playback notice:", err);
+      setErrorMessage(err instanceof Error ? err.message : "Couldn't play audio.");
+      setState("error");
+      setPlayingId(null);
+      controllerRef.current = null;
+    }
+  }, []);
 
   return {
     state,

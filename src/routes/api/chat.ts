@@ -9,6 +9,7 @@ type ChatBody = {
   mode?: unknown;
   deepThink?: unknown;
   webSearch?: unknown;
+  voiceMode?: unknown;
 };
 
 function errorResponse(message: string, status: number) {
@@ -29,7 +30,7 @@ export const Route = createFileRoute("/api/chat")({
           return errorResponse("We couldn't read that request. Please try again.", 400);
         }
 
-        const { messages, mode, deepThink, webSearch } = body;
+        const { messages, mode, deepThink, webSearch, voiceMode } = body;
         if (!Array.isArray(messages) || messages.length === 0) {
           return errorResponse("Please type a message first.", 400);
         }
@@ -50,6 +51,7 @@ export const Route = createFileRoute("/api/chat")({
             mode: modeId,
             deepThink: deepThink === true,
             webSearch: webSearch === true,
+            voiceMode: voiceMode === true,
           });
         } catch (error) {
           if (error instanceof MissingProviderKeyError) {

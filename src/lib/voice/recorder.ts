@@ -1,13 +1,13 @@
 /**
- * Bravura AI — microphone recorder
+ * Bravura AI — Microphone Recorder
  *
  * Thin wrapper around MediaRecorder + Web Audio API:
  *   - requests mic permission on first start
  *   - records audio/webm (Chrome, Edge, Firefox) or audio/mp4 (Safari)
  *   - reports live volume so the UI can show a waveform
- *   - auto-stops after a period of silence (if enabled)
+ *   - auto-stops after a period of silence (after user has begun speaking)
  *
- * No server calls. No dependencies. Browser-native only.
+ * No external server dependencies. Browser-native only.
  */
 
 export type RecorderOptions = {
@@ -15,14 +15,14 @@ export type RecorderOptions = {
   onLevel?: (level: number) => void;
   /** Called frequently with frequency spectrum data (0..255). For live frequency bars/waveform. */
   onFrequencyData?: (data: Uint8Array) => void;
-  /** Auto-stop after this many ms of silence. 0 disables. Default 1500. */
+  /** Called when auto-stop completes due to silence after speech. */
+  onAutoStop?: (result: RecorderResult) => void;
+  /** Auto-stop after this many ms of silence once speech was heard. 0 disables. Default 1500. */
   silenceMs?: number;
-  /** Volume below which we consider it silence. 0..1. Default 0.02. */
+  /** Volume below which we consider it silence. 0..1. Default 0.025. */
   silenceThreshold?: number;
   /** Maximum recording length in ms. Default 60000 (60s). */
   maxDurationMs?: number;
-  /** Callback triggered when silence threshold has been exceeded */
-  onSilence?: () => void;
 };
 
 export type RecorderResult = {
@@ -40,32 +40,31 @@ export class VoiceRecorder {
   private rafId: number | null = null;
   private startedAt = 0;
   private lastLoudAt = 0;
-  private silenceTimer: number | null = null;
+  private hasSpoken = false;
   private maxTimer: number | null = null;
+  private isStopping = false;
+  private lastResult: RecorderResult | null = null;
   private stopResolve: ((r: RecorderResult) => void) | null = null;
   private stopReject: ((e: Error) => void) | null = null;
+
   private options: {
     onLevel?: (level: number) => void;
     onFrequencyData?: (data: Uint8Array) => void;
+    onAutoStop?: (result: RecorderResult) => void;
     silenceMs: number;
     silenceThreshold: number;
     maxDurationMs: number;
   };
+
   constructor(options: RecorderOptions = {}) {
-    const opts: {
-      onLevel?: (level: number) => void;
-      onFrequencyData?: (data: Uint8Array) => void;
-      silenceMs: number;
-      silenceThreshold: number;
-      maxDurationMs: number;
-    } = {
+    this.options = {
       silenceMs: options.silenceMs ?? 1500,
-      silenceThreshold: options.silenceThreshold ?? 0.02,
+      silenceThreshold: options.silenceThreshold ?? 0.025,
       maxDurationMs: options.maxDurationMs ?? 60_000,
+      onLevel: options.onLevel,
+      onFrequencyData: options.onFrequencyData,
+      onAutoStop: options.onAutoStop,
     };
-    if (options.onLevel) opts.onLevel = options.onLevel;
-    if (options.onFrequencyData) opts.onFrequencyData = options.onFrequencyData;
-    this.options = opts;
   }
 
   getAnalyser(): AnalyserNode | null {
@@ -119,6 +118,9 @@ export class VoiceRecorder {
 
     this.stream = stream;
     this.chunks = [];
+    this.hasSpoken = false;
+    this.isStopping = false;
+    this.lastResult = null;
 
     const mimeType = this.pickMimeType();
     const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
@@ -155,13 +157,15 @@ export class VoiceRecorder {
       const freqBuffer = this.options.onFrequencyData
         ? new Uint8Array(analyser.frequencyBinCount)
         : null;
+
       const tick = () => {
-        if (!this.analyser) return;
+        if (!this.analyser || this.isStopping) return;
         this.analyser.getByteTimeDomainData(buffer);
         if (this.options.onFrequencyData && freqBuffer) {
           this.analyser.getByteFrequencyData(freqBuffer);
           this.options.onFrequencyData(freqBuffer);
         }
+
         // RMS from centered byte data (128 = silence)
         let sum = 0;
         for (let i = 0; i < buffer.length; i += 1) {
@@ -175,45 +179,62 @@ export class VoiceRecorder {
         this.options.onLevel?.(level);
 
         const now = performance.now();
+
         if (level > this.options.silenceThreshold) {
+          this.lastLoudAt = now;
+          this.hasSpoken = true;
+        } else if (!this.hasSpoken) {
+          // If the user hasn't spoken yet, don't trigger silence auto-stop
           this.lastLoudAt = now;
         } else if (
           this.options.silenceMs > 0 &&
+          this.hasSpoken &&
           now - this.lastLoudAt > this.options.silenceMs &&
-          now - this.startedAt > 500 // don't stop within first 0.5s
+          now - this.startedAt > 800
         ) {
-          this.options.onSilence?.();
-          void this.stop();
+          // Silence detected AFTER speech — trigger auto-stop!
+          this.isStopping = true;
+          void this.stop().then((result) => {
+            this.options.onAutoStop?.(result);
+          });
           return;
         }
 
         this.rafId = requestAnimationFrame(tick);
       };
+
       this.rafId = requestAnimationFrame(tick);
     } catch {
-      // Level metering is optional; recording still works without it.
       this.audioContext = null;
       this.analyser = null;
     }
 
     recorder.start();
 
-    // Hard cap on duration
+    // Cap on max duration
     if (this.options.maxDurationMs > 0) {
       this.maxTimer = window.setTimeout(() => {
-        void this.stop();
+        if (!this.isStopping) {
+          this.isStopping = true;
+          void this.stop().then((result) => {
+            this.options.onAutoStop?.(result);
+          });
+        }
       }, this.options.maxDurationMs);
     }
   }
 
   /** Stop recording and resolve with the recorded blob. */
   async stop(): Promise<RecorderResult> {
+    if (this.lastResult) {
+      return this.lastResult;
+    }
+
     if (!this.recorder) {
       throw new Error("Recorder is not running.");
     }
 
     if (this.stopResolve) {
-      // Already stopping — return the same promise.
       return new Promise<RecorderResult>((resolve, reject) => {
         const prevResolve = this.stopResolve;
         const prevReject = this.stopReject;
@@ -227,6 +248,8 @@ export class VoiceRecorder {
         };
       });
     }
+
+    this.isStopping = true;
 
     return new Promise<RecorderResult>((resolve, reject) => {
       this.stopResolve = resolve;
@@ -242,8 +265,10 @@ export class VoiceRecorder {
         const durationMs = performance.now() - this.startedAt;
         const mimeType = recorder.mimeType || this.pickMimeType() || "audio/webm";
         const blob = new Blob(this.chunks, { type: mimeType });
+        const res: RecorderResult = { blob, mimeType, durationMs };
+        this.lastResult = res;
         this.cleanup();
-        resolve({ blob, mimeType, durationMs });
+        resolve(res);
       };
 
       try {
@@ -257,6 +282,7 @@ export class VoiceRecorder {
 
   /** Cancel without producing a result. */
   cancel(): void {
+    this.isStopping = true;
     try {
       this.recorder?.stop();
     } catch {
@@ -274,10 +300,6 @@ export class VoiceRecorder {
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
-    }
-    if (this.silenceTimer !== null) {
-      window.clearTimeout(this.silenceTimer);
-      this.silenceTimer = null;
     }
     if (this.maxTimer !== null) {
       window.clearTimeout(this.maxTimer);

@@ -18,15 +18,13 @@ export function QuickActions({ onOpenImageStudio, onOpenPdfStudio }: QuickAction
               onClick={onOpenImageStudio}
               className="glass-panel group hover:border-cyan-400/50 flex items-center gap-2.5 sm:gap-3 rounded-2xl p-3 sm:p-3.5 text-left transition-all hover:bg-cyan-500/10 cursor-pointer min-w-0 w-full overflow-hidden"
             >
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-700 dark:text-cyan-300 ring-1 ring-cyan-400/30">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-400/30">
                 <Sparkles className="size-4" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
-                  <span className="text-xs font-semibold text-foreground truncate">
-                    AI Image Studio
-                  </span>
-                  <span className="rounded-full bg-cyan-500/15 dark:bg-cyan-500/20 px-2 py-0.5 text-[10px] font-medium text-cyan-800 dark:text-cyan-300 border border-cyan-500/30 truncate shrink-0 max-w-[140px] sm:max-w-none">
+                  <span className="text-xs font-semibold text-white truncate">AI Image Studio</span>
+                  <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-medium text-cyan-300 truncate shrink-0 max-w-[140px] sm:max-w-none">
                     gemini-3.1-flash-image
                   </span>
                 </div>
@@ -34,7 +32,7 @@ export function QuickActions({ onOpenImageStudio, onOpenPdfStudio }: QuickAction
                   Create & edit high-res images with prompt controls
                 </span>
               </div>
-              <ChevronRight className="text-muted-foreground size-4 group-hover:text-cyan-600 dark:group-hover:text-cyan-300 group-hover:translate-x-0.5 transition-all shrink-0" />
+              <ChevronRight className="text-muted-foreground size-4 group-hover:text-cyan-300 group-hover:translate-x-0.5 transition-all shrink-0" />
             </button>
           )}
 
@@ -44,15 +42,15 @@ export function QuickActions({ onOpenImageStudio, onOpenPdfStudio }: QuickAction
               onClick={onOpenPdfStudio}
               className="glass-panel group hover:border-emerald-400/50 flex items-center gap-2.5 sm:gap-3 rounded-2xl p-3 sm:p-3.5 text-left transition-all hover:bg-emerald-500/10 cursor-pointer min-w-0 w-full overflow-hidden"
             >
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-400/30">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/30">
                 <FileText className="size-4" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
-                  <span className="text-xs font-semibold text-foreground truncate">
+                  <span className="text-xs font-semibold text-white truncate">
                     AI PDF Document Studio
                   </span>
-                  <span className="rounded-full bg-emerald-500/15 dark:bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 truncate shrink-0">
+                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-300 truncate shrink-0">
                     Prompt to PDF
                   </span>
                 </div>
@@ -60,7 +58,7 @@ export function QuickActions({ onOpenImageStudio, onOpenPdfStudio }: QuickAction
                   Generate and download formatted PDF documents
                 </span>
               </div>
-              <ChevronRight className="text-muted-foreground size-4 group-hover:text-emerald-600 dark:group-hover:text-emerald-300 group-hover:translate-x-0.5 transition-all shrink-0" />
+              <ChevronRight className="text-muted-foreground size-4 group-hover:text-emerald-300 group-hover:translate-x-0.5 transition-all shrink-0" />
             </button>
           )}
         </div>

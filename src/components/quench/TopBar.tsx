@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { Menu, Search, X } from "lucide-react";
+import { Bell, Menu, Search, PanelRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ThemeToggle } from "./ThemeToggle";
 
 export function TopBar({
   onToggleSidebar,
@@ -9,7 +8,7 @@ export function TopBar({
   onSearch,
 }: {
   onToggleSidebar: () => void;
-  onToggleContext?: () => void;
+  onToggleContext: () => void;
   onSearch?: (query: string) => void;
 }) {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -117,13 +116,28 @@ export function TopBar({
 
           {/* Right Action Controls */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Theme Toggle Component (Light / Dark mode switcher) */}
-            <ThemeToggle />
+            {/* Notifications */}
+            <button
+              className="glass-panel text-muted-foreground hover:text-foreground relative flex size-10 sm:size-11 items-center justify-center rounded-full cursor-pointer shrink-0"
+              aria-label="Notifications"
+            >
+              <Bell className="size-[18px]" />
+              <span className="bg-destructive absolute top-2 right-2.5 size-2 rounded-full" />
+            </button>
 
             {/* Brand avatar (desktop) */}
-            <span className="bg-gradient-brand text-primary-foreground hidden size-10 sm:size-11 items-center justify-center rounded-full text-sm font-semibold sm:flex shrink-0 shadow-sm">
+            <span className="bg-gradient-brand text-primary-foreground hidden size-11 items-center justify-center rounded-full text-sm font-semibold sm:flex shrink-0">
               Q
             </span>
+
+            {/* Context panel toggle */}
+            <button
+              onClick={onToggleContext}
+              className="glass-panel text-muted-foreground hover:text-foreground flex size-10 sm:size-11 items-center justify-center rounded-2xl xl:hidden cursor-pointer shrink-0"
+              aria-label="Toggle context panel"
+            >
+              <PanelRight className="size-5" />
+            </button>
           </div>
         </div>
       )}

@@ -78,15 +78,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "description",
         content:
-          "Bravura AI is a modern AI agent workspace featuring real-time live voice intelligence, deep reasoning, research, multimodal tools, and conversational chat.",
+          "Bravura AI is a modern AI agent workspace featuring real-time live voice intelligence, deep reasoning, research, and multimodal capabilities.",
       },
       { name: "author", content: "Bravura AI" },
       { property: "og:title", content: "Bravura AI" },
-      {
-        property: "og:description",
-        content:
-          "Bravura AI is a modern AI agent workspace featuring real-time live voice intelligence, deep reasoning, research, multimodal tools, and conversational chat.",
-      },
+      { property: "og:description", content: "Intelligence & Real-Time Live Voice AI." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@BravuraAI" },
@@ -116,11 +112,6 @@ function RootShell({ children }: { children: ReactNode }) {
     <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
       <head>
         <HeadContent />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("bravura-theme");if(t==="light"){document.documentElement.classList.remove("dark");document.documentElement.classList.add("light");document.documentElement.style.colorScheme="light";}else{document.documentElement.classList.add("dark");document.documentElement.classList.remove("light");document.documentElement.style.colorScheme="dark";}}catch(e){}})();`,
-          }}
-        />
       </head>
       <body>
         {children}

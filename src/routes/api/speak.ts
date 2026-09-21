@@ -9,6 +9,9 @@ import { createFileRoute } from "@tanstack/react-router";
  * Server-side only. Keys never leave the server.
  */
 
+const DEEPGRAM_KEY_FALLBACK = "f864cbf8ef4e61b5cc5f2c7aac27326b24f4ae43";
+const ELEVENLABS_KEY_FALLBACK = "sk_f42cb47fc1c14c2ce644d8c09f75a215578319c977b6baab";
+
 const DEFAULT_ELEVENLABS_VOICE = "JBFqnCBsd6RMkjVDRZzb"; // George (premade, warm & engaging)
 const DEFAULT_DEEPGRAM_VOICE = "aura-asteria-en"; // Asteria (warm English female)
 const MAX_TEXT_LENGTH = 3000;
@@ -68,8 +71,8 @@ export const Route = createFileRoute("/api/speak")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const deepgramKey = (process.env["DEEPGRAM_API_KEY"] || "").trim();
-        const elevenLabsKey = (process.env["ELEVENLABS_API_KEY"] || "").trim();
+        const deepgramKey = (process.env["DEEPGRAM_API_KEY"] || DEEPGRAM_KEY_FALLBACK).trim();
+        const elevenLabsKey = (process.env["ELEVENLABS_API_KEY"] || ELEVENLABS_KEY_FALLBACK).trim();
 
         if (!deepgramKey && !elevenLabsKey) {
           return errorResponse("Voice agent is not configured on the server.", 503);

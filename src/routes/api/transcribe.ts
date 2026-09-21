@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { GoogleGenAI } from "@google/genai";
+
+const DEEPGRAM_KEY_FALLBACK = "f864cbf8ef4e61b5cc5f2c7aac27326b24f4ae43";
 
 function errorResponse(message: string, status: number) {
   return new Response(JSON.stringify({ ok: false, error: message }), {
@@ -12,6 +13,12 @@ export const Route = createFileRoute("/api/transcribe")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const apiKey = (process.env["DEEPGRAM_API_KEY"] || DEEPGRAM_KEY_FALLBACK).trim();
+        if (!apiKey) {
+          console.error("[quench] DEEPGRAM_API_KEY missing");
+          return errorResponse("Voice transcription is not configured on the server.", 503);
+        }
+
         try {
           const contentType = request.headers.get("content-type") || "";
           let audioBuffer: ArrayBuffer;
@@ -39,77 +46,40 @@ export const Route = createFileRoute("/api/transcribe")({
             return errorResponse("Empty audio received.", 400);
           }
 
-          let transcript = "";
-          const deepgramKey = (process.env["DEEPGRAM_API_KEY"] || "").trim();
+          const response = await fetch(
+            "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true",
+            {
+              method: "POST",
+              headers: {
+                Authorization: `Token ${apiKey}`,
+                "Content-Type": mimeType,
+              },
+              body: audioBuffer,
+            },
+          );
 
-          // 1. Try Deepgram if configured
-          if (deepgramKey) {
-            try {
-              const response = await fetch(
-                "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&punctuate=true",
-                {
-                  method: "POST",
-                  headers: {
-                    Authorization: `Token ${deepgramKey}`,
-                    "Content-Type": mimeType,
-                  },
-                  body: audioBuffer,
-                },
-              );
-
-              if (response.ok) {
-                const data = (await response.json()) as {
-                  results?: {
-                    channels?: Array<{
-                      alternatives?: Array<{
-                        transcript?: string;
-                        confidence?: number;
-                      }>;
-                    }>;
-                  };
-                };
-                transcript =
-                  data.results?.channels?.[0]?.alternatives?.[0]?.transcript?.trim() || "";
-              }
-            } catch (dgErr) {
-              console.warn(
-                "[quench] Deepgram transcribe request failed, falling back to Gemini:",
-                dgErr,
-              );
-            }
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => "");
+            console.error("[quench] Deepgram transcription error", response.status, errorText);
+            return errorResponse(
+              "Speech transcription failed.",
+              response.status >= 500 ? 502 : 400,
+            );
           }
 
-          // 2. Fallback to Gemini multimodal audio transcription if transcript is empty
-          if (!transcript) {
-            const geminiKey = (process.env["GEMINI_API_KEY"] || "").trim();
-            if (geminiKey) {
-              try {
-                const ai = new GoogleGenAI({ apiKey: geminiKey });
-                const base64Audio = Buffer.from(audioBuffer).toString("base64");
-                const res = await ai.models.generateContent({
-                  model: "gemini-2.5-flash",
-                  contents: [
-                    {
-                      inlineData: {
-                        mimeType: mimeType.includes("mp4") ? "audio/mp4" : "audio/webm",
-                        data: base64Audio,
-                      },
-                    },
-                    {
-                      text: "Transcribe the spoken words in this audio recording accurately. Return ONLY the transcribed text without any extra commentary, markdown, or quotation marks.",
-                    },
-                  ],
-                });
-                transcript = res.text?.trim() || "";
-              } catch (geminiErr) {
-                console.error("[quench] Gemini audio transcription error:", geminiErr);
-              }
-            }
-          }
+          const data = (await response.json()) as {
+            results?: {
+              channels?: Array<{
+                alternatives?: Array<{
+                  transcript?: string;
+                  confidence?: number;
+                }>;
+              }>;
+            };
+          };
 
-          if (!transcript) {
-            return errorResponse("Could not detect any spoken speech in the audio.", 400);
-          }
+          const transcript =
+            data.results?.channels?.[0]?.alternatives?.[0]?.transcript?.trim() || "";
 
           return new Response(JSON.stringify({ ok: true, text: transcript }), {
             status: 200,

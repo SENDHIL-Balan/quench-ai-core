@@ -49,16 +49,11 @@ export function ModeSelector({
               className={cn(
                 "flex shrink-0 items-center gap-1.5 sm:gap-2 rounded-full border px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-medium transition-all cursor-pointer min-h-[36px] sm:min-h-[40px]",
                 active
-                  ? "glow-ring border-cyan-500/60 bg-cyan-500/25 text-cyan-900 dark:text-cyan-200 shadow-md shadow-cyan-500/10 font-semibold"
-                  : "border-border bg-card/75 text-foreground/75 hover:text-foreground hover:border-cyan-400/40 hover:bg-card/90",
+                  ? "glow-ring border-cyan-400/60 bg-cyan-500/25 text-cyan-200 shadow-md shadow-cyan-500/10 font-semibold"
+                  : "border-border bg-card/75 text-muted-foreground hover:text-foreground hover:border-cyan-400/40 hover:bg-card/90",
               )}
             >
-              <Icon
-                className={cn(
-                  "size-3.5 sm:size-4",
-                  active ? "text-cyan-700 dark:text-cyan-300" : "text-muted-foreground",
-                )}
-              />
+              <Icon className={cn("size-3.5 sm:size-4", active && "text-cyan-300")} />
               <span className="whitespace-nowrap">{AGENT_MODES[id].label}</span>
             </button>
           );

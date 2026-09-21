@@ -23,7 +23,11 @@ import { LiveVoiceAgentModal } from "@/components/quench/LiveVoiceAgentModal";
 import { messageText } from "@/components/quench/ChatView";
 import { ImageStudioModal } from "@/components/quench/ImageStudioModal";
 import { PdfStudioModal } from "@/components/quench/PdfStudioModal";
+import { ToolsModal } from "@/components/quench/ToolsModal";
 import { AppLoadingScreen } from "@/components/quench/AppLoadingScreen";
+
+// Track if the initial splash animation has already run in this session
+let hasBootedOnce = false;
 import {
   onAuthState,
   saveChatToFirestore,
@@ -39,7 +43,7 @@ const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
 const MAX_ATTACHMENTS = 2;
 
 const DEFAULT_VOICE_SETTING: VoiceSetting = {
-  voiceId: "JBFqnCBsd6RMkjVDRZzb", // George (ElevenLabs)
+  voiceId: "JBFqnCBsd6RMkjVDRZzb", // Jeff besos
   provider: "elevenlabs",
   autoSpeak: false,
   playbackSpeed: 1.0,
@@ -137,20 +141,50 @@ function BravuraApp() {
   const [liveVoiceModalOpen, setLiveVoiceModalOpen] = useState(false);
   const [imageStudioOpen, setImageStudioOpen] = useState(false);
   const [pdfStudioOpen, setPdfStudioOpen] = useState(false);
+  const [toolsModalOpen, setToolsModalOpen] = useState(false);
   const [authUser, setAuthUser] = useState<AuthUserProfile | null>(null);
   const [authInitialized, setAuthInitialized] = useState(false);
   const { isSpeaking, playingId, speak, stop: stopSpeech } = useTextToSpeech();
   const lastSpokenMsgIdRef = useRef<string | null>(null);
 
+  const chatsRef = useRef<StoredChat[]>(chats);
+  chatsRef.current = chats;
+
+  const activeChatIdRef = useRef<string | null>(activeChatId);
+  activeChatIdRef.current = activeChatId;
+
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     const startTime = Date.now();
     const unsubscribe = onAuthState((user) => {
       setAuthUser(user);
+      if (
+        hasBootedOnce ||
+        (typeof window !== "undefined" && window.sessionStorage.getItem("bravura_booted") === "1")
+      ) {
+        setAuthInitialized(true);
+        return;
+      }
       const elapsed = Date.now() - startTime;
-      const minDisplay = 2600; // 2 extra seconds for cinematic logo entrance
+      const minDisplay = 2600; // 2 extra seconds for cinematic logo entrance on initial session boot
       if (elapsed < minDisplay) {
-        setTimeout(() => setAuthInitialized(true), minDisplay - elapsed);
+        setTimeout(() => {
+          hasBootedOnce = true;
+          try {
+            window.sessionStorage.setItem("bravura_booted", "1");
+          } catch {
+            /* ignore */
+          }
+          setAuthInitialized(true);
+        }, minDisplay - elapsed);
       } else {
+        hasBootedOnce = true;
+        try {
+          window.sessionStorage.setItem("bravura_booted", "1");
+        } catch {
+          /* ignore */
+        }
         setAuthInitialized(true);
       }
     });
@@ -162,7 +196,19 @@ function BravuraApp() {
     if (!authUser) return;
     const unsubscribe = subscribeUserChats(authUser.uid, (remoteChats) => {
       if (remoteChats.length > 0) {
-        setChats(remoteChats as StoredChat[]);
+        setChats((current) => {
+          const activeId = activeChatIdRef.current;
+          if (!activeId) return remoteChats as StoredChat[];
+          return (remoteChats as StoredChat[]).map((rc) => {
+            if (rc.id === activeId) {
+              const localActive = current.find((c) => c.id === activeId);
+              if (localActive && localActive.messages.length >= rc.messages.length) {
+                return { ...rc, messages: localActive.messages };
+              }
+            }
+            return rc;
+          });
+        });
       }
     });
     return () => unsubscribe();
@@ -182,17 +228,19 @@ function BravuraApp() {
   useEffect(() => {
     try {
       const savedChats = window.localStorage.getItem(CHATS_KEY);
-      if (savedChats) setChats(JSON.parse(savedChats) as StoredChat[]);
-      window.localStorage.removeItem(ACTIVE_CHAT_KEY);
+      if (savedChats) {
+        setChats((current) =>
+          current.length === 0 ? (JSON.parse(savedChats) as StoredChat[]) : current,
+        );
+      }
+      const savedActiveId = window.localStorage.getItem(ACTIVE_CHAT_KEY);
+      if (savedActiveId) {
+        setActiveChatId(savedActiveId);
+      }
     } catch {
       // Ignore unavailable or malformed local history.
     }
   }, []);
-
-  const chatsRef = useRef<StoredChat[]>(chats);
-  useEffect(() => {
-    chatsRef.current = chats;
-  }, [chats]);
 
   useEffect(() => {
     try {
@@ -215,61 +263,96 @@ function BravuraApp() {
   }, [activeChatId]);
 
   const transport = useMemo(() => new DefaultChatTransport({ api: "/api/chat" }), []);
-  const { messages, sendMessage, status, error, stop, setMessages } = useChat({ transport });
+  const { messages, sendMessage, status, error, stop, setMessages } = useChat({
+    transport,
+  });
 
+  // Hydrate messages from the active chat on client mount or active chat change
   useEffect(() => {
-    if (!activeChatId) return;
-    const chat = chatsRef.current.find((c) => c.id === activeChatId);
-    if (chat && chat.messages.length > 0) {
-      setMessages(chat.messages);
+    if (activeChatId) {
+      const chat = chatsRef.current.find((c) => c.id === activeChatId);
+      if (chat && chat.messages.length > 0) {
+        setMessages(chat.messages);
+        return;
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeChatId]);
+    // If chats aren't in ref yet (initial mount), check localStorage
+    try {
+      const savedActiveId = window.localStorage.getItem(ACTIVE_CHAT_KEY);
+      const savedChats = window.localStorage.getItem(CHATS_KEY);
+      if (savedActiveId && savedChats) {
+        const parsed = JSON.parse(savedChats) as StoredChat[];
+        const found = parsed.find((c) => c.id === savedActiveId);
+        if (found && found.messages && found.messages.length > 0) {
+          setMessages(found.messages as UIMessage[]);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [activeChatId, setMessages]);
 
   useEffect(() => {
     if (!activeChatId || messages.length === 0) return;
 
     setChats((current) => {
-      const target = current.find((c) => c.id === activeChatId);
-      if (!target) return current;
-      if (target.messages === messages) return current;
-      if (
-        target.messages.length === messages.length &&
-        target.messages[target.messages.length - 1]?.id === messages[messages.length - 1]?.id &&
-        target.messages[target.messages.length - 1]?.parts === messages[messages.length - 1]?.parts
-      ) {
-        return current;
-      }
+      const existing = current.find((c) => c.id === activeChatId);
+      if (!existing) return current;
+      if (existing.messages === messages) return current;
+
       return current.map((c) =>
         c.id === activeChatId ? { ...c, messages, updatedAt: new Date().toISOString() } : c,
       );
     });
 
-    if (authUser && activeChatId && status === "ready") {
-      const currentChat = chatsRef.current.find((c) => c.id === activeChatId);
-      const title =
-        currentChat?.title ||
-        (messages[0] ? messageText(messages[0]).slice(0, 45) : "New Conversation");
-      void saveChatToFirestore(authUser.uid, activeChatId, title, messages);
+    if (authUser && activeChatId) {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      saveTimeoutRef.current = setTimeout(() => {
+        const currentChat = chatsRef.current.find((c) => c.id === activeChatId);
+        const title =
+          currentChat?.title ||
+          (messages[0] ? messageText(messages[0]).slice(0, 45) : "New Conversation");
+        void saveChatToFirestore(authUser.uid, activeChatId, title, messages);
+      }, 600);
     }
-  }, [messages, activeChatId, authUser, status]);
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [messages, activeChatId, authUser]);
 
   useEffect(() => {
-    if (
-      liveVoiceModalOpen ||
-      !voiceSetting.autoSpeak ||
-      status !== "ready" ||
-      messages.length === 0
-    )
-      return;
+    if (status !== "ready") return;
+
+    setMessages((current) => {
+      const hasAttachments = current.some((message) =>
+        message.parts.some((part) => part.type === "file"),
+      );
+      if (!hasAttachments) return current;
+      return current.map((message) => ({
+        ...message,
+        parts: message.parts.flatMap((part) =>
+          part.type === "file"
+            ? [
+                {
+                  type: "text" as const,
+                  text: `Attached file: ${part.filename ?? "document"}`,
+                },
+              ]
+            : [part],
+        ),
+      }));
+    });
+  }, [setMessages, status]);
+
+  useEffect(() => {
+    if (!voiceSetting.autoSpeak || status !== "ready" || messages.length === 0) return;
     const last = messages[messages.length - 1];
-    if (!last || last.role !== "assistant") return;
-    // Never auto-speak messages produced inside the live voice session (it speaks internally)
-    if (last.id.startsWith("live-assistant-")) {
-      lastSpokenMsgIdRef.current = last.id;
-      return;
-    }
-    if (last.id !== lastSpokenMsgIdRef.current) {
+    if (last && last.role === "assistant" && last.id !== lastSpokenMsgIdRef.current) {
       const text = messageText(last);
       if (text) {
         lastSpokenMsgIdRef.current = last.id;
@@ -281,7 +364,7 @@ function BravuraApp() {
         });
       }
     }
-  }, [liveVoiceModalOpen, status, messages, voiceSetting, speak]);
+  }, [status, messages, voiceSetting, speak]);
 
   const lastAssistantHasText =
     messages.length > 0 &&
@@ -469,6 +552,7 @@ function BravuraApp() {
               onNewChat={newChat}
               onHistory={() => setHistoryOpen(true)}
               onOpenVoiceSettings={() => setVoiceModalOpen(true)}
+              onOpenTools={() => setToolsModalOpen(true)}
               user={authUser}
               authInitialized={authInitialized}
             />
@@ -492,6 +576,10 @@ function BravuraApp() {
                 }}
                 onOpenVoiceSettings={() => {
                   setVoiceModalOpen(true);
+                  setSidebarOpen(false);
+                }}
+                onOpenTools={() => {
+                  setToolsModalOpen(true);
                   setSidebarOpen(false);
                 }}
                 user={authUser}
@@ -536,7 +624,7 @@ function BravuraApp() {
           />
 
           <div className="flex min-h-0 flex-1 flex-col relative">
-            {conversation ? (
+            {messages.length > 0 ? (
               <div
                 ref={scrollContainerRef}
                 className="min-h-0 flex-1 overflow-y-auto px-1.5 sm:px-4"
@@ -579,9 +667,9 @@ function BravuraApp() {
                     },
                   },
                 }}
-                className="min-h-0 flex-1 flex flex-col items-center overflow-y-auto overflow-x-hidden px-1.5 sm:px-4 py-3 sm:py-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1.5 sm:px-4 py-3 sm:py-6 [scrollbar-width:thin]"
               >
-                <div className="mx-auto my-auto flex w-full max-w-3xl min-w-0 flex-col items-stretch gap-3.5 sm:gap-5 py-2">
+                <div className="mx-auto flex w-full max-w-3xl min-w-0 min-h-full flex-col items-stretch justify-center gap-3.5 sm:gap-5 py-2">
                   <HeroSection />
                   <motion.div
                     variants={{
@@ -602,10 +690,10 @@ function BravuraApp() {
                         hidden: { opacity: 0, y: 10 },
                         visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
                       }}
-                      className="glass-panel border-cyan-500/30 bg-cyan-500/10 flex w-full max-w-full min-w-0 items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-xs text-cyan-900 dark:text-cyan-200"
+                      className="glass-panel border-cyan-500/30 bg-cyan-500/10 flex w-full max-w-full min-w-0 items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-xs text-cyan-200"
                     >
                       <div className="flex items-center gap-2">
-                        <Sparkles className="size-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                        <Sparkles className="size-4 text-cyan-400 shrink-0" />
                         <span>
                           <strong>AI Image Mode Active:</strong> Prompt to create or attach an image
                           to edit with <code>gemini-3.1-flash-image-preview</code>.
@@ -614,7 +702,7 @@ function BravuraApp() {
                       <button
                         type="button"
                         onClick={() => setImageStudioOpen(true)}
-                        className="shrink-0 rounded-xl bg-cyan-500/15 dark:bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-1 text-[11px] font-semibold text-cyan-800 dark:text-cyan-200 hover:bg-cyan-500/25 transition-colors cursor-pointer"
+                        className="shrink-0 rounded-xl bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-1 text-[11px] font-medium text-cyan-200 hover:bg-cyan-500/30 transition-colors cursor-pointer"
                       >
                         Open Studio
                       </button>
@@ -646,10 +734,10 @@ function BravuraApp() {
 
             {/* Prompt Composer anchored cleanly at bottom */}
             <div className="relative mx-auto w-full max-w-4xl shrink-0 pt-2 pb-1 sm:pt-3 z-30">
-              {isImageMode && conversation && (
-                <div className="glass-panel border-cyan-500/30 bg-cyan-500/10 mb-3 flex items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-xs text-cyan-900 dark:text-cyan-200">
+              {isImageMode && messages.length > 0 && (
+                <div className="glass-panel border-cyan-500/30 bg-cyan-500/10 mb-3 flex items-center justify-between gap-3 rounded-2xl px-4 py-2.5 text-xs text-cyan-200">
                   <div className="flex items-center gap-2">
-                    <Sparkles className="size-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                    <Sparkles className="size-4 text-cyan-400 shrink-0" />
                     <span>
                       <strong>AI Image Mode:</strong> Enter any prompt to generate with{" "}
                       <code>gemini-3.1-flash-image-preview</code>, or attach an image to edit it.
@@ -658,7 +746,7 @@ function BravuraApp() {
                   <button
                     type="button"
                     onClick={() => setImageStudioOpen(true)}
-                    className="shrink-0 rounded-xl bg-cyan-500/15 dark:bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-1 text-[11px] font-semibold text-cyan-800 dark:text-cyan-200 hover:bg-cyan-500/25 transition-colors cursor-pointer"
+                    className="shrink-0 rounded-xl bg-cyan-500/20 border border-cyan-500/40 px-2.5 py-1 text-[11px] font-medium text-cyan-200 hover:bg-cyan-500/30 transition-colors cursor-pointer"
                   >
                     Open Studio Controls
                   </button>
@@ -670,10 +758,7 @@ function BravuraApp() {
                 onSubmit={(files) => void submit(undefined, files)}
                 onStop={stop}
                 onTranscribed={handleTranscribed}
-                onOpenLiveVoice={() => {
-                  stopSpeech();
-                  setLiveVoiceModalOpen(true);
-                }}
+                onOpenLiveVoice={() => setLiveVoiceModalOpen(true)}
                 isLiveVoiceActive={liveVoiceModalOpen}
                 onOpenImageStudio={() => setImageStudioOpen(true)}
                 onOpenPdfStudio={() => setPdfStudioOpen(true)}
@@ -832,10 +917,7 @@ function BravuraApp() {
       {/* Live Voice Agent interactive conversation modal */}
       <LiveVoiceAgentModal
         isOpen={liveVoiceModalOpen}
-        onClose={() => {
-          stopSpeech();
-          setLiveVoiceModalOpen(false);
-        }}
+        onClose={() => setLiveVoiceModalOpen(false)}
         voiceSetting={voiceSetting}
         onVoiceSettingChange={(newSetting) => {
           setVoiceSetting(newSetting);
@@ -846,8 +928,6 @@ function BravuraApp() {
           }
         }}
         onTranscriptReady={(userText, assistantReply) => {
-          const assistantMsgId = `live-assistant-${Date.now() + 1}`;
-          lastSpokenMsgIdRef.current = assistantMsgId;
           setMessages((prev) => [
             ...prev,
             {
@@ -856,7 +936,7 @@ function BravuraApp() {
               parts: [{ type: "text", text: userText }],
             },
             {
-              id: assistantMsgId,
+              id: `live-assistant-${Date.now() + 1}`,
               role: "assistant",
               parts: [{ type: "text", text: assistantReply }],
             },
@@ -879,6 +959,18 @@ function BravuraApp() {
 
       {/* AI PDF Studio modal */}
       {pdfStudioOpen && <PdfStudioModal onClose={() => setPdfStudioOpen(false)} />}
+
+      {/* Workspace Tools & Generative AI Studios modal */}
+      {toolsModalOpen && (
+        <ToolsModal
+          onClose={() => setToolsModalOpen(false)}
+          onOpenLiveVoice={() => setLiveVoiceModalOpen(true)}
+          onTogglesChange={(search, think) => {
+            setWebSearch(search);
+            setDeepThink(think);
+          }}
+        />
+      )}
     </div>
   );
 }

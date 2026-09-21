@@ -14,7 +14,8 @@ import {
   Sliders,
   AlertCircle,
 } from "lucide-react";
-import { VoiceRecorder } from "@/lib/voice/recorder";
+import { VoiceRecorder, type RecorderResult } from "@/lib/voice/recorder";
+import { playVoiceAudio, unlockAudio, type AudioPlaybackController } from "@/lib/voice/player";
 import { cn } from "@/lib/utils";
 
 export type VoiceAgentPanelProps = {
@@ -53,7 +54,7 @@ export function VoiceAgentPanel({
   const freqDataRef = useRef<Uint8Array | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const playbackControllerRef = useRef<AudioPlaybackController | null>(null);
 
   // Clean up on unmount
   useEffect(() => {
@@ -61,9 +62,9 @@ export function VoiceAgentPanel({
       recorderRef.current?.cancel();
       if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-      if (currentAudioRef.current) {
-        currentAudioRef.current.pause();
-        currentAudioRef.current = null;
+      if (playbackControllerRef.current) {
+        playbackControllerRef.current.stop();
+        playbackControllerRef.current = null;
       }
     };
   }, []);
@@ -190,6 +191,7 @@ export function VoiceAgentPanel({
     setErrorMessage(null);
     setElapsedSec(0);
     setTranscript("");
+    unlockAudio();
 
     const recorder = new VoiceRecorder({
       silenceMs: autoSilenceStop ? 2000 : 0,
@@ -199,6 +201,9 @@ export function VoiceAgentPanel({
       },
       onFrequencyData: (freq) => {
         freqDataRef.current = freq;
+      },
+      onAutoStop: (result) => {
+        void handleStop(result);
       },
     });
 
@@ -220,9 +225,7 @@ export function VoiceAgentPanel({
   };
 
   // Stop recording and transcribe
-  const handleStop = async () => {
-    if (!recorderRef.current || state !== "recording") return;
-
+  const handleStop = async (existingResult?: RecorderResult) => {
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
@@ -233,7 +236,10 @@ export function VoiceAgentPanel({
     freqDataRef.current = null;
 
     try {
-      const result = await recorderRef.current.stop();
+      let result: RecorderResult | null = existingResult ?? null;
+      if (!result && recorderRef.current) {
+        result = await recorderRef.current.stop();
+      }
       recorderRef.current = null;
 
       if (!result || result.blob.size === 0) {
@@ -289,49 +295,33 @@ export function VoiceAgentPanel({
   const handlePlayTTS = async () => {
     if (!transcript) return;
 
-    if (isPlayingAudio && currentAudioRef.current) {
-      currentAudioRef.current.pause();
-      currentAudioRef.current = null;
+    if (isPlayingAudio && playbackControllerRef.current) {
+      playbackControllerRef.current.stop();
+      playbackControllerRef.current = null;
       setIsPlayingAudio(false);
       return;
     }
 
     setIsPlayingAudio(true);
     try {
-      const response = await fetch("/api/speak", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: transcript,
-          provider: "elevenlabs",
-          voice: "JBFqnCBsd6RMkjVDRZzb", // George
-        }),
+      const controller = playVoiceAudio({
+        text: transcript,
+        provider: "elevenlabs",
+        voiceId: "JBFqnCBsd6RMkjVDRZzb", // George
+        onStart: () => {
+          setIsPlayingAudio(true);
+        },
+        onEnded: () => {
+          setIsPlayingAudio(false);
+          playbackControllerRef.current = null;
+        },
       });
 
-      if (!response.ok) {
-        throw new Error("Speech synthesis failed");
-      }
-
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      currentAudioRef.current = audio;
-
-      audio.onended = () => {
-        setIsPlayingAudio(false);
-        currentAudioRef.current = null;
-        URL.revokeObjectURL(url);
-      };
-      audio.onerror = () => {
-        setIsPlayingAudio(false);
-        currentAudioRef.current = null;
-        URL.revokeObjectURL(url);
-      };
-
-      await audio.play();
+      playbackControllerRef.current = controller;
+      await controller.promise;
     } catch {
       setIsPlayingAudio(false);
-      currentAudioRef.current = null;
+      playbackControllerRef.current = null;
     }
   };
 
@@ -370,9 +360,7 @@ export function VoiceAgentPanel({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-sm font-semibold tracking-tight text-white">
-                Bravura Voice Agent
-              </h2>
+              <h2 className="text-sm font-semibold tracking-tight text-white">AI Voice Agent</h2>
               <span
                 className={cn(
                   "rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase transition-colors",
@@ -387,10 +375,10 @@ export function VoiceAgentPanel({
                   ? "Listening"
                   : state === "transcribing"
                     ? "Transcribing"
-                    : "Bravura Engine Active"}
+                    : "Voice Engine Active"}
               </span>
             </div>
-            <p className="text-[11px] text-cyan-200/70">Live speech-to-text & Bravura voice</p>
+            <p className="text-[11px] text-cyan-200/70">Live speech-to-text & AI voice</p>
           </div>
         </div>
 
@@ -525,7 +513,7 @@ export function VoiceAgentPanel({
         <div className="mt-4 flex flex-col gap-2 rounded-2xl border border-white/10 bg-white/[0.03] p-3.5">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-medium tracking-wide text-cyan-300 uppercase">
-              Bravura Transcription
+              Voice Transcription
             </span>
             <div className="flex items-center gap-1">
               <button
@@ -551,7 +539,7 @@ export function VoiceAgentPanel({
                     ? "bg-cyan-500/20 text-cyan-300 font-medium"
                     : "text-muted-foreground hover:bg-white/10 hover:text-white",
                 )}
-                title={isPlayingAudio ? "Stop playback" : "Read aloud with Bravura Voice"}
+                title={isPlayingAudio ? "Stop playback" : "Read aloud with AI Voice"}
               >
                 {isPlayingAudio ? (
                   <>
@@ -572,7 +560,7 @@ export function VoiceAgentPanel({
             "{transcript}"
           </p>
 
-          {/* Action: Send to Bravura AI */}
+          {/* Action: Send to AI Chat */}
           {onSendTranscript && (
             <button
               type="button"

@@ -132,6 +132,34 @@ export function onAuthState(callback: (user: AuthUserProfile | null) => void): (
 }
 
 /**
+ * Recursively sanitizes data before sending to Firestore.
+ * Firestore strictly forbids `undefined` anywhere in documents (including nested array elements or object properties).
+ */
+export function sanitizeForFirestore<T>(data: T): T {
+  if (data === undefined) {
+    return null as unknown as T;
+  }
+  if (data === null || typeof data !== "object") {
+    return data;
+  }
+  if (data instanceof Date) {
+    return data.toISOString() as unknown as T;
+  }
+  if (Array.isArray(data)) {
+    return data
+      .filter((item) => item !== undefined)
+      .map((item) => sanitizeForFirestore(item)) as unknown as T;
+  }
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+    if (value !== undefined) {
+      result[key] = sanitizeForFirestore(value);
+    }
+  }
+  return result as T;
+}
+
+/**
  * Save or update a chat in Firestore for authenticated users
  */
 export async function saveChatToFirestore(
@@ -141,18 +169,23 @@ export async function saveChatToFirestore(
   messages: unknown[],
 ): Promise<void> {
   if (!userId || !chatId) return;
-  const chatRef = doc(db, "chats", chatId);
-  await setDoc(
-    chatRef,
-    {
-      userId,
-      chatId,
-      title: title || "New Chat",
-      messages,
-      updatedAt: new Date().toISOString(),
-    },
-    { merge: true },
-  );
+  try {
+    const chatRef = doc(db, "chats", chatId);
+    const sanitizedMessages = sanitizeForFirestore(messages);
+    await setDoc(
+      chatRef,
+      {
+        userId,
+        chatId,
+        title: title || "New Chat",
+        messages: sanitizedMessages,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+  } catch (error) {
+    console.warn("Could not save chat to Firestore:", error);
+  }
 }
 
 /**
@@ -160,8 +193,12 @@ export async function saveChatToFirestore(
  */
 export async function deleteChatFromFirestore(chatId: string): Promise<void> {
   if (!chatId) return;
-  const chatRef = doc(db, "chats", chatId);
-  await deleteDoc(chatRef);
+  try {
+    const chatRef = doc(db, "chats", chatId);
+    await deleteDoc(chatRef);
+  } catch (error) {
+    console.warn("Could not delete chat from Firestore:", error);
+  }
 }
 
 /**

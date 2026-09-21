@@ -16,8 +16,8 @@ export function LiveVoiceAgentButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
-      aria-label="Talk in live with Bravura Voice Agent"
-      title="Bravura Live Voice Agent — Talk in live"
+      aria-label="Talk in live with Voice Agent"
+      title="Live Voice Agent — Talk in live"
       className={cn(
         "group relative flex size-9 shrink-0 items-center justify-center rounded-full transition-all duration-200 cursor-pointer",
         "bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/25",

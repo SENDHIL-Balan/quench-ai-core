@@ -1,16 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
 
+const DEEPGRAM_KEY_FALLBACK = "f864cbf8ef4e61b5cc5f2c7aac27326b24f4ae43";
+const ELEVENLABS_KEY_FALLBACK = "sk_f42cb47fc1c14c2ce644d8c09f75a215578319c977b6baab";
+
 export const Route = createFileRoute("/api/voices")({
   server: {
     handlers: {
       GET: async () => {
-        const hasDeepgram = Boolean(process.env["DEEPGRAM_API_KEY"]?.trim());
-        const hasElevenLabs = Boolean(process.env["ELEVENLABS_API_KEY"]?.trim());
+        const hasDeepgram = Boolean(
+          (process.env["DEEPGRAM_API_KEY"] || DEEPGRAM_KEY_FALLBACK).trim(),
+        );
+        const hasElevenLabs = Boolean(
+          (process.env["ELEVENLABS_API_KEY"] || ELEVENLABS_KEY_FALLBACK).trim(),
+        );
 
         const voices = [
           {
             id: "JBFqnCBsd6RMkjVDRZzb",
-            name: "Bravura George",
+            name: "Jeff besos",
             provider: "elevenlabs",
             description: "Warm, Captivating & Engaging Conversational Tone",
             gender: "male",
@@ -18,7 +25,7 @@ export const Route = createFileRoute("/api/voices")({
           },
           {
             id: "EXAVITQu4vr4xnSDxMaL",
-            name: "Bravura Sarah",
+            name: "Shakira",
             provider: "elevenlabs",
             description: "Mature, Reassuring & Confident Tone",
             gender: "female",
@@ -26,7 +33,7 @@ export const Route = createFileRoute("/api/voices")({
           },
           {
             id: "Xb7hH8MSUJpSbSDYk0k2",
-            name: "Bravura Alice",
+            name: "Melodi",
             provider: "elevenlabs",
             description: "Clear, Articulate & Engaging Vocal Style",
             gender: "female",
@@ -34,7 +41,7 @@ export const Route = createFileRoute("/api/voices")({
           },
           {
             id: "CwhRBWXzGAHq8TQ4Fs17",
-            name: "Bravura Roger",
+            name: "The Rock",
             provider: "elevenlabs",
             description: "Laid-Back, Casual & Natural Resonant Tone",
             gender: "male",
@@ -42,7 +49,7 @@ export const Route = createFileRoute("/api/voices")({
           },
           {
             id: "aura-asteria-en",
-            name: "Bravura Asteria",
+            name: "Nikki bella",
             provider: "deepgram",
             description: "Ultra-Fast, Warm & Natural Conversational Flow",
             gender: "female",
@@ -50,7 +57,7 @@ export const Route = createFileRoute("/api/voices")({
           },
           {
             id: "aura-orion-en",
-            name: "Bravura Orion",
+            name: "Elon musk",
             provider: "deepgram",
             description: "Confident, Clear & Dynamic Vocal Presence",
             gender: "male",
@@ -58,7 +65,7 @@ export const Route = createFileRoute("/api/voices")({
           },
           {
             id: "aura-luna-en",
-            name: "Bravura Luna",
+            name: "Bellie eilish",
             provider: "deepgram",
             description: "Gentle, Friendly & Smooth Acoustic Tone",
             gender: "female",
@@ -66,7 +73,7 @@ export const Route = createFileRoute("/api/voices")({
           },
           {
             id: "aura-arcas-en",
-            name: "Bravura Arcas",
+            name: "Arcas",
             provider: "deepgram",
             description: "Calm, Steady & Authoritative Voice",
             gender: "male",
