@@ -16,7 +16,6 @@ import { RightPanel } from "@/components/quench/RightPanel";
 import type { AgentState } from "@/components/quench/AgentStatus";
 import { AGENT_MODES, type ModeId } from "@/lib/agent/modes";
 import { extractPdfTextFromFile, PdfExtractError } from "@/lib/attachments/pdf-client";
-import { slangService } from "@/lib/slang";
 import { cn } from "@/lib/utils";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { VoiceAgentModal, type VoiceSetting } from "@/components/quench/VoiceAgentModal";
@@ -354,9 +353,6 @@ function BravuraApp() {
       if (mediaType === "application/pdf") {
         try {
           const extracted = await extractPdfTextFromFile(file);
-          // Process slang definitions from uploaded PDF in the frontend service layer
-          slangService.processUploadedContent(extracted, file.name);
-
           const encoded = `data:text/plain;charset=utf-8;base64,${btoa(
             unescape(encodeURIComponent(extracted)),
           )}`;
@@ -376,10 +372,6 @@ function BravuraApp() {
         }
       } else {
         try {
-          if (["text/plain", "text/markdown", "application/json", "text/csv"].includes(mediaType)) {
-            const rawText = await file.text();
-            slangService.processUploadedContent(rawText, file.name);
-          }
           const dataUrl = await readFileAsDataUrl(file);
           fileParts.push({
             type: "file",
@@ -413,12 +405,7 @@ function BravuraApp() {
       setActiveChatId(chatId);
     }
 
-    const slangContext = slangService.getSlangContextForPrompt(value);
-
-    void sendMessage(
-      { text: value, files: fileParts },
-      { body: { mode, deepThink, webSearch, slangContext } },
-    );
+    void sendMessage({ text: value, files: fileParts }, { body: { mode, deepThink, webSearch } });
   };
 
   const newChat = () => {

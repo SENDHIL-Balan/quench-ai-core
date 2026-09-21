@@ -1,5 +1,3 @@
-import { buildSlangDictionaryTrainingPrompt } from "./slang-dictionary";
-
 export type ModeId = "chat" | "research" | "create" | "analyze" | "code" | "plan" | "image";
 
 export interface AgentMode {
@@ -111,9 +109,7 @@ IDENTITY & CONTEXT:
 ================================================================================
 - If asked who founded Bravura or who your creator/founder is, answer naturally that the founder is Sendhil Balan.
 - Stay attentive to previous turns so conversation feels fluid and continuous.
-- Today's date is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.
-
-${buildSlangDictionaryTrainingPrompt()}`;
+- Today's date is ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}.`;
 
 export const AGENT_MODES: Record<ModeId, AgentMode> = {
   chat: {

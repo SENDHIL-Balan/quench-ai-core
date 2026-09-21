@@ -40,9 +40,6 @@ export class VoiceRecorder {
   private rafId: number | null = null;
   private startedAt = 0;
   private lastLoudAt = 0;
-  private hasDetectedSpeech = false;
-  private speechStartedAt = 0;
-  private isStopping = false;
   private silenceTimer: number | null = null;
   private maxTimer: number | null = null;
   private stopResolve: ((r: RecorderResult) => void) | null = null;
@@ -53,7 +50,6 @@ export class VoiceRecorder {
     silenceMs: number;
     silenceThreshold: number;
     maxDurationMs: number;
-    onSilence?: () => void;
   };
   constructor(options: RecorderOptions = {}) {
     const opts: {
@@ -62,15 +58,13 @@ export class VoiceRecorder {
       silenceMs: number;
       silenceThreshold: number;
       maxDurationMs: number;
-      onSilence?: () => void;
     } = {
-      silenceMs: options.silenceMs ?? 2200,
-      silenceThreshold: options.silenceThreshold ?? 0.015,
+      silenceMs: options.silenceMs ?? 1500,
+      silenceThreshold: options.silenceThreshold ?? 0.02,
       maxDurationMs: options.maxDurationMs ?? 60_000,
     };
     if (options.onLevel) opts.onLevel = options.onLevel;
     if (options.onFrequencyData) opts.onFrequencyData = options.onFrequencyData;
-    if (options.onSilence) opts.onSilence = options.onSilence;
     this.options = opts;
   }
 
@@ -182,48 +176,15 @@ export class VoiceRecorder {
 
         const now = performance.now();
         if (level > this.options.silenceThreshold) {
-          if (!this.hasDetectedSpeech) {
-            this.hasDetectedSpeech = true;
-            this.speechStartedAt = now;
-          }
           this.lastLoudAt = now;
-        } else if (this.options.silenceMs > 0 && !this.isStopping) {
-          // If the user has spoken, check if they paused for silenceMs after speaking
-          if (this.hasDetectedSpeech) {
-            if (
-              now - this.lastLoudAt > this.options.silenceMs &&
-              now - this.speechStartedAt > 350
-            ) {
-              this.isStopping = true;
-              if (this.rafId !== null) {
-                cancelAnimationFrame(this.rafId);
-                this.rafId = null;
-              }
-              if (this.options.onSilence) {
-                this.options.onSilence();
-              } else {
-                void this.stop();
-              }
-              return;
-            }
-          } else {
-            // User has not started speaking yet.
-            // Give them a generous wait time (15s) so they aren't prematurely cut off while thinking.
-            const initialSilenceLimit = Math.max(15_000, this.options.silenceMs * 5);
-            if (now - this.startedAt > initialSilenceLimit) {
-              this.isStopping = true;
-              if (this.rafId !== null) {
-                cancelAnimationFrame(this.rafId);
-                this.rafId = null;
-              }
-              if (this.options.onSilence) {
-                this.options.onSilence();
-              } else {
-                void this.stop();
-              }
-              return;
-            }
-          }
+        } else if (
+          this.options.silenceMs > 0 &&
+          now - this.lastLoudAt > this.options.silenceMs &&
+          now - this.startedAt > 500 // don't stop within first 0.5s
+        ) {
+          this.options.onSilence?.();
+          void this.stop();
+          return;
         }
 
         this.rafId = requestAnimationFrame(tick);
@@ -235,8 +196,7 @@ export class VoiceRecorder {
       this.analyser = null;
     }
 
-    // Start recorder with 250ms timeslice to guarantee continuous chunk emission
-    recorder.start(250);
+    recorder.start();
 
     // Hard cap on duration
     if (this.options.maxDurationMs > 0) {
@@ -248,12 +208,6 @@ export class VoiceRecorder {
 
   /** Stop recording and resolve with the recorded blob. */
   async stop(): Promise<RecorderResult> {
-    this.isStopping = true;
-    if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
-
     if (!this.recorder) {
       throw new Error("Recorder is not running.");
     }
@@ -279,12 +233,8 @@ export class VoiceRecorder {
       this.stopReject = reject;
 
       const recorder = this.recorder;
-      if (!recorder || recorder.state === "inactive") {
-        const durationMs = performance.now() - this.startedAt;
-        const mimeType = recorder?.mimeType || this.pickMimeType() || "audio/webm";
-        const blob = new Blob(this.chunks, { type: mimeType });
-        this.cleanup();
-        resolve({ blob, mimeType, durationMs });
+      if (!recorder) {
+        reject(new Error("Recorder is not running."));
         return;
       }
 
@@ -297,13 +247,6 @@ export class VoiceRecorder {
       };
 
       try {
-        if (recorder.state === "recording") {
-          try {
-            recorder.requestData();
-          } catch {
-            // ignore
-          }
-        }
         recorder.stop();
       } catch (error) {
         this.cleanup();
@@ -314,11 +257,8 @@ export class VoiceRecorder {
 
   /** Cancel without producing a result. */
   cancel(): void {
-    this.isStopping = true;
     try {
-      if (this.recorder && this.recorder.state !== "inactive") {
-        this.recorder.stop();
-      }
+      this.recorder?.stop();
     } catch {
       /* ignore */
     }
@@ -326,15 +266,11 @@ export class VoiceRecorder {
   }
 
   private fail(error: Error): void {
-    this.isStopping = true;
     this.stopReject?.(error);
     this.cleanup();
   }
 
   private cleanup(): void {
-    this.isStopping = false;
-    this.hasDetectedSpeech = false;
-    this.speechStartedAt = 0;
     if (this.rafId !== null) {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;

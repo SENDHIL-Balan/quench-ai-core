@@ -1,7 +1,6 @@
 import { ArrowRight, ChevronRight, LayoutGrid, LineChart, Bot } from "lucide-react";
 import { AgentOnlineCard, AgentRunCard, type AgentState } from "./AgentStatus";
 import { VoiceAgentPanel } from "./VoiceAgentPanel";
-import { SlangContextCard } from "./SlangContextCard";
 import { QuenchOrb } from "./QuenchOrb";
 import type { ModeId } from "@/lib/agent/modes";
 
@@ -34,9 +33,6 @@ export function RightPanel({
         onSendTranscript={onSendTranscript}
         onOpenVoiceSettings={onOpenVoiceSettings}
       />
-
-      {/* Slang Knowledge Base & Context Layer */}
-      <SlangContextCard />
 
       <section className="glass-panel rounded-3xl p-4">
         <div className="mb-3 flex items-center justify-between">

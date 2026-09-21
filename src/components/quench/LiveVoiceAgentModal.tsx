@@ -14,29 +14,9 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { VoiceRecorder, type RecorderResult } from "@/lib/voice/recorder";
-import { slangService } from "@/lib/slang";
 import type { VoiceSetting } from "./VoiceAgentModal";
 import type { ModeId } from "@/lib/agent/modes";
 import { cn } from "@/lib/utils";
-
-interface SpeechRecognitionResultItem {
-  transcript: string;
-}
-interface SpeechRecognitionEvent {
-  resultIndex: number;
-  results: ArrayLike<ArrayLike<SpeechRecognitionResultItem>>;
-}
-interface BrowserSpeechRecognition {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  onresult: ((event: SpeechRecognitionEvent) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-}
 
 export interface LiveVoiceAgentModalProps {
   isOpen: boolean;
@@ -120,38 +100,14 @@ export function LiveVoiceAgentModal({
   const animFrameRef = useRef<number | null>(null);
   const isComponentMounted = useRef<boolean>(true);
   const activeSessionRef = useRef<boolean>(false);
-  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
-  const recognizedTextRef = useRef<string>("");
 
   // Clean audio helper
   const cleanupAudio = useCallback(() => {
-    if (recorderRef.current) {
-      try {
-        recorderRef.current.cancel();
-      } catch {
-        // ignore
-      }
-      recorderRef.current = null;
-    }
-
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch {
-        // ignore
-      }
-      recognitionRef.current = null;
-    }
-
     if (audioAbortRef.current) {
       audioAbortRef.current.abort();
       audioAbortRef.current = null;
     }
     audioSessionIdRef.current += 1;
-
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
 
     if (audioRef.current) {
       audioRef.current.onended = null;
@@ -276,7 +232,6 @@ export function LiveVoiceAgentModal({
 
       let replyText = "";
       try {
-        const slangContext = slangService.getSlangContextForPrompt(spokenText);
         const chatRes = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -284,7 +239,6 @@ export function LiveVoiceAgentModal({
             messages: uiMessages,
             mode,
             deepThink,
-            slangContext,
           }),
         });
 
@@ -297,14 +251,13 @@ export function LiveVoiceAgentModal({
         if (reader) {
           const decoder = new TextDecoder();
           let done = false;
-          let buffer = "";
           while (!done) {
             const { value, done: isDone } = await reader.read();
             done = isDone;
             if (value) {
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split("\n");
-              buffer = lines.pop() || "";
+              const chunk = decoder.decode(value, { stream: true });
+              // Simple text extraction from UI stream protocol
+              const lines = chunk.split("\n");
               for (const line of lines) {
                 if (line.startsWith("data: ")) {
                   try {
@@ -395,8 +348,7 @@ export function LiveVoiceAgentModal({
 
           const url = URL.createObjectURL(blob);
           audioUrlRef.current = url;
-          const audio = new Audio();
-          audio.src = url;
+          const audio = new Audio(url);
           if (voiceSetting.playbackSpeed && voiceSetting.playbackSpeed > 0) {
             audio.playbackRate = voiceSetting.playbackSpeed;
           }
@@ -405,16 +357,7 @@ export function LiveVoiceAgentModal({
           await new Promise<void>((resolve, reject) => {
             audio.onended = () => resolve();
             audio.onerror = () => reject(new Error("Audio playback failed"));
-            const p = audio.play();
-            if (p !== undefined) {
-              p.catch((playErr) => {
-                console.warn(
-                  "Audio element play rejected, falling back to speech synthesis:",
-                  playErr,
-                );
-                reject(playErr);
-              });
-            }
+            void audio.play().catch(reject);
           });
         }
       } catch (err) {
@@ -427,12 +370,10 @@ export function LiveVoiceAgentModal({
                 return;
               }
               window.speechSynthesis.cancel();
-              window.speechSynthesis.resume();
               const utterance = new SpeechSynthesisUtterance(replyText);
               utterance.rate = voiceSetting.playbackSpeed || 1.0;
               utterance.onend = () => resolve();
               utterance.onerror = () => reject(err);
-              (window as unknown as { __liveUtt?: unknown }).__liveUtt = utterance;
               window.speechSynthesis.speak(utterance);
             });
           } catch (fallbackErr) {
@@ -460,42 +401,23 @@ export function LiveVoiceAgentModal({
   // Stop recording and transcribe user speech
   const stopAndTranscribe = useCallback(async () => {
     if (isTurnActiveRef.current || !activeSessionRef.current) return;
-
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch {
-        // ignore
-      }
-      recognitionRef.current = null;
-    }
-
-    const browserSpoken = recognizedTextRef.current.trim();
     const recorder = recorderRef.current;
-    recorderRef.current = null;
-
-    if (browserSpoken) {
-      if (recorder) {
-        recorder.cancel();
-      }
-      void processUserSpeech(browserSpoken);
-      return;
-    }
-
     if (!recorder) return;
 
     let result: RecorderResult;
     try {
       result = await recorder.stop();
     } catch {
+      recorderRef.current = null;
       setLiveState("idle");
       return;
     }
+    recorderRef.current = null;
 
     if (!activeSessionRef.current) return;
 
-    if (result.blob.size < 300) {
-      // Audio was too short or silence; continue listening without thrashing
+    if (result.blob.size < 1200) {
+      // Audio was too short or silence
       if (activeSessionRef.current && !isMuted) {
         void startListening();
       } else {
@@ -547,47 +469,15 @@ export function LiveVoiceAgentModal({
     setErrorMessage(null);
     setLiveState("listening");
     setVolumeLevel(0);
-    recognizedTextRef.current = "";
-
-    // Start native browser speech recognition if supported
-    try {
-      const SpeechRec =
-        (window as unknown as { SpeechRecognition?: new () => BrowserSpeechRecognition })
-          .SpeechRecognition ||
-        (window as unknown as { webkitSpeechRecognition?: new () => BrowserSpeechRecognition })
-          .webkitSpeechRecognition;
-      if (SpeechRec) {
-        const rec = new SpeechRec();
-        rec.continuous = true;
-        rec.interimResults = true;
-        rec.lang = voiceSetting.voiceId.includes("British") ? "en-GB" : "en-US";
-        rec.onresult = (event: SpeechRecognitionEvent) => {
-          let str = "";
-          for (let i = 0; i < event.results.length; i++) {
-            const item = event.results[i]?.[0];
-            if (item?.transcript) str += item.transcript;
-          }
-          if (str.trim()) {
-            recognizedTextRef.current = str.trim();
-            setUserTranscript(str.trim());
-          }
-        };
-        rec.onerror = () => {};
-        rec.start();
-        recognitionRef.current = rec;
-      }
-    } catch {
-      // Browser SpeechRecognition optional
-    }
 
     const recorder = new VoiceRecorder({
       onLevel: (lvl) => setVolumeLevel(lvl),
       onFrequencyData: (data) => {
         freqDataRef.current = data;
       },
-      silenceMs: 2200,
-      silenceThreshold: 0.015,
-      maxDurationMs: 60_000,
+      silenceMs: 1400,
+      silenceThreshold: 0.025,
+      maxDurationMs: 45_000,
       onSilence: () => {
         if (!isTurnActiveRef.current && activeSessionRef.current) {
           void stopAndTranscribe();
@@ -603,7 +493,7 @@ export function LiveVoiceAgentModal({
       setLiveState("error");
       setErrorMessage(err instanceof Error ? err.message : "Microphone unavailable.");
     }
-  }, [cleanupAudio, isMuted, stopAndTranscribe, voiceSetting]);
+  }, [cleanupAudio, isMuted, stopAndTranscribe]);
 
   // Interrupt AI playback immediately and listen
   const handleInterrupt = useCallback(() => {

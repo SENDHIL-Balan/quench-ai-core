@@ -97,12 +97,10 @@ export function useTextToSpeech(): UseTextToSpeechResult {
               return;
             }
             window.speechSynthesis.cancel();
-            window.speechSynthesis.resume();
             const utterance = new SpeechSynthesisUtterance(trimmed);
             utterance.rate = options.playbackSpeed || 1.0;
             utterance.onend = () => resolve();
             utterance.onerror = () => reject(new Error("Browser speech synthesis failed."));
-            (window as unknown as { __activeUtterance?: unknown }).__activeUtterance = utterance;
             window.speechSynthesis.speak(utterance);
           });
         } else {
@@ -114,8 +112,7 @@ export function useTextToSpeech(): UseTextToSpeechResult {
           const url = URL.createObjectURL(blob);
           urlRef.current = url;
 
-          const audio = new Audio();
-          audio.src = url;
+          const audio = new Audio(url);
           if (options.playbackSpeed && options.playbackSpeed > 0) {
             audio.playbackRate = options.playbackSpeed;
           }
@@ -124,16 +121,7 @@ export function useTextToSpeech(): UseTextToSpeechResult {
           await new Promise<void>((resolve, reject) => {
             audio.onended = () => resolve();
             audio.onerror = () => reject(new Error("Audio playback failed."));
-            const playPromise = audio.play();
-            if (playPromise !== undefined) {
-              playPromise.catch((playErr) => {
-                console.warn(
-                  "Audio element play rejected, falling back to speech synthesis:",
-                  playErr,
-                );
-                reject(playErr);
-              });
-            }
+            void audio.play().catch(reject);
           });
         }
 
@@ -150,12 +138,10 @@ export function useTextToSpeech(): UseTextToSpeechResult {
                 return;
               }
               window.speechSynthesis.cancel();
-              window.speechSynthesis.resume();
               const utterance = new SpeechSynthesisUtterance(trimmed);
               utterance.rate = options.playbackSpeed || 1.0;
               utterance.onend = () => resolve();
               utterance.onerror = () => reject(err);
-              (window as unknown as { __activeUtterance?: unknown }).__activeUtterance = utterance;
               window.speechSynthesis.speak(utterance);
             });
             if (currentSessionIdRef.current === sessionId) {

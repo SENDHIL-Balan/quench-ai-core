@@ -35,45 +35,33 @@ function NotFoundComponent() {
 }
 
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
-  console.error("Root error boundary caught:", error);
+  console.error(error);
   const router = useRouter();
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <div className="max-w-md text-center p-8 rounded-2xl border bg-card text-card-foreground shadow-lg">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary mb-4 font-semibold text-lg">
-          AI
-        </div>
+      <div className="max-w-md text-center">
         <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          Bravura AI Recovered an Issue
+          This page didn't load
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {error.message?.includes("quota") || error.message?.includes("429")
-            ? "API quota or rate limit reached. Bravura AI has switched to offline local fallback mode so you can continue working."
-            : error.message ||
-              "Something went wrong on our end. You can try refreshing or returning home."}
+          Something went wrong on our end. You can try refreshing or head back home.
         </p>
-        <div className="mt-6 flex flex-wrap justify-center gap-3">
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
-              try {
-                window.localStorage.removeItem("quench-ai-chats-v1");
-              } catch {
-                // ignore
-              }
               router.invalidate();
               reset();
-              window.location.href = "/";
             }}
-            className="inline-flex items-center justify-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 shadow-sm"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Restart Workspace
+            Try again
           </button>
           <a
             href="/"
-            className="inline-flex items-center justify-center rounded-xl border border-input bg-background px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           >
-            Go Home
+            Go home
           </a>
         </div>
       </div>
@@ -90,11 +78,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "description",
         content:
-          "Bravura AI is a modern AI agent workspace featuring real-time live voice intelligence, deep reasoning, research, and multimodal capabilities.",
+          "Bravura AI is a modern AI agent workspace featuring real-time live voice intelligence, deep reasoning, research, multimodal tools, and conversational chat.",
       },
       { name: "author", content: "Bravura AI" },
       { property: "og:title", content: "Bravura AI" },
-      { property: "og:description", content: "Intelligence & Real-Time Live Voice AI." },
+      {
+        property: "og:description",
+        content:
+          "Bravura AI is a modern AI agent workspace featuring real-time live voice intelligence, deep reasoning, research, multimodal tools, and conversational chat.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@BravuraAI" },

@@ -144,13 +144,12 @@ export function VoiceAgentModal({
       });
 
       if (!response.ok) {
-        throw new Error("Preview fetch failed");
+        throw new Error("Preview failed");
       }
 
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
-      const audio = new Audio();
-      audio.src = url;
+      const audio = new Audio(url);
       if (playbackSpeed && playbackSpeed > 0) {
         audio.playbackRate = playbackSpeed;
       }
@@ -167,22 +166,6 @@ export function VoiceAgentModal({
 
       await audio.play();
     } catch {
-      // Browser SpeechSynthesis fallback for preview
-      try {
-        if ("speechSynthesis" in window) {
-          window.speechSynthesis.cancel();
-          window.speechSynthesis.resume();
-          const utterance = new SpeechSynthesisUtterance(`Hello! I am ${name}, your voice agent.`);
-          utterance.rate = playbackSpeed || 1.0;
-          utterance.onend = () => setPreviewingId(null);
-          utterance.onerror = () => setPreviewingId(null);
-          (window as unknown as { __activePreviewUtt?: unknown }).__activePreviewUtt = utterance;
-          window.speechSynthesis.speak(utterance);
-          return;
-        }
-      } catch {
-        // ignore
-      }
       setPreviewingId(null);
     }
   };

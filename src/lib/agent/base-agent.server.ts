@@ -22,7 +22,6 @@ export interface AgentRunInput {
   mode: ModeId;
   deepThink?: boolean;
   webSearch?: boolean;
-  slangContext?: string;
   abortSignal?: AbortSignal;
 }
 
@@ -362,7 +361,6 @@ export async function runBaseAgent({
   mode,
   deepThink = false,
   webSearch = false,
-  slangContext,
   abortSignal,
 }: AgentRunInput): Promise<Response> {
   // If in Image mode, route directly to image generation
@@ -375,11 +373,6 @@ export async function runBaseAgent({
 
   // Build the base prompt with real-time search context
   let systemInstruction = buildSystemPrompt({ mode, deepThink, webSearch: shouldSearch });
-
-  // Ingest frontend-extracted local slang context definitions
-  if (slangContext && typeof slangContext === "string" && slangContext.trim()) {
-    systemInstruction = `${systemInstruction}\n\n${slangContext.trim()}`;
-  }
 
   // When real-time data is requested, attempt native Gemini Google Search Grounding first (gemini-3.5-flash with googleSearch tool)
   if (shouldSearch) {
