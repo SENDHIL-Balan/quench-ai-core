@@ -15,7 +15,12 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { VoiceRecorder, type RecorderResult } from "@/lib/voice/recorder";
-import { playVoiceAudio, unlockAudio, type AudioPlaybackController } from "@/lib/voice/player";
+import {
+  playVoiceAudio,
+  stopAnyVoicePlayback,
+  unlockAudio,
+  type AudioPlaybackController,
+} from "@/lib/voice/player";
 import { cn } from "@/lib/utils";
 
 export type VoiceAgentPanelProps = {
@@ -295,19 +300,20 @@ export function VoiceAgentPanel({
   const handlePlayTTS = async () => {
     if (!transcript) return;
 
-    if (isPlayingAudio && playbackControllerRef.current) {
-      playbackControllerRef.current.stop();
+    if (isPlayingAudio) {
+      stopAnyVoicePlayback();
       playbackControllerRef.current = null;
       setIsPlayingAudio(false);
       return;
     }
 
+    stopAnyVoicePlayback();
     setIsPlayingAudio(true);
     try {
       const controller = playVoiceAudio({
         text: transcript,
-        provider: "elevenlabs",
-        voiceId: "JBFqnCBsd6RMkjVDRZzb", // George
+        provider: "sarvam",
+        voiceId: "kavya",
         onStart: () => {
           setIsPlayingAudio(true);
         },

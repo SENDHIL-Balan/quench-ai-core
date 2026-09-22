@@ -10,6 +10,7 @@ import {
 import {
   initializeFirestore,
   getFirestore,
+  setLogLevel,
   doc,
   setDoc,
   collection,
@@ -21,13 +22,16 @@ import {
 } from "firebase/firestore";
 import firebaseConfig from "../../firebase-applet-config.json";
 
+// Configure Firestore log level to error to eliminate noisy network connection retry warnings
+setLogLevel("error");
+
 // Initialize Firebase App
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 // Initialize Firebase Auth
 export const auth = getAuth(app);
 
-// Initialize Firestore with auto-detect long-polling to prevent WebSocket connection drops in iframes/proxies
+// Initialize Firestore with force long-polling to prevent WebSocket connection failures in iframe environments
 const databaseId =
   firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId.length > 0
     ? firebaseConfig.firestoreDatabaseId
@@ -38,7 +42,7 @@ export const db = (() => {
     return initializeFirestore(
       app,
       {
-        experimentalAutoDetectLongPolling: true,
+        experimentalForceLongPolling: true,
       },
       databaseId,
     );
@@ -46,6 +50,57 @@ export const db = (() => {
     return getFirestore(app, databaseId);
   }
 })();
+
+export enum OperationType {
+  CREATE = "create",
+  UPDATE = "update",
+  DELETE = "delete",
+  LIST = "list",
+  GET = "get",
+  WRITE = "write",
+}
+
+export interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null,
+): void {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo:
+        auth.currentUser?.providerData?.map((provider) => ({
+          providerId: provider.providerId,
+          email: provider.email,
+        })) || [],
+    },
+    operationType,
+    path,
+  };
+  console.warn("Firestore Operation Notice:", JSON.stringify(errInfo));
+}
 
 // Google Auth Provider configured for clean account selection
 export const googleProvider = new GoogleAuthProvider();
@@ -90,7 +145,7 @@ export async function signInWithGoogle(): Promise<AuthUserProfile> {
         { merge: true },
       );
     } catch (e) {
-      console.warn("Could not sync user profile to Firestore:", e);
+      handleFirestoreError(e, OperationType.WRITE, `users/${user.uid}`);
     }
 
     return profile;
@@ -184,7 +239,7 @@ export async function saveChatToFirestore(
       { merge: true },
     );
   } catch (error) {
-    console.warn("Could not save chat to Firestore:", error);
+    handleFirestoreError(error, OperationType.WRITE, `chats/${chatId}`);
   }
 }
 
@@ -197,7 +252,7 @@ export async function deleteChatFromFirestore(chatId: string): Promise<void> {
     const chatRef = doc(db, "chats", chatId);
     await deleteDoc(chatRef);
   } catch (error) {
-    console.warn("Could not delete chat from Firestore:", error);
+    handleFirestoreError(error, OperationType.DELETE, `chats/${chatId}`);
   }
 }
 
@@ -230,7 +285,7 @@ export function subscribeUserChats(
       onUpdate(list);
     },
     (err) => {
-      console.warn("Firestore chats listener warning:", err);
+      handleFirestoreError(err, OperationType.LIST, "chats");
     },
   );
 }

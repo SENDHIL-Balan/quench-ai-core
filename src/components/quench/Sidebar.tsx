@@ -121,22 +121,18 @@ export function Sidebar({
           const baseClass =
             "text-muted-foreground hover:bg-accent/60 hover:text-foreground flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors cursor-pointer";
 
-          if (label === "Tools" && onOpenTools) {
-            return (
-              <button key={label} type="button" onClick={onOpenTools} className={baseClass}>
-                <Icon className="size-[18px]" />
-                {label}
-              </button>
-            );
-          }
-
           if (to) {
             return (
               <Link
                 key={label}
                 to={to}
+                onClick={() => {
+                  if (label === "Tools") {
+                    onOpenTools?.();
+                  }
+                }}
                 className={baseClass}
-                activeProps={{ className: "bg-accent/60 text-foreground" }}
+                activeProps={{ className: "bg-accent/70 text-foreground font-medium" }}
               >
                 <Icon className="size-[18px]" />
                 {label}

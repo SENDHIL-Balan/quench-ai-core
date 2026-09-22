@@ -17,9 +17,9 @@ export type RecorderOptions = {
   onFrequencyData?: (data: Uint8Array) => void;
   /** Called when auto-stop completes due to silence after speech. */
   onAutoStop?: (result: RecorderResult) => void;
-  /** Auto-stop after this many ms of silence once speech was heard. 0 disables. Default 1500. */
+  /** Auto-stop after this many ms of silence once speech was heard. 0 disables. Default 2400. */
   silenceMs?: number;
-  /** Volume below which we consider it silence. 0..1. Default 0.025. */
+  /** Volume below which we consider it silence. 0..1. Default 0.02. */
   silenceThreshold?: number;
   /** Maximum recording length in ms. Default 60000 (60s). */
   maxDurationMs?: number;
@@ -41,6 +41,7 @@ export class VoiceRecorder {
   private startedAt = 0;
   private lastLoudAt = 0;
   private hasSpoken = false;
+  private speechFrames = 0;
   private maxTimer: number | null = null;
   private isStopping = false;
   private lastResult: RecorderResult | null = null;
@@ -58,8 +59,8 @@ export class VoiceRecorder {
 
   constructor(options: RecorderOptions = {}) {
     this.options = {
-      silenceMs: options.silenceMs ?? 1500,
-      silenceThreshold: options.silenceThreshold ?? 0.025,
+      silenceMs: options.silenceMs ?? 2400,
+      silenceThreshold: options.silenceThreshold ?? 0.02,
       maxDurationMs: options.maxDurationMs ?? 60_000,
       onLevel: options.onLevel,
       onFrequencyData: options.onFrequencyData,
@@ -181,18 +182,26 @@ export class VoiceRecorder {
         const now = performance.now();
 
         if (level > this.options.silenceThreshold) {
+          this.speechFrames += 1;
           this.lastLoudAt = now;
-          this.hasSpoken = true;
-        } else if (!this.hasSpoken) {
-          // If the user hasn't spoken yet, don't trigger silence auto-stop
-          this.lastLoudAt = now;
-        } else if (
+          if (this.speechFrames >= 3) {
+            this.hasSpoken = true;
+          }
+        } else {
+          this.speechFrames = Math.max(0, this.speechFrames - 1);
+          if (!this.hasSpoken) {
+            // If the user hasn't spoken yet, don't trigger silence auto-stop
+            this.lastLoudAt = now;
+          }
+        }
+
+        if (
           this.options.silenceMs > 0 &&
           this.hasSpoken &&
           now - this.lastLoudAt > this.options.silenceMs &&
-          now - this.startedAt > 800
+          now - this.startedAt > 1400
         ) {
-          // Silence detected AFTER speech — trigger auto-stop!
+          // Silence detected AFTER meaningful speech — trigger auto-stop!
           this.isStopping = true;
           void this.stop().then((result) => {
             this.options.onAutoStop?.(result);

@@ -1,12 +1,17 @@
 import { useCallback, useRef, useState } from "react";
 import type { VoiceProvider, VoiceState } from "@/lib/voice/types";
-import { playVoiceAudio, type AudioPlaybackController } from "@/lib/voice/player";
+import {
+  playVoiceAudio,
+  stopAnyVoicePlayback,
+  type AudioPlaybackController,
+} from "@/lib/voice/player";
 
 export interface SpeakOptions {
   id?: string;
   voice?: string;
   provider?: VoiceProvider;
   playbackSpeed?: number;
+  forceReplay?: boolean;
 }
 
 interface UseTextToSpeechResult {
@@ -19,8 +24,7 @@ interface UseTextToSpeechResult {
 }
 
 /**
- * Sends text to /api/speak (ElevenLabs or Deepgram) with Web Audio API,
- * HTMLAudio, and Web Speech API fallback.
+ * Authoritative single-channel text-to-speech hook
  */
 export function useTextToSpeech(): UseTextToSpeechResult {
   const [state, setState] = useState<UseTextToSpeechResult["state"]>("idle");
@@ -29,8 +33,8 @@ export function useTextToSpeech(): UseTextToSpeechResult {
   const controllerRef = useRef<AudioPlaybackController | null>(null);
 
   const stop = useCallback(() => {
+    stopAnyVoicePlayback();
     if (controllerRef.current) {
-      controllerRef.current.stop();
       controllerRef.current = null;
     }
     setState("idle");
@@ -41,11 +45,8 @@ export function useTextToSpeech(): UseTextToSpeechResult {
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    // Stop any existing playback
-    if (controllerRef.current) {
-      controllerRef.current.stop();
-      controllerRef.current = null;
-    }
+    // Immediately stop any existing playback or in-flight requests
+    stopAnyVoicePlayback();
 
     setErrorMessage(null);
     setState("speaking");
@@ -54,9 +55,11 @@ export function useTextToSpeech(): UseTextToSpeechResult {
     try {
       const controller = playVoiceAudio({
         text: trimmed,
+        messageId: options.id,
         voiceId: options.voice,
         provider: options.provider,
         playbackSpeed: options.playbackSpeed,
+        forceReplay: options.forceReplay,
         onStart: () => {
           setState("speaking");
         },
@@ -65,12 +68,19 @@ export function useTextToSpeech(): UseTextToSpeechResult {
           setPlayingId(null);
           controllerRef.current = null;
         },
+        onError: (err) => {
+          console.warn("[VOICE] TTS playback notice:", err.message);
+          setErrorMessage(err.message);
+          setState("error");
+          setPlayingId(null);
+          controllerRef.current = null;
+        },
       });
 
       controllerRef.current = controller;
       await controller.promise;
     } catch (err) {
-      console.warn("[voice] Playback notice:", err);
+      console.warn("[VOICE] Playback error caught in hook:", err);
       setErrorMessage(err instanceof Error ? err.message : "Couldn't play audio.");
       setState("error");
       setPlayingId(null);

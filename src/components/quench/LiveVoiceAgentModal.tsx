@@ -17,7 +17,12 @@ import {
 import { cn } from "@/lib/utils";
 import type { ModeId } from "@/lib/agent/modes";
 import { VoiceRecorder, type RecorderResult } from "@/lib/voice/recorder";
-import { playVoiceAudio, unlockAudio, type AudioPlaybackController } from "@/lib/voice/player";
+import {
+  playVoiceAudio,
+  stopAnyVoicePlayback,
+  unlockAudio,
+  type AudioPlaybackController,
+} from "@/lib/voice/player";
 import { VoiceAgentModal, VOICES, type VoiceSetting } from "./VoiceAgentModal";
 import { FluidVoiceOrb } from "./FluidVoiceOrb";
 
@@ -73,6 +78,9 @@ export function LiveVoiceAgentModal({
 
   const recorderRef = useRef<VoiceRecorder | null>(null);
   const playbackControllerRef = useRef<AudioPlaybackController | null>(null);
+  const activeAbortControllerRef = useRef<AbortController | null>(null);
+  const isProcessingTurnRef = useRef(false);
+  const lastAssistantReplyRef = useRef<string>("");
   const isComponentMounted = useRef(true);
   const activeSessionRef = useRef(false);
   const scrollEndRef = useRef<HTMLDivElement | null>(null);
@@ -84,11 +92,16 @@ export function LiveVoiceAgentModal({
     }
   }, [conversationTurns, currentAgentStream, liveState]);
 
-  // Cleanup audio players
+  // Clean up any ongoing audio and network calls
   const cleanupAudio = useCallback(() => {
+    stopAnyVoicePlayback();
     if (playbackControllerRef.current) {
       playbackControllerRef.current.stop();
       playbackControllerRef.current = null;
+    }
+    if (activeAbortControllerRef.current) {
+      activeAbortControllerRef.current.abort();
+      activeAbortControllerRef.current = null;
     }
   }, []);
 
@@ -96,6 +109,18 @@ export function LiveVoiceAgentModal({
   const processUserSpeech = useCallback(
     async (spokenText: string) => {
       if (!isComponentMounted.current || !activeSessionRef.current) return;
+
+      // Halt any previous audio and ongoing chat fetch before starting fresh turn
+      cleanupAudio();
+      const abortController = new AbortController();
+      activeAbortControllerRef.current = abortController;
+      isProcessingTurnRef.current = true;
+
+      // Stop recorder while AI is thinking & speaking
+      if (recorderRef.current) {
+        recorderRef.current.cancel();
+        recorderRef.current = null;
+      }
 
       const userTurnId = `user-${Date.now()}`;
       setConversationTurns((prev) => [...prev, { id: userTurnId, role: "user", text: spokenText }]);
@@ -122,6 +147,7 @@ export function LiveVoiceAgentModal({
         const chatRes = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: abortController.signal,
           body: JSON.stringify({
             messages: uiMessages,
             mode,
@@ -129,6 +155,8 @@ export function LiveVoiceAgentModal({
             voiceMode: true, // triggers natural 1-2 sentence human voice mode
           }),
         });
+
+        if (abortController.signal.aborted) return;
 
         if (!chatRes.ok) {
           const errDetail = await chatRes.json().catch(() => null);
@@ -144,6 +172,7 @@ export function LiveVoiceAgentModal({
           let buffer = "";
 
           while (!done) {
+            if (abortController.signal.aborted) break;
             const { value, done: isDone } = await reader.read();
             done = isDone;
             if (value) {
@@ -170,17 +199,28 @@ export function LiveVoiceAgentModal({
           }
         }
 
+        if (abortController.signal.aborted) return;
+
         if (!replyText.trim()) {
           replyText = "I'm right here with you. What would you like to explore next?";
         }
       } catch (err) {
+        if (abortController.signal.aborted) return;
         console.error("Live voice chat error:", err);
         replyText = "I heard you, but hit a slight bump. Could you say that one more time?";
       }
 
-      if (!isComponentMounted.current || !activeSessionRef.current) return;
+      if (
+        !isComponentMounted.current ||
+        !activeSessionRef.current ||
+        abortController.signal.aborted
+      ) {
+        isProcessingTurnRef.current = false;
+        return;
+      }
 
       const assistantTurnId = `asst-${Date.now()}`;
+      lastAssistantReplyRef.current = replyText;
       setConversationTurns((prev) => [
         ...prev,
         { id: assistantTurnId, role: "assistant", text: replyText },
@@ -188,11 +228,12 @@ export function LiveVoiceAgentModal({
       setCurrentAgentStream("");
       onTranscriptReady?.(spokenText, replyText);
 
-      // Vocalize AI answer with high fidelity audio engine
+      // Vocalize AI answer with high fidelity audio engine (guaranteed single playback)
       setLiveState("speaking");
       try {
         const controller = playVoiceAudio({
           text: replyText,
+          messageId: assistantTurnId,
           voiceId: voiceSetting.voiceId,
           provider: voiceSetting.provider,
           playbackSpeed: voiceSetting.playbackSpeed ?? 1.0,
@@ -209,30 +250,47 @@ export function LiveVoiceAgentModal({
         playbackControllerRef.current = controller;
         await controller.promise;
       } catch (err) {
-        console.warn("Speech playback notice:", err);
+        if (!abortController.signal.aborted) {
+          console.warn("Speech playback notice:", err);
+        }
       } finally {
         cleanupAudio();
+        isProcessingTurnRef.current = false;
       }
 
-      // Continuous dialogue: auto-resume microphone if hands-free is enabled
+      // Add 400ms acoustic settling buffer so mic never picks up lingering speaker reverb
       const handsFree = voiceSetting.handsFreeListen ?? true;
       if (isComponentMounted.current && activeSessionRef.current && !isMuted && handsFree) {
-        void startListening();
+        setTimeout(() => {
+          if (
+            isComponentMounted.current &&
+            activeSessionRef.current &&
+            !isMuted &&
+            !isProcessingTurnRef.current
+          ) {
+            void startListening();
+          }
+        }, 400);
       } else {
         setLiveState("idle");
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [conversationTurns, mode, deepThink, voiceSetting, isMuted, onTranscriptReady],
+    [conversationTurns, mode, deepThink, voiceSetting, isMuted, onTranscriptReady, cleanupAudio],
   );
 
   // Handle recorded audio
   const handleAudioRecorded = useCallback(
     async (result: RecorderResult) => {
       if (!isComponentMounted.current || !activeSessionRef.current) return;
+      if (isProcessingTurnRef.current) {
+        console.warn("[voice] Ignored audio chunk because a turn is already processing");
+        return;
+      }
 
-      if (result.blob.size < 1000) {
-        if (activeSessionRef.current && !isMuted) {
+      // Ignore micro-bursts or tiny clicks under 600ms or 1KB
+      if (result.durationMs < 600 || result.blob.size < 1000) {
+        if (activeSessionRef.current && !isMuted && !isProcessingTurnRef.current) {
           void startListening();
         } else {
           setLiveState("idle");
@@ -240,6 +298,7 @@ export function LiveVoiceAgentModal({
         return;
       }
 
+      isProcessingTurnRef.current = true;
       setLiveState("transcribing");
       try {
         const formData = new FormData();
@@ -254,6 +313,7 @@ export function LiveVoiceAgentModal({
         const payload = (await res.json().catch(() => null)) as TranscribeResult;
 
         if (!res.ok || !payload || !payload.ok || !payload.text?.trim()) {
+          isProcessingTurnRef.current = false;
           if (activeSessionRef.current && !isMuted) {
             void startListening();
           } else {
@@ -262,9 +322,30 @@ export function LiveVoiceAgentModal({
           return;
         }
 
-        void processUserSpeech(payload.text.trim());
+        const cleanUserText = payload.text.trim();
+
+        // Echo Cancellation Guard: Check if the mic transcribed the assistant's own recent words
+        const recentAssistant = lastAssistantReplyRef.current.toLowerCase();
+        const userTextLower = cleanUserText.toLowerCase();
+        if (
+          recentAssistant &&
+          (userTextLower === recentAssistant ||
+            (userTextLower.length > 8 && recentAssistant.includes(userTextLower)))
+        ) {
+          console.info("[voice] Discarded acoustic echo of assistant speech");
+          isProcessingTurnRef.current = false;
+          if (activeSessionRef.current && !isMuted) {
+            void startListening();
+          } else {
+            setLiveState("idle");
+          }
+          return;
+        }
+
+        void processUserSpeech(cleanUserText);
       } catch (err) {
         console.error("Transcribe error in live voice:", err);
+        isProcessingTurnRef.current = false;
         if (activeSessionRef.current && !isMuted) {
           void startListening();
         } else {
@@ -278,7 +359,7 @@ export function LiveVoiceAgentModal({
 
   // Start microphone listening
   const startListening = useCallback(async () => {
-    if (isMuted) return;
+    if (isMuted || isProcessingTurnRef.current) return;
     cleanupAudio();
     unlockAudio();
     setErrorMessage(null);
@@ -291,12 +372,12 @@ export function LiveVoiceAgentModal({
       onFrequencyData: (data) => setFreqData(data),
       onAutoStop: (result) => {
         recorderRef.current = null;
-        if (activeSessionRef.current && !isMuted) {
+        if (activeSessionRef.current && !isMuted && !isProcessingTurnRef.current) {
           void handleAudioRecorded(result);
         }
       },
-      silenceMs: 1400,
-      silenceThreshold: 0.025,
+      silenceMs: 2400, // relaxed 2.4s natural breathing and thought pause
+      silenceThreshold: 0.02,
       maxDurationMs: 45_000,
     });
     recorderRef.current = recorder;
@@ -315,12 +396,17 @@ export function LiveVoiceAgentModal({
   // Interrupt AI playback and resume listening immediately
   const handleInterrupt = useCallback(() => {
     cleanupAudio();
+    isProcessingTurnRef.current = false;
     if (recorderRef.current) {
       recorderRef.current.cancel();
       recorderRef.current = null;
     }
-    void startListening();
-  }, [cleanupAudio, startListening]);
+    setTimeout(() => {
+      if (activeSessionRef.current && !isMuted) {
+        void startListening();
+      }
+    }, 80);
+  }, [cleanupAudio, isMuted, startListening]);
 
   // Replay a specific assistant message
   const handleReplayTurn = useCallback(
@@ -335,6 +421,7 @@ export function LiveVoiceAgentModal({
           voiceId: voiceSetting.voiceId,
           provider: voiceSetting.provider,
           playbackSpeed: voiceSetting.playbackSpeed ?? 1.0,
+          forceReplay: true,
           onEnded: () => {
             if (activeSessionRef.current && !isMuted) {
               void startListening();
@@ -658,13 +745,13 @@ export function LiveVoiceAgentModal({
         </p>
 
         {/* Floating Controls Bar */}
-        <div className="mt-4 flex items-center gap-3 sm:gap-4 rounded-full border border-white/10 bg-white/[0.05] p-2 backdrop-blur-xl shadow-2xl">
+        <div className="mt-4 flex items-center gap-2.5 sm:gap-3 rounded-full border border-white/10 bg-white/[0.05] p-2 backdrop-blur-xl shadow-2xl">
           {/* Mute / Unmute Button */}
           <button
             type="button"
             onClick={handleToggleMute}
             className={cn(
-              "flex size-11 items-center justify-center rounded-full transition-all cursor-pointer",
+              "flex size-11 items-center justify-center rounded-full transition-all cursor-pointer shrink-0",
               isMuted
                 ? "bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/40"
                 : "bg-white/10 text-white hover:bg-white/20",
@@ -675,16 +762,36 @@ export function LiveVoiceAgentModal({
             {isMuted ? <MicOff className="size-5" /> : <Mic className="size-5" />}
           </button>
 
+          {/* Manual Done Speaking button during listening */}
+          {liveState === "listening" && (
+            <button
+              type="button"
+              onClick={() => {
+                if (recorderRef.current && !isProcessingTurnRef.current) {
+                  void recorderRef.current.stop().then((result) => {
+                    void handleAudioRecorded(result);
+                  });
+                }
+              }}
+              className="flex h-11 items-center gap-2 px-4 rounded-full bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/30 transition-all cursor-pointer font-medium text-xs shadow-sm shadow-cyan-500/10 shrink-0"
+              title="I'm done speaking — send now"
+            >
+              <Check className="size-4 text-cyan-300" />
+              <span>Done speaking</span>
+            </button>
+          )}
+
           {/* Interrupt AI playback button (visible when speaking or thinking) */}
           {(liveState === "speaking" || liveState === "thinking") && (
             <button
               type="button"
               onClick={handleInterrupt}
-              className="flex size-11 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25 transition-all cursor-pointer animate-in zoom-in-75 duration-200"
+              className="flex h-11 items-center gap-2 px-4 rounded-full bg-white/15 text-white hover:bg-white/25 border border-white/20 transition-all cursor-pointer font-medium text-xs shadow-sm shrink-0 animate-in zoom-in-75 duration-200"
               title="Interrupt AI"
               aria-label="Interrupt AI"
             >
-              <Square className="size-4 fill-current" />
+              <Square className="size-3.5 fill-current" />
+              <span>Interrupt</span>
             </button>
           )}
 
@@ -692,7 +799,7 @@ export function LiveVoiceAgentModal({
           <button
             type="button"
             onClick={() => setConfigOverlayOpen(true)}
-            className="flex size-11 items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20 hover:text-white transition-all cursor-pointer"
+            className="flex size-11 items-center justify-center rounded-full bg-white/10 text-white/80 hover:bg-white/20 hover:text-white transition-all cursor-pointer shrink-0"
             title="Voice & Speed Settings"
             aria-label="Voice & Speed Settings"
           >
@@ -703,7 +810,7 @@ export function LiveVoiceAgentModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex size-11 items-center justify-center rounded-full bg-red-600/80 text-white hover:bg-red-600 transition-all cursor-pointer shadow-lg shadow-red-600/30"
+            className="flex size-11 items-center justify-center rounded-full bg-red-600/80 text-white hover:bg-red-600 transition-all cursor-pointer shadow-lg shadow-red-600/30 shrink-0"
             title="End Call"
             aria-label="End Call"
           >

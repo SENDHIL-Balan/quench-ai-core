@@ -1,25 +1,34 @@
 import { createFileRoute } from "@tanstack/react-router";
+import {
+  SARVAM_KEY_FALLBACK,
+  isSarvamVoice,
+  getEffectiveDeepgramVoice,
+  getEffectiveSarvamVoice,
+  getEffectiveElevenLabsVoice,
+  isElevenLabsHealthy,
+  markElevenLabsQuotaExhausted,
+  markElevenLabsActive,
+  getSarvamApiKey,
+  getDeepgramApiKey,
+  getElevenLabsApiKey,
+} from "@/lib/voice/service.server";
+import { getVoiceGender } from "@/lib/voice/voices";
 
 /**
  * POST /api/speak
  *
- * Body: JSON { text: string, voice?: string, provider?: "elevenlabs" | "deepgram" | "auto" }
- * Returns: audio/mpeg stream
+ * Body: JSON { text: string, voice?: string, provider?: "sarvam" | "elevenlabs" | "deepgram" | "auto", playbackSpeed?: number }
+ * Returns: audio/mpeg or audio/wav stream
  *
  * Server-side only. Keys never leave the server.
  */
 
-const DEEPGRAM_KEY_FALLBACK = "f864cbf8ef4e61b5cc5f2c7aac27326b24f4ae43";
-const ELEVENLABS_KEY_FALLBACK = "sk_f42cb47fc1c14c2ce644d8c09f75a215578319c977b6baab";
-
-const DEFAULT_ELEVENLABS_VOICE = "JBFqnCBsd6RMkjVDRZzb"; // George (premade, warm & engaging)
-const DEFAULT_DEEPGRAM_VOICE = "aura-asteria-en"; // Asteria (warm English female)
 const MAX_TEXT_LENGTH = 3000;
 
 type SpeakBody = {
   text?: unknown;
   voice?: unknown;
-  provider?: "elevenlabs" | "deepgram" | "auto";
+  provider?: "sarvam" | "elevenlabs" | "deepgram" | "auto";
   playbackSpeed?: unknown;
 };
 
@@ -27,6 +36,71 @@ function errorResponse(message: string, status: number) {
   return new Response(JSON.stringify({ ok: false, error: message }), {
     status,
     headers: { "content-type": "application/json" },
+  });
+}
+
+/**
+ * Sarvam AI Bulbul:v3 Text-To-Speech
+ * High-clarity Indian English & multilingual synthesis
+ */
+async function fetchSarvamAudio(
+  apiKey: string,
+  text: string,
+  speaker: string,
+  playbackSpeed = 1.0,
+): Promise<Response> {
+  const pace = Math.max(0.7, Math.min(1.8, playbackSpeed || 1.0));
+  const callSarvam = async (key: string) => {
+    return fetch("https://api.sarvam.ai/text-to-speech", {
+      method: "POST",
+      headers: {
+        "api-subscription-key": key.trim(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        inputs: [text],
+        target_language_code: "en-IN",
+        speaker: speaker || "kavya",
+        pace,
+        loudness: 1.5,
+        speech_sample_rate: 22050,
+        enable_preprocessing: true,
+      }),
+    });
+  };
+
+  let res = await callSarvam(apiKey);
+  if ((res.status === 401 || res.status === 403) && apiKey !== SARVAM_KEY_FALLBACK) {
+    console.warn("[VOICE] Sarvam AI custom key returned 401/403, retrying with verified key...");
+    res = await callSarvam(SARVAM_KEY_FALLBACK);
+  }
+
+  if (!res.ok) {
+    const errorBody = await res.text().catch(() => "");
+    throw new Error(`Sarvam AI returned ${res.status}: ${errorBody}`);
+  }
+
+  const json = (await res.json()) as { audios?: string[] };
+  if (!json.audios || json.audios.length === 0 || !json.audios[0]) {
+    throw new Error("Sarvam AI returned no audio data");
+  }
+
+  // Sarvam returns base64-encoded WAV (RIFF)
+  const base64Data = json.audios[0];
+  const binaryString = atob(base64Data);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  return new Response(bytes.buffer, {
+    status: 200,
+    headers: {
+      "content-type": "audio/wav",
+      "cache-control": "no-store",
+      "x-voice-provider": "sarvam",
+      "x-voice-speaker": speaker,
+    },
   });
 }
 
@@ -71,10 +145,11 @@ export const Route = createFileRoute("/api/speak")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const deepgramKey = (process.env["DEEPGRAM_API_KEY"] || DEEPGRAM_KEY_FALLBACK).trim();
-        const elevenLabsKey = (process.env["ELEVENLABS_API_KEY"] || ELEVENLABS_KEY_FALLBACK).trim();
+        const sarvamKey = getSarvamApiKey();
+        const deepgramKey = getDeepgramApiKey();
+        const elevenLabsKey = getElevenLabsApiKey();
 
-        if (!deepgramKey && !elevenLabsKey) {
+        if (!sarvamKey && !deepgramKey && !elevenLabsKey) {
           return errorResponse("Voice agent is not configured on the server.", 503);
         }
 
@@ -86,7 +161,7 @@ export const Route = createFileRoute("/api/speak")({
         }
 
         const rawText = typeof body.text === "string" ? body.text.trim() : "";
-        // Strip markdown characters or excessive formatting for smoother speech output
+        // Strip markdown characters or excessive formatting for crystal clear speech output
         const cleanText = rawText
           .replace(/```[\s\S]*?```/g, "Code block omitted.")
           .replace(/`([^`]+)`/g, "$1")
@@ -103,50 +178,121 @@ export const Route = createFileRoute("/api/speak")({
             : cleanText;
 
         const requestedVoice =
-          typeof body.voice === "string" && body.voice.trim() ? body.voice.trim() : "";
+          typeof body.voice === "string" && body.voice.trim() ? body.voice.trim() : "kavya";
         const requestedProvider = body.provider || "auto";
+        const playbackSpeed =
+          typeof body.playbackSpeed === "number" && !isNaN(body.playbackSpeed)
+            ? body.playbackSpeed
+            : 1.0;
 
+        const targetGender = getVoiceGender(requestedVoice);
+        console.log(
+          `[VOICE] API /api/speak received: voice=${requestedVoice} (${targetGender}), provider=${requestedProvider}, length=${textToSpeak.length}`,
+        );
+
+        const isExplicitSarvam = requestedProvider === "sarvam" || isSarvamVoice(requestedVoice);
         const isDeepgramVoice = requestedVoice.startsWith("aura-");
-        const isElevenLabsVoice = requestedVoice && !isDeepgramVoice;
+        const isElevenLabsVoice = Boolean(
+          requestedVoice && !isDeepgramVoice && !isSarvamVoice(requestedVoice),
+        );
 
-        const preferElevenLabs =
-          requestedProvider === "elevenlabs" ||
-          isElevenLabsVoice ||
-          (requestedProvider === "auto" && !isDeepgramVoice && Boolean(elevenLabsKey));
-
-        // 1. Try ElevenLabs if preferred
-        if (preferElevenLabs && elevenLabsKey) {
-          const voiceId = isElevenLabsVoice ? requestedVoice : DEFAULT_ELEVENLABS_VOICE;
+        // 1. Try Sarvam AI first if explicitly requested or matching a Sarvam voice
+        if (isExplicitSarvam && sarvamKey) {
+          const speaker = getEffectiveSarvamVoice(requestedVoice);
           try {
+            console.log(`[VOICE] Attempting Sarvam AI with speaker=${speaker} (${targetGender})`);
+            const res = await fetchSarvamAudio(sarvamKey, textToSpeak, speaker, playbackSpeed);
+            console.log(`[VOICE] Sarvam AI synthesis succeeded for speaker=${speaker}`);
+            return res;
+          } catch (err) {
+            console.warn(`[VOICE] Sarvam AI attempt notice for speaker ${speaker}:`, err);
+            // Fall through with strict gender preservation
+          }
+        }
+
+        // 2. Try ElevenLabs if explicitly requested and healthy
+        const elevenLabsUsable = isElevenLabsHealthy(elevenLabsKey);
+        const shouldTryElevenLabs =
+          elevenLabsUsable &&
+          (requestedProvider === "elevenlabs" ||
+            isElevenLabsVoice ||
+            (requestedProvider === "auto" && !isDeepgramVoice && !isExplicitSarvam));
+
+        if (shouldTryElevenLabs && elevenLabsKey) {
+          const voiceId = getEffectiveElevenLabsVoice(requestedVoice);
+          try {
+            console.log(`[VOICE] Attempting ElevenLabs with voiceId=${voiceId} (${targetGender})`);
             const elevenRes = await fetchElevenLabsAudio(elevenLabsKey, textToSpeak, voiceId);
             if (elevenRes.ok && elevenRes.body) {
+              markElevenLabsActive();
+              console.log(`[VOICE] ElevenLabs synthesis succeeded for voiceId=${voiceId}`);
               return new Response(elevenRes.body, {
                 status: 200,
                 headers: {
                   "content-type": "audio/mpeg",
                   "cache-control": "no-store",
                   "x-voice-provider": "elevenlabs",
+                  "x-voice-speaker": voiceId,
                 },
               });
             }
-            console.warn(
-              "[quench] ElevenLabs speak failed, status:",
-              elevenRes.status,
-              "Falling back to Deepgram Aura",
-            );
-          } catch (err) {
-            console.warn(
-              "[quench] ElevenLabs request error:",
-              err,
-              "Falling back to Deepgram Aura",
-            );
+
+            if (elevenRes.status === 401 || elevenRes.status === 402 || elevenRes.status === 429) {
+              markElevenLabsQuotaExhausted();
+            }
+          } catch {
+            markElevenLabsQuotaExhausted(5 * 60 * 1000);
           }
         }
 
-        // 2. Try Deepgram Aura
-        if (deepgramKey) {
-          const auraModel = isDeepgramVoice ? requestedVoice : DEFAULT_DEEPGRAM_VOICE;
+        // 3. High-performance Deepgram Aura (strictly gender-matched!)
+        if (
+          deepgramKey &&
+          (requestedProvider === "deepgram" || requestedProvider === "auto" || !sarvamKey)
+        ) {
+          const auraModel = getEffectiveDeepgramVoice(requestedVoice);
           try {
+            console.log(
+              `[VOICE] Attempting Deepgram Aura with model=${auraModel} (${targetGender})`,
+            );
+            const deepgramRes = await fetchDeepgramAudio(deepgramKey, textToSpeak, auraModel);
+            if (deepgramRes.ok && deepgramRes.body) {
+              console.log(`[VOICE] Deepgram Aura synthesis succeeded for model=${auraModel}`);
+              return new Response(deepgramRes.body, {
+                status: 200,
+                headers: {
+                  "content-type": "audio/mpeg",
+                  "cache-control": "no-store",
+                  "x-voice-provider": "deepgram",
+                  "x-voice-speaker": auraModel,
+                },
+              });
+            }
+          } catch (err) {
+            console.warn(`[VOICE] Deepgram Aura attempt notice for model ${auraModel}:`, err);
+          }
+        }
+
+        // 4. Fallback to Sarvam AI (strictly gender-matched!)
+        if (sarvamKey) {
+          const speaker = getEffectiveSarvamVoice(requestedVoice);
+          try {
+            console.log(`[VOICE] Fallback to Sarvam AI with speaker=${speaker} (${targetGender})`);
+            const res = await fetchSarvamAudio(sarvamKey, textToSpeak, speaker, playbackSpeed);
+            console.log(`[VOICE] Sarvam AI fallback succeeded for speaker=${speaker}`);
+            return res;
+          } catch (err) {
+            console.warn(`[VOICE] Sarvam AI fallback notice:`, err);
+          }
+        }
+
+        // 5. Last-ditch Deepgram attempt (strictly gender-matched!)
+        if (deepgramKey) {
+          const auraModel = getEffectiveDeepgramVoice(requestedVoice);
+          try {
+            console.log(
+              `[VOICE] Last-ditch Deepgram attempt with model=${auraModel} (${targetGender})`,
+            );
             const deepgramRes = await fetchDeepgramAudio(deepgramKey, textToSpeak, auraModel);
             if (deepgramRes.ok && deepgramRes.body) {
               return new Response(deepgramRes.body, {
@@ -155,45 +301,20 @@ export const Route = createFileRoute("/api/speak")({
                   "content-type": "audio/mpeg",
                   "cache-control": "no-store",
                   "x-voice-provider": "deepgram",
+                  "x-voice-speaker": auraModel,
                 },
               });
             }
-            const errDetail = await deepgramRes.text().catch(() => "");
-            console.error(
-              "[quench] Deepgram Aura error:",
-              deepgramRes.status,
-              errDetail.slice(0, 300),
-            );
-          } catch (err) {
-            console.error("[quench] Deepgram Aura fetch error:", err);
+          } catch {
+            /* ignore */
           }
         }
 
-        // 3. Fallback: if Deepgram was tried first but failed, and ElevenLabs is available
-        if (!preferElevenLabs && elevenLabsKey) {
-          try {
-            const elevenRes = await fetchElevenLabsAudio(
-              elevenLabsKey,
-              textToSpeak,
-              DEFAULT_ELEVENLABS_VOICE,
-            );
-            if (elevenRes.ok && elevenRes.body) {
-              return new Response(elevenRes.body, {
-                status: 200,
-                headers: {
-                  "content-type": "audio/mpeg",
-                  "cache-control": "no-store",
-                  "x-voice-provider": "elevenlabs",
-                },
-              });
-            }
-          } catch (err) {
-            console.error("[quench] ElevenLabs fallback error:", err);
-          }
-        }
-
+        console.error(
+          `[VOICE] All voice synthesis providers failed for voice=${requestedVoice} (${targetGender})`,
+        );
         return errorResponse(
-          "Both ElevenLabs and Deepgram voice services were unavailable. Please try again.",
+          "Voice synthesis service is temporarily unavailable. Please try again.",
           502,
         );
       },

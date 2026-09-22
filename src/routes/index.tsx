@@ -23,7 +23,6 @@ import { LiveVoiceAgentModal } from "@/components/quench/LiveVoiceAgentModal";
 import { messageText } from "@/components/quench/ChatView";
 import { ImageStudioModal } from "@/components/quench/ImageStudioModal";
 import { PdfStudioModal } from "@/components/quench/PdfStudioModal";
-import { ToolsModal } from "@/components/quench/ToolsModal";
 import { AppLoadingScreen } from "@/components/quench/AppLoadingScreen";
 
 // Track if the initial splash animation has already run in this session
@@ -43,8 +42,8 @@ const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
 const MAX_ATTACHMENTS = 2;
 
 const DEFAULT_VOICE_SETTING: VoiceSetting = {
-  voiceId: "JBFqnCBsd6RMkjVDRZzb", // Jeff besos
-  provider: "elevenlabs",
+  voiceId: "kavya", // Kavya (Sarvam AI Bulbul:v3, crystal-clear natural voice)
+  provider: "sarvam",
   autoSpeak: false,
   playbackSpeed: 1.0,
 };
@@ -141,11 +140,11 @@ function BravuraApp() {
   const [liveVoiceModalOpen, setLiveVoiceModalOpen] = useState(false);
   const [imageStudioOpen, setImageStudioOpen] = useState(false);
   const [pdfStudioOpen, setPdfStudioOpen] = useState(false);
-  const [toolsModalOpen, setToolsModalOpen] = useState(false);
   const [authUser, setAuthUser] = useState<AuthUserProfile | null>(null);
   const [authInitialized, setAuthInitialized] = useState(false);
   const { isSpeaking, playingId, speak, stop: stopSpeech } = useTextToSpeech();
   const lastSpokenMsgIdRef = useRef<string | null>(null);
+  const hasActiveTurnRef = useRef<boolean>(false);
 
   const chatsRef = useRef<StoredChat[]>(chats);
   chatsRef.current = chats;
@@ -218,7 +217,36 @@ function BravuraApp() {
     try {
       const saved = window.localStorage.getItem(VOICE_SETTING_KEY);
       if (saved) {
-        setVoiceSetting(JSON.parse(saved) as VoiceSetting);
+        const parsed = JSON.parse(saved) as VoiceSetting;
+        const validSarvam = [
+          "kavya",
+          "rohan",
+          "priya",
+          "rahul",
+          "ishita",
+          "shreya",
+          "ratan",
+          "neha",
+        ];
+        const isSarvam = parsed.provider === "sarvam" || validSarvam.includes(parsed.voiceId);
+        const isDeepgram = parsed.provider === "deepgram" || parsed.voiceId?.startsWith("aura-");
+
+        if (parsed.provider === "elevenlabs" && !isSarvam && !isDeepgram) {
+          const fallbackMap: Record<string, string> = {
+            JBFqnCBsd6RMkjVDRZzb: "kavya",
+            EXAVITQu4vr4xnSDxMaL: "kavya",
+            Xb7hH8MSUJpSbSDYk0k2: "kavya",
+            CwhRBWXzGAHq8TQ4Fs17: "rohan",
+          };
+          parsed.voiceId = fallbackMap[parsed.voiceId] || "kavya";
+          parsed.provider = "sarvam";
+          try {
+            window.localStorage.setItem(VOICE_SETTING_KEY, JSON.stringify(parsed));
+          } catch {
+            // ignore
+          }
+        }
+        setVoiceSetting(parsed);
       }
     } catch {
       // ignore
@@ -350,17 +378,36 @@ function BravuraApp() {
   }, [setMessages, status]);
 
   useEffect(() => {
+    if (status === "submitted" || status === "streaming") {
+      hasActiveTurnRef.current = true;
+    }
+  }, [status]);
+
+  useEffect(() => {
     if (!voiceSetting.autoSpeak || status !== "ready" || messages.length === 0) return;
+
+    // Guard: Only speak if this response was actively generated during an active user interaction
+    if (!hasActiveTurnRef.current) {
+      const last = messages[messages.length - 1];
+      if (last && last.role === "assistant") {
+        lastSpokenMsgIdRef.current = last.id;
+      }
+      return;
+    }
+
+    hasActiveTurnRef.current = false;
     const last = messages[messages.length - 1];
     if (last && last.role === "assistant" && last.id !== lastSpokenMsgIdRef.current) {
       const text = messageText(last);
       if (text) {
         lastSpokenMsgIdRef.current = last.id;
+        console.log(`[VOICE] Auto-speaking finished assistant message: ${last.id}`);
         void speak(text, {
           id: last.id,
           voice: voiceSetting.voiceId,
           provider: voiceSetting.provider,
           playbackSpeed: voiceSetting.playbackSpeed,
+          forceReplay: false,
         });
       }
     }
@@ -493,6 +540,8 @@ function BravuraApp() {
 
   const newChat = () => {
     stop();
+    stopSpeech();
+    hasActiveTurnRef.current = false;
     setMessages([]);
     setInput("");
     setActiveChatId(null);
@@ -501,6 +550,8 @@ function BravuraApp() {
 
   const openChat = (id: string) => {
     stop();
+    stopSpeech();
+    hasActiveTurnRef.current = false;
     const chat = chats.find((c) => c.id === id);
     if (!chat) return;
     setMessages(chat.messages);
@@ -515,6 +566,8 @@ function BravuraApp() {
     }
     if (activeChatId === id) {
       stop();
+      stopSpeech();
+      hasActiveTurnRef.current = false;
       setMessages([]);
       setActiveChatId(null);
     }
@@ -552,7 +605,7 @@ function BravuraApp() {
               onNewChat={newChat}
               onHistory={() => setHistoryOpen(true)}
               onOpenVoiceSettings={() => setVoiceModalOpen(true)}
-              onOpenTools={() => setToolsModalOpen(true)}
+              onOpenTools={() => {}}
               user={authUser}
               authInitialized={authInitialized}
             />
@@ -579,7 +632,6 @@ function BravuraApp() {
                   setSidebarOpen(false);
                 }}
                 onOpenTools={() => {
-                  setToolsModalOpen(true);
                   setSidebarOpen(false);
                 }}
                 user={authUser}
@@ -648,6 +700,7 @@ function BravuraApp() {
                       voice: voiceSetting.voiceId,
                       provider: voiceSetting.provider,
                       playbackSpeed: voiceSetting.playbackSpeed,
+                      forceReplay: true,
                     })
                   }
                   onStopSpeak={stopSpeech}
@@ -959,18 +1012,6 @@ function BravuraApp() {
 
       {/* AI PDF Studio modal */}
       {pdfStudioOpen && <PdfStudioModal onClose={() => setPdfStudioOpen(false)} />}
-
-      {/* Workspace Tools & Generative AI Studios modal */}
-      {toolsModalOpen && (
-        <ToolsModal
-          onClose={() => setToolsModalOpen(false)}
-          onOpenLiveVoice={() => setLiveVoiceModalOpen(true)}
-          onTogglesChange={(search, think) => {
-            setWebSearch(search);
-            setDeepThink(think);
-          }}
-        />
-      )}
     </div>
   );
 }

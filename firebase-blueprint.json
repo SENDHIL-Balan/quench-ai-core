@@ -1,22 +1,38 @@
 {
   "entities": {
     "User": {
-      "collection": "users",
-      "fields": {
-        "email": { "type": "string", "required": false },
-        "displayName": { "type": "string", "required": false },
-        "photoURL": { "type": "string", "required": false },
-        "createdAt": { "type": "string", "required": false }
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "description": "User email address" },
+        "displayName": { "type": "string", "description": "Display name" },
+        "photoURL": { "type": "string", "description": "Profile photo URL" },
+        "updatedAt": { "type": "string", "description": "Last updated ISO timestamp" }
       }
     },
     "Chat": {
-      "collection": "chats",
-      "fields": {
-        "userId": { "type": "string", "required": true },
-        "title": { "type": "string", "required": true },
-        "messages": { "type": "array", "required": true },
-        "updatedAt": { "type": "string", "required": true }
-      }
+      "title": "Chat",
+      "description": "User conversation session",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner user UID" },
+        "chatId": { "type": "string", "description": "Unique chat ID" },
+        "title": { "type": "string", "description": "Conversation title" },
+        "messages": { "type": "array", "description": "List of message objects" },
+        "updatedAt": { "type": "string", "description": "Last modified ISO timestamp" }
+      },
+      "required": ["userId", "chatId", "title", "messages", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles by UID"
+    },
+    "/chats/{chatId}": {
+      "schema": "Chat",
+      "description": "Stored chat sessions"
     }
   }
 }

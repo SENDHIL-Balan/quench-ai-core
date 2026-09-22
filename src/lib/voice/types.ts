@@ -1,10 +1,11 @@
-export type VoiceProvider = "elevenlabs" | "deepgram" | "auto";
+export type VoiceProvider = "sarvam" | "deepgram" | "elevenlabs" | "auto";
 
 export type VoiceSetting = {
   voiceId: string;
   provider: VoiceProvider;
   autoSpeak: boolean;
   playbackSpeed?: number;
+  handsFreeListen?: boolean;
 };
 
 export type SpeakRequestBody = {
@@ -21,7 +22,7 @@ export type VoiceState = "idle" | "recording" | "transcribing" | "speaking" | "e
 export type VoiceOption = {
   id: string;
   name: string;
-  provider: "elevenlabs" | "deepgram";
+  provider: "sarvam" | "deepgram" | "elevenlabs";
   description: string;
   gender: "male" | "female";
   recommended?: boolean;

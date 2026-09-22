@@ -10,12 +10,17 @@ import {
   Mic,
   Sparkles,
   ArrowUpRight,
+  Menu,
+  X,
+  Radio,
 } from "lucide-react";
 import { CosmicBackground } from "@/components/quench/CosmicBackground";
 import { Sidebar } from "@/components/quench/Sidebar";
 import { cn } from "@/lib/utils";
 import { PdfStudioModal } from "@/components/quench/PdfStudioModal";
 import { ImageStudioModal } from "@/components/quench/ImageStudioModal";
+import { LiveVoiceAgentModal } from "@/components/quench/LiveVoiceAgentModal";
+import type { VoiceSetting } from "@/components/quench/VoiceAgentModal";
 
 export const Route = createFileRoute("/tools")({
   head: () => ({
@@ -33,6 +38,14 @@ export const Route = createFileRoute("/tools")({
 
 const SEARCH_KEY = "quench-tool-websearch";
 const DEEPTHINK_KEY = "quench-tool-deepthink";
+const VOICE_SETTING_KEY = "quench-ai-voice-setting";
+
+const DEFAULT_VOICE_SETTING: VoiceSetting = {
+  voiceId: "aura-asteria-en", // Nikki bella (Deepgram Aura, ultra-fast & responsive)
+  provider: "deepgram",
+  autoSpeak: false,
+  playbackSpeed: 1.0,
+};
 
 function ToolsPage() {
   const router = useRouter();
@@ -40,13 +53,12 @@ function ToolsPage() {
   const [deepThink, setDeepThink] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
   const [imageOpen, setImageOpen] = useState(false);
+  const [liveVoiceOpen, setLiveVoiceOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [voiceSetting, setVoiceSetting] = useState<VoiceSetting>(DEFAULT_VOICE_SETTING);
 
   const handleBack = () => {
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      window.history.back();
-    } else {
-      void router.navigate({ to: "/" });
-    }
+    void router.navigate({ to: "/" });
   };
 
   useEffect(() => {
@@ -54,6 +66,26 @@ function ToolsPage() {
       const storedSearch = window.localStorage.getItem(SEARCH_KEY);
       setWebSearch(storedSearch === "1");
       setDeepThink(window.localStorage.getItem(DEEPTHINK_KEY) === "1");
+      const storedVoice = window.localStorage.getItem(VOICE_SETTING_KEY);
+      if (storedVoice) {
+        const parsed = JSON.parse(storedVoice) as VoiceSetting;
+        if (parsed.provider === "elevenlabs" || !parsed.voiceId?.startsWith("aura-")) {
+          const fallbackMap: Record<string, string> = {
+            JBFqnCBsd6RMkjVDRZzb: "aura-orion-en",
+            EXAVITQu4vr4xnSDxMaL: "aura-asteria-en",
+            Xb7hH8MSUJpSbSDYk0k2: "aura-luna-en",
+            CwhRBWXzGAHq8TQ4Fs17: "aura-arcas-en",
+          };
+          parsed.voiceId = fallbackMap[parsed.voiceId] || "aura-asteria-en";
+          parsed.provider = "deepgram";
+          try {
+            window.localStorage.setItem(VOICE_SETTING_KEY, JSON.stringify(parsed));
+          } catch {
+            /* ignore */
+          }
+        }
+        setVoiceSetting(parsed);
+      }
     } catch {
       /* storage unavailable */
     }
@@ -88,7 +120,8 @@ function ToolsPage() {
       <CosmicBackground />
 
       <div className="relative z-10 mx-auto flex h-full max-w-[1800px] gap-4 p-3 sm:p-4">
-        <div className="hidden lg:block">
+        {/* Desktop Sidebar */}
+        <div className="hidden lg:block shrink-0">
           <div className="sticky top-4 h-[calc(100vh-2rem)]">
             <Sidebar
               onNewChat={() => {
@@ -102,17 +135,70 @@ function ToolsPage() {
               onHistory={() => {
                 void router.navigate({ to: "/" });
               }}
+              onOpenTools={() => {}}
             />
           </div>
         </div>
 
+        {/* Mobile Sidebar Overlay */}
+        {sidebarOpen && (
+          <div className="fixed inset-0 z-50 lg:hidden">
+            <button
+              className="bg-background/70 absolute inset-0 backdrop-blur-sm cursor-pointer"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Close menu"
+            />
+            <div className="absolute inset-y-3 left-3 max-h-[calc(100vh-1.5rem)] w-[min(300px,85vw)] overflow-y-auto overscroll-contain">
+              <Sidebar
+                onNewChat={() => {
+                  setSidebarOpen(false);
+                  void router.navigate({ to: "/" });
+                }}
+                onHistory={() => {
+                  setSidebarOpen(false);
+                  void router.navigate({ to: "/" });
+                }}
+                onOpenTools={() => {
+                  setSidebarOpen(false);
+                }}
+              />
+              <button
+                onClick={() => setSidebarOpen(false)}
+                className="glass-panel absolute top-3 right-3 rounded-full p-2 cursor-pointer"
+                aria-label="Close menu"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
         <main className="flex min-h-0 min-w-0 flex-1 flex-col gap-5 overflow-y-auto px-2 sm:px-4">
-          <header className="pt-4">
+          {/* Mobile Header Bar */}
+          <div className="flex items-center justify-between lg:hidden pt-1 pb-2 border-b border-white/10">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="glass-panel flex size-9 items-center justify-center rounded-xl text-muted-foreground hover:text-foreground cursor-pointer"
+              aria-label="Open navigation menu"
+            >
+              <Menu className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={handleBack}
+              className="text-xs font-medium text-cyan-300 hover:text-cyan-200 inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <ArrowLeft className="size-3.5" /> Back to chat
+            </button>
+          </div>
+
+          <header className="pt-2 sm:pt-4">
             <button
               id="tools-page-back-btn"
               type="button"
               onClick={handleBack}
-              className="text-muted-foreground hover:text-cyan-200 mb-3 inline-flex items-center gap-1.5 text-xs transition-colors cursor-pointer group"
+              className="text-muted-foreground hover:text-cyan-200 mb-3 hidden sm:inline-flex items-center gap-1.5 text-xs transition-colors cursor-pointer group"
             >
               <ArrowLeft className="size-3.5 transition-transform group-hover:-translate-x-0.5" />
               Back to chat
@@ -242,23 +328,33 @@ function ToolsPage() {
               </div>
             </div>
 
-            <div className="glass-panel border-primary/30 flex items-start gap-4 rounded-2xl p-4">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-400 ring-1 ring-cyan-500/30">
-                <Volume2 className="size-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold">Live Voice Synthesis & Two-Way Agent</p>
-                  <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">
-                    Connected
-                  </span>
+            <div className="glass-panel border-primary/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl p-4">
+              <div className="flex items-start gap-4 min-w-0 flex-1">
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-400 ring-1 ring-cyan-500/30">
+                  <Volume2 className="size-5" />
                 </div>
-                <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
-                  Ultra-realistic voice personas (Jeff besos, Shakira, Melodi, Nikki bella, Elon
-                  musk, The Rock, Bellie eilish). Click the blue orb in the composer to talk in live
-                  two-way voice with the AI Voice Agent.
-                </p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold">Live Voice Synthesis & Two-Way Agent</p>
+                    <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-semibold text-cyan-300">
+                      Connected
+                    </span>
+                  </div>
+                  <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
+                    Ultra-realistic voice personas (Jeff besos, Shakira, Melodi, Nikki bella, Elon
+                    musk, The Rock, Bellie eilish). Click to talk in live two-way conversational
+                    voice.
+                  </p>
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setLiveVoiceOpen(true)}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-400/30 px-4 py-2.5 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/30 hover:border-cyan-400/50 transition-all cursor-pointer shrink-0 shadow-sm"
+              >
+                <Radio className="size-3.5 text-cyan-400 animate-pulse" />
+                Launch Voice Agent
+              </button>
             </div>
           </section>
 
@@ -293,6 +389,22 @@ function ToolsPage() {
 
       {pdfOpen && <PdfStudioModal onClose={() => setPdfOpen(false)} />}
       {imageOpen && <ImageStudioModal onClose={() => setImageOpen(false)} />}
+      {liveVoiceOpen && (
+        <LiveVoiceAgentModal
+          isOpen={liveVoiceOpen}
+          onClose={() => setLiveVoiceOpen(false)}
+          voiceSetting={voiceSetting}
+          onVoiceSettingChange={(newSetting) => {
+            setVoiceSetting(newSetting);
+            try {
+              window.localStorage.setItem(VOICE_SETTING_KEY, JSON.stringify(newSetting));
+            } catch {
+              /* ignore */
+            }
+          }}
+          deepThink={deepThink}
+        />
+      )}
     </div>
   );
 }

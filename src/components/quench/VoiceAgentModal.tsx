@@ -17,7 +17,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { VoiceProvider } from "@/lib/voice/types";
-import { playVoiceAudio, unlockAudio, type AudioPlaybackController } from "@/lib/voice/player";
+import {
+  playVoiceAudio,
+  stopAnyVoicePlayback,
+  unlockAudio,
+  type AudioPlaybackController,
+} from "@/lib/voice/player";
 
 export type VoiceSetting = {
   voiceId: string;
@@ -35,10 +40,117 @@ export interface VoiceModelOption {
   badge: string;
   accent: string;
   description: string;
-  latencyTier: "ultra-fast" | "neural";
+  latencyTier: "ultra-fast" | "neural" | "sarvam-crystal";
 }
 
 export const VOICES: VoiceModelOption[] = [
+  // Sarvam AI Models (Bulbul:v3)
+  {
+    id: "kavya",
+    name: "Kavya",
+    provider: "sarvam",
+    gender: "Female",
+    badge: "Crystal Clear",
+    accent: "Natural · Expressive & Clear",
+    description:
+      "Sarvam AI Bulbul:v3 neural voice. Natural cadence, flawless articulation, and warm tone.",
+    latencyTier: "sarvam-crystal",
+  },
+  {
+    id: "rohan",
+    name: "Rohan",
+    provider: "sarvam",
+    gender: "Male",
+    badge: "Crystal Clear",
+    accent: "Articulate · Professional",
+    description:
+      "Sarvam AI Bulbul:v3 voice. Dynamic pacing, sharp clarity, and confident vocal presence.",
+    latencyTier: "sarvam-crystal",
+  },
+  {
+    id: "priya",
+    name: "Priya",
+    provider: "sarvam",
+    gender: "Female",
+    badge: "Friendly",
+    accent: "Warm · Conversational",
+    description:
+      "Sarvam AI Bulbul:v3 voice. Reassuring, welcoming cadence ideal for interactive conversation.",
+    latencyTier: "sarvam-crystal",
+  },
+  {
+    id: "rahul",
+    name: "Rahul",
+    provider: "sarvam",
+    gender: "Male",
+    badge: "Dynamic",
+    accent: "Deep · Engaging Cadence",
+    description: "Sarvam AI Bulbul:v3 voice. Resonant baritone articulation with steady cadence.",
+    latencyTier: "sarvam-crystal",
+  },
+  {
+    id: "shreya",
+    name: "Shreya",
+    provider: "sarvam",
+    gender: "Female",
+    badge: "Smooth",
+    accent: "Polished · Melodic Flow",
+    description:
+      "Sarvam AI Bulbul:v3 voice. Smooth and polished delivery with clear pronunciation.",
+    latencyTier: "sarvam-crystal",
+  },
+  {
+    id: "ratan",
+    name: "Ratan",
+    provider: "sarvam",
+    gender: "Male",
+    badge: "Authoritative",
+    accent: "Steady · Dignified Timbre",
+    description: "Sarvam AI Bulbul:v3 voice. Authoritative and calm tone with exceptional clarity.",
+    latencyTier: "sarvam-crystal",
+  },
+  // Deepgram Aura Models
+  {
+    id: "aura-asteria-en",
+    name: "Nikki bella",
+    provider: "deepgram",
+    gender: "Female",
+    badge: "Expressive",
+    accent: "Warm · Instant Latency",
+    description: "Sub-200ms ultra-fast response latency, warm and natural inflection.",
+    latencyTier: "ultra-fast",
+  },
+  {
+    id: "aura-orion-en",
+    name: "Elon musk",
+    provider: "deepgram",
+    gender: "Male",
+    badge: "Dynamic",
+    accent: "Commanding · Clear",
+    description: "Dynamic, professional male timbre with crisp articulation and low latency.",
+    latencyTier: "ultra-fast",
+  },
+  {
+    id: "aura-luna-en",
+    name: "Bellie eilish",
+    provider: "deepgram",
+    gender: "Female",
+    badge: "Gentle",
+    accent: "Smooth · Calm",
+    description: "Friendly, gentle and smooth conversational voice for relaxed chatting.",
+    latencyTier: "ultra-fast",
+  },
+  {
+    id: "aura-arcas-en",
+    name: "Arcas",
+    provider: "deepgram",
+    gender: "Male",
+    badge: "Authoritative",
+    accent: "Resonant · Natural",
+    description: "Calm, steady, and rich baritone timbre with crystal clear cadence.",
+    latencyTier: "ultra-fast",
+  },
+  // ElevenLabs Models
   {
     id: "JBFqnCBsd6RMkjVDRZzb",
     name: "Jeff besos",
@@ -80,39 +192,9 @@ export const VOICES: VoiceModelOption[] = [
     description: "Laid-back, natural rhythm and rich acoustic depth.",
     latencyTier: "neural",
   },
-  {
-    id: "aura-asteria-en",
-    name: "Nikki bella",
-    provider: "deepgram",
-    gender: "Female",
-    badge: "Expressive",
-    accent: "Warm · Instant Latency",
-    description: "Sub-200ms ultra-fast response latency, warm and natural inflection.",
-    latencyTier: "ultra-fast",
-  },
-  {
-    id: "aura-orion-en",
-    name: "Elon musk",
-    provider: "deepgram",
-    gender: "Male",
-    badge: "Dynamic",
-    accent: "Commanding · Clear",
-    description: "Dynamic, professional male timbre with crisp articulation and low latency.",
-    latencyTier: "ultra-fast",
-  },
-  {
-    id: "aura-luna-en",
-    name: "Bellie eilish",
-    provider: "deepgram",
-    gender: "Female",
-    badge: "Gentle",
-    accent: "Smooth · Calm",
-    description: "Friendly, gentle and smooth conversational voice for relaxed chatting.",
-    latencyTier: "ultra-fast",
-  },
 ];
 
-type VoiceFilter = "all" | "neural" | "ultra-fast" | "male" | "female";
+type VoiceFilter = "all" | "sarvam" | "neural" | "ultra-fast" | "male" | "female";
 
 export function VoiceAgentModal({
   onClose,
@@ -140,6 +222,7 @@ export function VoiceAgentModal({
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
+      stopAnyVoicePlayback();
       if (playbackControllerRef.current) {
         playbackControllerRef.current.stop();
         playbackControllerRef.current = null;
@@ -191,8 +274,11 @@ export function VoiceAgentModal({
   };
 
   const handleSelectVoice = (voiceId: string, provider: VoiceProvider) => {
+    stopAnyVoicePlayback();
+    setPreviewingId(null);
     setSelectedVoice(voiceId);
     setSelectedProvider(provider);
+    console.log(`[VOICE] Voice changed to ${voiceId} (${provider})`);
     onSaveSetting({
       voiceId,
       provider,
@@ -239,6 +325,7 @@ export function VoiceAgentModal({
   };
 
   const filteredVoices = VOICES.filter((v) => {
+    if (activeFilter === "sarvam") return v.provider === "sarvam";
     if (activeFilter === "neural") return v.provider === "elevenlabs";
     if (activeFilter === "ultra-fast") return v.provider === "deepgram";
     if (activeFilter === "male") return v.gender === "Male";
@@ -476,12 +563,13 @@ export function VoiceAgentModal({
               </div>
 
               {/* Filter Pills */}
-              <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/5 text-[11px]">
+              <div className="flex items-center gap-1 bg-white/5 p-1 rounded-xl border border-white/5 text-[11px] overflow-x-auto">
                 {(
                   [
                     { id: "all", label: "All" },
-                    { id: "neural", label: "Expressive" },
+                    { id: "sarvam", label: "Sarvam (Clear)" },
                     { id: "ultra-fast", label: "Dynamic" },
+                    { id: "neural", label: "Expressive" },
                     { id: "male", label: "Male" },
                     { id: "female", label: "Female" },
                   ] as const
@@ -491,7 +579,7 @@ export function VoiceAgentModal({
                     type="button"
                     onClick={() => setActiveFilter(f.id)}
                     className={cn(
-                      "px-2 py-0.5 rounded-lg transition-colors cursor-pointer",
+                      "px-2 py-0.5 rounded-lg transition-colors cursor-pointer whitespace-nowrap",
                       activeFilter === f.id
                         ? "bg-cyan-500/25 text-cyan-300 font-semibold"
                         : "text-muted-foreground hover:text-white",
@@ -543,9 +631,11 @@ export function VoiceAgentModal({
                               <span
                                 className={cn(
                                   "rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider",
-                                  v.latencyTier === "ultra-fast"
-                                    ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
-                                    : "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30",
+                                  v.latencyTier === "sarvam-crystal"
+                                    ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                                    : v.latencyTier === "ultra-fast"
+                                      ? "bg-amber-500/15 text-amber-300 border border-amber-500/30"
+                                      : "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30",
                                 )}
                               >
                                 {v.badge}
