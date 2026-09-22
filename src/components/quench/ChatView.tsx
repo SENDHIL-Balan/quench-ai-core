@@ -5,20 +5,42 @@ import { QuenchOrb } from "./QuenchOrb";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import type { AgentState } from "./AgentStatus";
 import { BravuraTypingIndicator } from "./BravuraTypingIndicator";
+import { RealtimeAudioVisualizer } from "./RealtimeAudioVisualizer";
+import { unlockAudio } from "@/lib/voice/player";
 import { cn } from "@/lib/utils";
 
 export { BravuraTypingIndicator };
 
 export function messageText(message: UIMessage): string {
-  return message.parts
-    .map((part) => {
-      if (part.type === "text") return part.text;
-      if (part.type === "file") return `Attached file: ${part.filename ?? "document"}`;
-      return "";
-    })
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
+  if (!message) return "";
+  const anyMsg = message as unknown as {
+    content?: string;
+    text?: string;
+    parts?: Array<{ type: string; text?: string; filename?: string }>;
+  };
+
+  if (Array.isArray(anyMsg.parts) && anyMsg.parts.length > 0) {
+    const extracted = anyMsg.parts
+      .map((part) => {
+        if (part.type === "text" && typeof part.text === "string") return part.text;
+        if (part.type === "file") return `Attached file: ${part.filename ?? "document"}`;
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n\n")
+      .trim();
+    if (extracted) return extracted;
+  }
+
+  if (typeof anyMsg.content === "string" && anyMsg.content.trim()) {
+    return anyMsg.content.trim();
+  }
+
+  if (typeof anyMsg.text === "string" && anyMsg.text.trim()) {
+    return anyMsg.text.trim();
+  }
+
+  return "";
 }
 
 export function ChatView({
@@ -108,6 +130,8 @@ const AssistantMessage = memo(function AssistantMessage({
   };
 
   const handleToggleSpeak = () => {
+    // Synchronously unlock browser audio hardware on direct user gesture
+    unlockAudio();
     if (isPlaying) {
       onStopSpeak?.();
     } else if (onSpeak) {
@@ -123,6 +147,17 @@ const AssistantMessage = memo(function AssistantMessage({
         </div>
       ) : (
         <span className="text-zinc-400 text-sm">Generating…</span>
+      )}
+      {isPlaying && (
+        <div className="mt-3 mb-1 max-w-sm animate-in fade-in zoom-in-95 duration-200">
+          <RealtimeAudioVisualizer
+            variant="bars"
+            height={36}
+            barCount={24}
+            label="Live Voice Frequency"
+            showLevel={true}
+          />
+        </div>
       )}
       {text && (
         <div className="mt-2.5 flex items-center gap-2 text-xs text-zinc-400">
@@ -144,12 +179,13 @@ const AssistantMessage = memo(function AssistantMessage({
               type="button"
               onClick={handleToggleSpeak}
               className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs transition-colors cursor-pointer",
+                "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150 cursor-pointer active:scale-95",
                 isPlaying
-                  ? "text-cyan-300 font-medium"
-                  : "text-zinc-400 hover:text-white hover:bg-white/5",
+                  ? "bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 shadow-sm shadow-cyan-950/50"
+                  : "bg-white/[0.04] border border-white/5 text-zinc-300 hover:text-white hover:bg-white/10",
               )}
-              title={isPlaying ? "Stop audio" : "Listen"}
+              title={isPlaying ? "Stop audio" : "Listen to response"}
+              aria-label={isPlaying ? "Stop audio playback" : "Listen to response"}
             >
               {isPlaying ? (
                 <>
@@ -163,7 +199,7 @@ const AssistantMessage = memo(function AssistantMessage({
                 </>
               ) : (
                 <>
-                  <Volume2 className="size-3.5" />
+                  <Volume2 className="size-3.5 text-zinc-400" />
                   <span>Listen</span>
                 </>
               )}

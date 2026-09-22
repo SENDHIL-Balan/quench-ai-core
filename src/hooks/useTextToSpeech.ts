@@ -1,9 +1,12 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useEffect } from "react";
 import type { VoiceProvider, VoiceState } from "@/lib/voice/types";
 import {
   playVoiceAudio,
   stopAnyVoicePlayback,
+  unlockAudio,
+  voiceQueue,
   type AudioPlaybackController,
+  type VoiceQueueState,
 } from "@/lib/voice/player";
 
 export interface SpeakOptions {
@@ -12,10 +15,12 @@ export interface SpeakOptions {
   provider?: VoiceProvider;
   playbackSpeed?: number;
   forceReplay?: boolean;
+  newStream?: boolean;
 }
 
 interface UseTextToSpeechResult {
   state: Extract<VoiceState, "idle" | "speaking" | "error">;
+  queueState: VoiceQueueState;
   errorMessage: string | null;
   playingId: string | null;
   isSpeaking: boolean;
@@ -24,16 +29,36 @@ interface UseTextToSpeechResult {
 }
 
 /**
- * Authoritative single-channel text-to-speech hook
+ * Authoritative single-channel text-to-speech hook connected to state-based audio queue
  */
 export function useTextToSpeech(): UseTextToSpeechResult {
   const [state, setState] = useState<UseTextToSpeechResult["state"]>("idle");
+  const [queueState, setQueueState] = useState<VoiceQueueState>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const controllerRef = useRef<AudioPlaybackController | null>(null);
 
+  // Synchronize with voice queue state
+  useEffect(() => {
+    return voiceQueue.subscribe((qState, currentItem) => {
+      setQueueState(qState);
+      if (qState === "idle") {
+        setState("idle");
+        setPlayingId(null);
+      } else if (qState === "playing" || qState === "fetching") {
+        setState("speaking");
+        if (currentItem) {
+          setPlayingId(currentItem.id);
+        }
+      } else if (qState === "interrupted") {
+        setState("idle");
+        setPlayingId(null);
+      }
+    });
+  }, []);
+
   const stop = useCallback(() => {
-    stopAnyVoicePlayback();
+    stopAnyVoicePlayback("user_requested_stop");
     if (controllerRef.current) {
       controllerRef.current = null;
     }
@@ -45,8 +70,8 @@ export function useTextToSpeech(): UseTextToSpeechResult {
     const trimmed = text.trim();
     if (!trimmed) return;
 
-    // Immediately stop any existing playback or in-flight requests
-    stopAnyVoicePlayback();
+    // Immediately unlock audio context on gesture invocation
+    unlockAudio();
 
     setErrorMessage(null);
     setState("speaking");
@@ -60,8 +85,10 @@ export function useTextToSpeech(): UseTextToSpeechResult {
         provider: options.provider,
         playbackSpeed: options.playbackSpeed,
         forceReplay: options.forceReplay,
+        newStream: options.newStream !== false,
         onStart: () => {
           setState("speaking");
+          setPlayingId(options.id ?? null);
         },
         onEnded: () => {
           setState("idle");
@@ -69,7 +96,7 @@ export function useTextToSpeech(): UseTextToSpeechResult {
           controllerRef.current = null;
         },
         onError: (err) => {
-          console.warn("[VOICE] TTS playback notice:", err.message);
+          console.warn("[VOICE_QUEUE] TTS playback notice:", err.message);
           setErrorMessage(err.message);
           setState("error");
           setPlayingId(null);
@@ -80,7 +107,7 @@ export function useTextToSpeech(): UseTextToSpeechResult {
       controllerRef.current = controller;
       await controller.promise;
     } catch (err) {
-      console.warn("[VOICE] Playback error caught in hook:", err);
+      console.warn("[VOICE_QUEUE] Playback error in hook:", err);
       setErrorMessage(err instanceof Error ? err.message : "Couldn't play audio.");
       setState("error");
       setPlayingId(null);
@@ -90,9 +117,10 @@ export function useTextToSpeech(): UseTextToSpeechResult {
 
   return {
     state,
+    queueState,
     errorMessage,
     playingId,
-    isSpeaking: state === "speaking",
+    isSpeaking: state === "speaking" || queueState === "playing" || queueState === "fetching",
     speak,
     stop,
   };

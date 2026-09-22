@@ -18,6 +18,7 @@ import { AGENT_MODES, type ModeId } from "@/lib/agent/modes";
 import { extractPdfTextFromFile, PdfExtractError } from "@/lib/attachments/pdf-client";
 import { cn } from "@/lib/utils";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
+import { unlockAudio } from "@/lib/voice/player";
 import { VoiceAgentModal, type VoiceSetting } from "@/components/quench/VoiceAgentModal";
 import { LiveVoiceAgentModal } from "@/components/quench/LiveVoiceAgentModal";
 import { messageText } from "@/components/quench/ChatView";
@@ -694,15 +695,16 @@ function BravuraApp() {
                   state={state}
                   playingId={playingId}
                   isSpeaking={isSpeaking}
-                  onSpeak={(id, text) =>
+                  onSpeak={(id, text) => {
+                    unlockAudio();
                     void speak(text, {
                       id,
-                      voice: voiceSetting.voiceId,
-                      provider: voiceSetting.provider,
-                      playbackSpeed: voiceSetting.playbackSpeed,
+                      voice: voiceSetting?.voiceId || "kavya",
+                      provider: voiceSetting?.provider || "sarvam",
+                      playbackSpeed: voiceSetting?.playbackSpeed || 1.0,
                       forceReplay: true,
-                    })
-                  }
+                    });
+                  }}
                   onStopSpeak={stopSpeech}
                 />
               </div>

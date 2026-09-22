@@ -21,6 +21,7 @@ import {
   unlockAudio,
   type AudioPlaybackController,
 } from "@/lib/voice/player";
+import { RealtimeAudioVisualizer } from "./RealtimeAudioVisualizer";
 import { cn } from "@/lib/utils";
 
 export type VoiceAgentPanelProps = {
@@ -565,6 +566,18 @@ export function VoiceAgentPanel({
           <p className="text-xs leading-relaxed text-slate-200 break-words whitespace-pre-wrap select-text">
             "{transcript}"
           </p>
+
+          {isPlayingAudio && (
+            <div className="my-1 animate-in fade-in duration-200">
+              <RealtimeAudioVisualizer
+                variant="bars"
+                height={32}
+                barCount={24}
+                label="Voice Playback Frequency"
+                showLevel={true}
+              />
+            </div>
+          )}
 
           {/* Action: Send to AI Chat */}
           {onSendTranscript && (

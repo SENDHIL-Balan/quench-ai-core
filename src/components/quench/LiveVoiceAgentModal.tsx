@@ -13,6 +13,7 @@ import {
   RotateCcw,
   ThumbsUp,
   ThumbsDown,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ModeId } from "@/lib/agent/modes";
@@ -25,6 +26,7 @@ import {
 } from "@/lib/voice/player";
 import { VoiceAgentModal, VOICES, type VoiceSetting } from "./VoiceAgentModal";
 import { FluidVoiceOrb } from "./FluidVoiceOrb";
+import { RealtimeAudioVisualizer } from "./RealtimeAudioVisualizer";
 
 type LiveState = "idle" | "listening" | "transcribing" | "thinking" | "speaking" | "error";
 
@@ -713,8 +715,23 @@ export function LiveVoiceAgentModal({
         <div ref={scrollEndRef} className="h-6" />
       </main>
 
-      {/* Bottom Area: The Iconic ChatGPT-style Fluid Plasma Orb & Controls */}
+      {/* Bottom Area: Realtime Frequency Visualizer, Fluid Plasma Orb & Controls */}
       <footer className="relative z-20 flex flex-col items-center justify-center pb-6 pt-2">
+        {/* Real-time Frequency Spectrum Visualizer */}
+        <div className="w-full max-w-sm px-4 mb-2.5">
+          <RealtimeAudioVisualizer
+            variant="bars"
+            height={36}
+            barCount={28}
+            label={
+              liveState === "speaking"
+                ? `${currentVoiceObj.name} Speaking`
+                : "Real-time Frequency Spectrum"
+            }
+            showLevel={true}
+          />
+        </div>
+
         {/* The Fluid Glowing Orb (matches image.png) */}
         <div className="relative flex items-center justify-center">
           <FluidVoiceOrb
@@ -816,6 +833,12 @@ export function LiveVoiceAgentModal({
           >
             <PhoneOff className="size-5" />
           </button>
+        </div>
+
+        {/* Studio Voice Cancellation Active Badge */}
+        <div className="mt-2.5 flex items-center gap-1.5 rounded-full px-2.5 py-0.5 border border-emerald-500/20 bg-emerald-500/10 text-[10px] text-emerald-400 font-medium">
+          <ShieldCheck className="size-3 text-emerald-400" />
+          <span>Studio Noise Cancellation & Voice Isolation Active</span>
         </div>
       </footer>
 
