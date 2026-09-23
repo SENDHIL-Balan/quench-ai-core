@@ -14,6 +14,7 @@ import {
   Bot,
   UserCheck,
   Headphones,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { VoiceProvider } from "@/lib/voice/types";
@@ -21,7 +22,9 @@ import {
   playVoiceAudio,
   stopAnyVoicePlayback,
   unlockAudio,
+  voiceQueue,
   type AudioPlaybackController,
+  type VoiceQueueState,
 } from "@/lib/voice/player";
 
 export type VoiceSetting = {
@@ -212,8 +215,18 @@ export function VoiceAgentModal({
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(voiceSetting.playbackSpeed ?? 1.0);
   const [activeFilter, setActiveFilter] = useState<VoiceFilter>("all");
   const [previewingId, setPreviewingId] = useState<string | null>(null);
+  const [queueState, setQueueState] = useState<VoiceQueueState>("idle");
 
   const playbackControllerRef = useRef<AudioPlaybackController | null>(null);
+
+  useEffect(() => {
+    return voiceQueue.subscribe((state) => {
+      setQueueState(state);
+      if (state === "idle" || state === "interrupted") {
+        setPreviewingId(null);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -231,16 +244,19 @@ export function VoiceAgentModal({
   }, [onClose]);
 
   const handlePreview = async (voiceId: string, provider: VoiceProvider, name: string) => {
+    // Stop any existing controller
     if (playbackControllerRef.current) {
       playbackControllerRef.current.stop();
       playbackControllerRef.current = null;
     }
 
     if (previewingId === voiceId) {
+      stopAnyVoicePlayback("preview_toggle_off");
       setPreviewingId(null);
       return;
     }
 
+    // Unlock browser audio synchronously on this direct click event
     unlockAudio();
     setPreviewingId(voiceId);
 
@@ -252,15 +268,18 @@ export function VoiceAgentModal({
         voiceId,
         provider,
         playbackSpeed,
+        forceReplay: true,
+        allowBrowserFallback: true,
         onStart: () => {
           setPreviewingId(voiceId);
         },
         onEnded: () => {
-          setPreviewingId(null);
+          setPreviewingId((curr) => (curr === voiceId ? null : curr));
           playbackControllerRef.current = null;
         },
-        onError: () => {
-          setPreviewingId(null);
+        onError: (err) => {
+          console.warn("[VOICE_MODAL] Preview error:", err.message);
+          setPreviewingId((curr) => (curr === voiceId ? null : curr));
           playbackControllerRef.current = null;
         },
       });
@@ -268,14 +287,17 @@ export function VoiceAgentModal({
       playbackControllerRef.current = controller;
       await controller.promise;
     } catch {
-      setPreviewingId(null);
+      setPreviewingId((curr) => (curr === voiceId ? null : curr));
       playbackControllerRef.current = null;
     }
   };
 
   const handleSelectVoice = (voiceId: string, provider: VoiceProvider) => {
-    stopAnyVoicePlayback();
-    setPreviewingId(null);
+    // Only stop playback if another voice was playing
+    if (previewingId && previewingId !== voiceId) {
+      stopAnyVoicePlayback("voice_switched");
+      setPreviewingId(null);
+    }
     setSelectedVoice(voiceId);
     setSelectedProvider(provider);
     console.log(`[VOICE] Voice changed to ${voiceId} (${provider})`);
@@ -653,16 +675,20 @@ export function VoiceAgentModal({
                             void handlePreview(v.id, v.provider, v.name);
                           }}
                           className={cn(
-                            "flex size-8 items-center justify-center rounded-xl transition-all cursor-pointer shrink-0",
+                            "flex size-9 items-center justify-center rounded-xl transition-all cursor-pointer shrink-0",
                             isPlaying
                               ? "bg-cyan-500 text-black shadow-md shadow-cyan-500/30 scale-105"
                               : "bg-white/5 text-muted-foreground hover:text-white hover:bg-white/15",
                           )}
-                          title={`Preview ${v.name}`}
-                          aria-label={`Preview ${v.name}`}
+                          title={isPlaying ? `Stop previewing ${v.name}` : `Preview ${v.name}`}
+                          aria-label={isPlaying ? `Stop previewing ${v.name}` : `Preview ${v.name}`}
                         >
                           {isPlaying ? (
-                            <VolumeX className="size-4 animate-pulse" />
+                            queueState === "fetching" ? (
+                              <Loader2 className="size-4 animate-spin text-black" />
+                            ) : (
+                              <VolumeX className="size-4 animate-pulse" />
+                            )
                           ) : (
                             <Play className="size-4 fill-current ml-0.5" />
                           )}

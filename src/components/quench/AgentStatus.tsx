@@ -47,17 +47,31 @@ export function AgentRunCard({
   state,
   mode,
   errorMessage,
+  model = "openai/gpt-oss-120b",
 }: {
   state: AgentState;
   mode: ModeId;
   errorMessage?: string | null | undefined;
+  model?: string;
 }) {
   const activeIndex = SEQUENCE.indexOf(state);
+  const modelName =
+    model === "gemini-3.8-flash"
+      ? "Gemini 3.8 Flash (Google)"
+      : model === "nvidia/nemotron-3-super-120b-a12b"
+        ? "Nemotron 3 Super 120B (NVIDIA)"
+        : "GPT-OSS 120B (Groq)";
 
   return (
     <section className="glass-panel rounded-3xl p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Current Agent Run</h2>
+        <div>
+          <h2 className="text-sm font-semibold">Current Agent Run</h2>
+          <span className="text-[11px] font-medium text-cyan-400/90 flex items-center gap-1 mt-0.5">
+            <span className="size-1.5 rounded-full bg-cyan-400" />
+            {modelName}
+          </span>
+        </div>
         <span className="text-muted-foreground text-xs">{AGENT_MODES[mode].label}</span>
       </div>
 

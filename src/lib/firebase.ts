@@ -8,10 +8,10 @@ import {
   type User,
 } from "firebase/auth";
 import {
-  initializeFirestore,
   getFirestore,
   setLogLevel,
   doc,
+  getDocFromServer,
   setDoc,
   collection,
   query,
@@ -22,8 +22,8 @@ import {
 } from "firebase/firestore";
 import firebaseConfig from "../../firebase-applet-config.json";
 
-// Configure Firestore log level to error to eliminate noisy network connection retry warnings
-setLogLevel("error");
+// Silence internal Firestore transport connection retry logs to prevent noisy console errors
+setLogLevel("silent");
 
 // Initialize Firebase App
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -31,25 +31,23 @@ const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 // Initialize Firebase Auth
 export const auth = getAuth(app);
 
-// Initialize Firestore with force long-polling to prevent WebSocket connection failures in iframe environments
-const databaseId =
-  firebaseConfig.firestoreDatabaseId && firebaseConfig.firestoreDatabaseId.length > 0
-    ? firebaseConfig.firestoreDatabaseId
-    : undefined;
+// Initialize Firestore per skill guidelines with the configured firestoreDatabaseId
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
-export const db = (() => {
+// Validate Connection to Firestore on application boot per skill instructions
+async function testConnection() {
   try {
-    return initializeFirestore(
-      app,
-      {
-        experimentalForceLongPolling: true,
-      },
-      databaseId,
-    );
-  } catch {
-    return getFirestore(app, databaseId);
+    await getDocFromServer(doc(db, "test", "connection"));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("the client is offline")) {
+      console.warn("Please check your Firebase configuration.");
+    }
   }
-})();
+}
+
+if (typeof window !== "undefined") {
+  void testConnection();
+}
 
 export enum OperationType {
   CREATE = "create",
@@ -285,6 +283,11 @@ export function subscribeUserChats(
       onUpdate(list);
     },
     (err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("unavailable") || msg.includes("offline")) {
+        console.warn("[bravura-firestore] Firestore is running in offline mode:", msg);
+        return;
+      }
       handleFirestoreError(err, OperationType.LIST, "chats");
     },
   );

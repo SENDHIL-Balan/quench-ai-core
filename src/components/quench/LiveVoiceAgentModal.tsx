@@ -154,6 +154,7 @@ export function LiveVoiceAgentModal({
             messages: uiMessages,
             mode,
             deepThink,
+            model: "openai/gpt-oss-120b",
             voiceMode: true, // triggers natural 1-2 sentence human voice mode
           }),
         });

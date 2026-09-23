@@ -176,10 +176,15 @@ export function unlockAudio(): void {
 
     const audio = getSingleAudioElement();
     if (audio) {
-      try {
-        audio.load();
-      } catch {
-        /* ignore */
+      // Prime HTML5 Audio with 1 sample of silence to unlock browser media permission
+      audio.src =
+        "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+      const p = audio.play();
+      if (p) {
+        p.then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+        }).catch(() => {});
       }
     }
 
@@ -327,6 +332,7 @@ class VoiceQueueManager {
   private activeAbortController: AbortController | null = null;
   private activeSourceNode: AudioBufferSourceNode | null = null;
   private activeBlobUrl: string | null = null;
+  private currentAudioElement: HTMLAudioElement | null = null;
   private listeners = new Set<
     (state: VoiceQueueState, currentItem: AudioQueueItem | null) => void
   >();
@@ -402,13 +408,25 @@ class VoiceQueueManager {
       this.activeSourceNode = null;
     }
 
-    // 3. Stop HTMLAudioElement
+    // 3. Stop Active HTMLAudioElement
+    if (this.currentAudioElement) {
+      try {
+        this.currentAudioElement.onended = null;
+        this.currentAudioElement.onerror = null;
+        this.currentAudioElement.pause();
+        this.currentAudioElement.currentTime = 0;
+      } catch {
+        /* ignore */
+      }
+      this.currentAudioElement = null;
+    }
+
     if (singleAudioElement) {
       try {
         singleAudioElement.onended = null;
         singleAudioElement.onerror = null;
         singleAudioElement.pause();
-        singleAudioElement.src = "";
+        singleAudioElement.currentTime = 0;
       } catch {
         /* ignore */
       }
@@ -639,10 +657,97 @@ class VoiceQueueManager {
       this.setState("playing");
       item.onStart?.();
 
-      // Tier 1: Web Audio API
-      let playedViaWebAudio = false;
+      // Primary Playback Engine: HTMLAudioElement with hardware audio decoding
+      const blob = new Blob([arrayBuffer], { type: contentType || "audio/wav" });
+      const blobUrl = URL.createObjectURL(blob);
+      this.activeBlobUrl = blobUrl;
+
+      let playedSuccessfully = false;
+      const audio = new Audio(blobUrl);
+      this.currentAudioElement = audio;
+
+      if (item.playbackSpeed > 0) {
+        audio.playbackRate = item.playbackSpeed;
+      }
+
+      // Optionally route to Web Audio Analyser if context is running for visualizer
       const ctx = getAudioContext();
-      if (ctx) {
+      if (ctx && ctx.state === "running") {
+        try {
+          const analyser = getAudioAnalyser();
+          if (analyser) {
+            const mediaSource = ctx.createMediaElementSource(audio);
+            mediaSource.connect(ctx.destination);
+            mediaSource.connect(analyser);
+          }
+        } catch {
+          // If already connected or restricted, audio plays directly to default output
+        }
+      }
+
+      try {
+        console.log(`[VOICE_QUEUE] Playing via HTMLAudioElement (Item: ${item.id})`);
+        await new Promise<void>((resolve, reject) => {
+          let finished = false;
+          let safetyTimer: ReturnType<typeof setTimeout> | null = null;
+
+          const finish = (err?: Error) => {
+            if (finished) return;
+            finished = true;
+            if (safetyTimer) clearTimeout(safetyTimer);
+            audio.removeEventListener("ended", onEnded);
+            audio.removeEventListener("error", onError);
+            audio.removeEventListener("loadedmetadata", onMetadata);
+            if (err) reject(err);
+            else resolve();
+          };
+
+          const onEnded = () => finish();
+          const onError = () => {
+            const code = audio.error?.code;
+            const msg = audio.error?.message || "Audio playback error";
+            finish(new Error(`HTMLAudioElement error (code ${code}): ${msg}`));
+          };
+          const onMetadata = () => {
+            const dur = audio.duration;
+            if (Number.isFinite(dur) && dur > 0) {
+              const maxWaitMs = (dur / Math.max(0.5, item.playbackSpeed)) * 1000 + 2500;
+              if (safetyTimer) clearTimeout(safetyTimer);
+              safetyTimer = setTimeout(() => {
+                console.warn(`[VOICE_QUEUE] Safety timeout hit for item ${item.id}`);
+                finish();
+              }, maxWaitMs);
+            }
+          };
+
+          // Default fallback safety timeout: 60s
+          safetyTimer = setTimeout(() => {
+            console.warn(`[VOICE_QUEUE] Default safety timeout reached for item ${item.id}`);
+            finish();
+          }, 60000);
+
+          audio.addEventListener("ended", onEnded, { once: true });
+          audio.addEventListener("error", onError, { once: true });
+          audio.addEventListener("loadedmetadata", onMetadata, { once: true });
+
+          const playPromise = audio.play();
+          if (playPromise) {
+            playPromise.catch((playErr) => {
+              finish(playErr instanceof Error ? playErr : new Error(String(playErr)));
+            });
+          }
+        });
+
+        playedSuccessfully = true;
+      } catch (audioErr) {
+        console.warn(
+          "[VOICE_QUEUE] HTMLAudioElement playback attempt failed, trying Web Audio API:",
+          audioErr,
+        );
+      }
+
+      // Tier 2 Fallback: Web Audio API
+      if (!playedSuccessfully && ctx && !isSessionCancelled()) {
         try {
           if (ctx.state === "suspended") {
             try {
@@ -652,97 +757,62 @@ class VoiceQueueManager {
             }
           }
 
-          let audioBuffer: AudioBuffer | null = null;
-          try {
-            audioBuffer = await new Promise<AudioBuffer>((res, rej) => {
-              const promise = ctx.decodeAudioData(arrayBuffer.slice(0), res, rej);
-              if (promise && typeof (promise as Promise<AudioBuffer>).then === "function") {
-                (promise as Promise<AudioBuffer>).then(res).catch(rej);
-              }
-            });
-          } catch (decErr) {
-            console.warn(
-              "[VOICE_QUEUE] decodeAudioData error, will fallback to HTMLAudioElement:",
-              decErr,
-            );
-            audioBuffer = null;
-          }
-
-          if (audioBuffer && !isSessionCancelled()) {
-            const source = ctx.createBufferSource();
-            source.buffer = audioBuffer;
-            if (item.playbackSpeed > 0) {
-              source.playbackRate.value = item.playbackSpeed;
+          if (ctx.state === "running") {
+            let audioBuffer: AudioBuffer | null = null;
+            try {
+              audioBuffer = await new Promise<AudioBuffer>((res, rej) => {
+                const promise = ctx.decodeAudioData(arrayBuffer.slice(0), res, rej);
+                if (promise && typeof (promise as Promise<AudioBuffer>).then === "function") {
+                  (promise as Promise<AudioBuffer>).then(res).catch(rej);
+                }
+              });
+            } catch (decErr) {
+              console.warn("[VOICE_QUEUE] Web Audio decode error:", decErr);
+              audioBuffer = null;
             }
 
-            // CRITICAL: Always connect source directly to ctx.destination so sound is heard!
-            source.connect(ctx.destination);
-
-            // Connect in parallel to analyser for live frequency visualization
-            const analyser = getAudioAnalyser();
-            if (analyser) {
-              try {
-                source.connect(analyser);
-              } catch {
-                /* ignore */
+            if (audioBuffer && !isSessionCancelled()) {
+              const source = ctx.createBufferSource();
+              source.buffer = audioBuffer;
+              if (item.playbackSpeed > 0) {
+                source.playbackRate.value = item.playbackSpeed;
               }
+              source.connect(ctx.destination);
+
+              const analyser = getAudioAnalyser();
+              if (analyser) {
+                try {
+                  source.connect(analyser);
+                } catch {
+                  /* ignore */
+                }
+              }
+              this.activeSourceNode = source;
+
+              console.log(`[VOICE_QUEUE] Playing via Web Audio API fallback (Item: ${item.id})`);
+              const durationMs =
+                (audioBuffer.duration / Math.max(0.5, item.playbackSpeed)) * 1000 + 1500;
+
+              await new Promise<void>((resolve) => {
+                let ended = false;
+                const done = () => {
+                  if (ended) return;
+                  ended = true;
+                  clearTimeout(timer);
+                  this.activeSourceNode = null;
+                  resolve();
+                };
+                const timer = setTimeout(done, durationMs);
+                source.onended = done;
+                source.start(0);
+              });
+
+              playedSuccessfully = true;
             }
-            this.activeSourceNode = source;
-
-            console.log(`[VOICE_QUEUE] Playing via Web Audio API (Item: ${item.id})`);
-
-            await new Promise<void>((resolve) => {
-              source.onended = () => {
-                this.activeSourceNode = null;
-                resolve();
-              };
-              source.start(0);
-            });
-
-            playedViaWebAudio = true;
           }
         } catch (webAudioErr) {
-          console.warn(
-            "[VOICE_QUEUE] Web Audio decoding bypassed, falling back to HTMLAudioElement:",
-            webAudioErr,
-          );
+          console.warn("[VOICE_QUEUE] Web Audio playback failed:", webAudioErr);
         }
-      }
-
-      // Tier 2: HTMLAudioElement fallback (direct native output)
-      if (!playedViaWebAudio && !isSessionCancelled()) {
-        const blob = new Blob([arrayBuffer], { type: contentType });
-        this.activeBlobUrl = URL.createObjectURL(blob);
-        const audio = getSingleAudioElement();
-        if (!audio) {
-          throw new Error("Audio element unavailable");
-        }
-
-        audio.src = this.activeBlobUrl;
-        if (item.playbackSpeed > 0) {
-          audio.playbackRate = item.playbackSpeed;
-        }
-
-        console.log(`[VOICE_QUEUE] Playing via HTMLAudioElement (Item: ${item.id})`);
-
-        await new Promise<void>((resolve, reject) => {
-          audio.onended = () => {
-            audio.onended = null;
-            audio.onerror = null;
-            resolve();
-          };
-          audio.onerror = () => {
-            audio.onended = null;
-            audio.onerror = null;
-            reject(new Error("HTMLAudioElement playback error"));
-          };
-
-          audio.play().catch((err: unknown) => {
-            audio.onended = null;
-            audio.onerror = null;
-            reject(err);
-          });
-        });
       }
 
       if (!isSessionCancelled()) {

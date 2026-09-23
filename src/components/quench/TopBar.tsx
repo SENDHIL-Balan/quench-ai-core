@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Bell, Menu, Search, PanelRight, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Menu, Search, X } from "lucide-react";
 
 export function TopBar({
   onToggleSidebar,
@@ -8,7 +7,7 @@ export function TopBar({
   onSearch,
 }: {
   onToggleSidebar: () => void;
-  onToggleContext: () => void;
+  onToggleContext?: () => void;
   onSearch?: (query: string) => void;
 }) {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -32,7 +31,7 @@ export function TopBar({
   };
 
   return (
-    <header className="relative w-full shrink-0 z-30">
+    <header className="relative w-full shrink-0 z-20">
       {/* Mobile Expanded Search Bar Mode */}
       {mobileSearchOpen ? (
         <div className="flex sm:hidden items-center gap-2 w-full animate-in fade-in duration-200">
@@ -70,8 +69,8 @@ export function TopBar({
         </div>
       ) : (
         /* Normal Header Mode (Desktop + Mobile) */
-        <div className="flex items-center gap-1.5 sm:gap-3 w-full justify-between">
-          <div className="flex items-center gap-1.5 sm:gap-3 flex-1 min-w-0">
+        <div className="flex items-center gap-2 sm:gap-3 w-full justify-between">
+          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
             {/* Sidebar toggle */}
             <button
               onClick={onToggleSidebar}
@@ -87,7 +86,7 @@ export function TopBar({
               <input
                 value={query}
                 onChange={(e) => handleQueryChange(e.target.value)}
-                className="placeholder:text-muted-foreground w-full bg-transparent text-sm outline-none"
+                className="placeholder:text-muted-foreground w-full bg-transparent text-sm outline-none text-foreground"
                 placeholder="Search conversations, tasks, or anything..."
               />
               {query && (
@@ -111,32 +110,6 @@ export function TopBar({
               title="Search"
             >
               <Search className="size-5" />
-            </button>
-          </div>
-
-          {/* Right Action Controls */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Notifications */}
-            <button
-              className="glass-panel text-muted-foreground hover:text-foreground relative flex size-10 sm:size-11 items-center justify-center rounded-full cursor-pointer shrink-0"
-              aria-label="Notifications"
-            >
-              <Bell className="size-[18px]" />
-              <span className="bg-destructive absolute top-2 right-2.5 size-2 rounded-full" />
-            </button>
-
-            {/* Brand avatar (desktop) */}
-            <span className="bg-gradient-brand text-primary-foreground hidden size-11 items-center justify-center rounded-full text-sm font-semibold sm:flex shrink-0">
-              Q
-            </span>
-
-            {/* Context panel toggle */}
-            <button
-              onClick={onToggleContext}
-              className="glass-panel text-muted-foreground hover:text-foreground flex size-10 sm:size-11 items-center justify-center rounded-2xl xl:hidden cursor-pointer shrink-0"
-              aria-label="Toggle context panel"
-            >
-              <PanelRight className="size-5" />
             </button>
           </div>
         </div>

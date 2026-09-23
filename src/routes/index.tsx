@@ -25,6 +25,7 @@ import { messageText } from "@/components/quench/ChatView";
 import { ImageStudioModal } from "@/components/quench/ImageStudioModal";
 import { PdfStudioModal } from "@/components/quench/PdfStudioModal";
 import { AppLoadingScreen } from "@/components/quench/AppLoadingScreen";
+import type { SupportedModelId } from "@/components/quench/ModelSelector";
 
 // Track if the initial splash animation has already run in this session
 let hasBootedOnce = false;
@@ -143,6 +144,31 @@ function BravuraApp() {
   const [pdfStudioOpen, setPdfStudioOpen] = useState(false);
   const [authUser, setAuthUser] = useState<AuthUserProfile | null>(null);
   const [authInitialized, setAuthInitialized] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<SupportedModelId>("openai/gpt-oss-120b");
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("bravura_selected_model");
+      if (
+        saved === "gemini-3.8-flash" ||
+        saved === "openai/gpt-oss-120b" ||
+        saved === "nvidia/nemotron-3-super-120b-a12b"
+      ) {
+        setSelectedModel(saved);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  const handleSelectModel = (model: SupportedModelId) => {
+    setSelectedModel(model);
+    try {
+      window.localStorage.setItem("bravura_selected_model", model);
+    } catch {
+      // ignore storage errors
+    }
+  };
   const { isSpeaking, playingId, speak, stop: stopSpeech } = useTextToSpeech();
   const lastSpokenMsgIdRef = useRef<string | null>(null);
   const hasActiveTurnRef = useRef<boolean>(false);
@@ -536,7 +562,10 @@ function BravuraApp() {
       setActiveChatId(chatId);
     }
 
-    void sendMessage({ text: value, files: fileParts }, { body: { mode, deepThink, webSearch } });
+    void sendMessage(
+      { text: value, files: fileParts },
+      { body: { mode, deepThink, webSearch, model: selectedModel } },
+    );
   };
 
   const newChat = () => {
@@ -819,6 +848,8 @@ function BravuraApp() {
                 onOpenPdfStudio={() => setPdfStudioOpen(true)}
                 mode={mode}
                 onModeChange={setMode}
+                selectedModel={selectedModel}
+                onSelectModel={handleSelectModel}
                 deepThink={deepThink}
                 onToggleDeepThink={() => setDeepThink((enabled) => !enabled)}
                 webSearch={webSearch}
@@ -843,6 +874,7 @@ function BravuraApp() {
               state={state}
               mode={mode}
               errorMessage={errorMessage}
+              model={selectedModel}
               onSendTranscript={(text) => {
                 setInput(text);
               }}
@@ -865,6 +897,7 @@ function BravuraApp() {
               state={state}
               mode={mode}
               errorMessage={errorMessage}
+              model={selectedModel}
               onSendTranscript={(text) => {
                 setInput(text);
                 setContextOpen(false);

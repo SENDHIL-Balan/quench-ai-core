@@ -74,17 +74,28 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Bravura AI" },
+      { title: "Bravura AI – Intelligent Agent Workspace & Real-Time Multimodal Platform" },
       {
         name: "description",
         content:
-          "Bravura AI is a modern AI agent workspace featuring real-time live voice intelligence, deep reasoning, research, and multimodal capabilities.",
+          "Bravura AI is a modern AI agent workspace featuring real-time live voice intelligence, deep reasoning, research, document RAG, and multimodal tools.",
       },
       { name: "author", content: "Bravura AI" },
-      { property: "og:title", content: "Bravura AI" },
-      { property: "og:description", content: "Intelligence & Real-Time Live Voice AI." },
+      { property: "og:title", content: "Bravura AI – Intelligent Agent Workspace" },
+      {
+        property: "og:description",
+        content:
+          "Experience real-time live voice intelligence, deep reasoning, document RAG, and multimodal AI tools with Bravura AI.",
+      },
       { property: "og:type", content: "website" },
+      { property: "og:site_name", content: "Bravura AI" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Bravura AI – Intelligent Agent Workspace" },
+      {
+        name: "twitter:description",
+        content:
+          "Experience real-time live voice intelligence, deep reasoning, document RAG, and multimodal AI tools with Bravura AI.",
+      },
       { name: "twitter:site", content: "@BravuraAI" },
     ],
     links: [

@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { UIMessage } from "ai";
 import { runBaseAgent } from "@/lib/agent/base-agent.server";
 import { AGENT_MODES, type ModeId } from "@/lib/agent/modes";
-import { MissingProviderKeyError } from "@/lib/agent/provider.server";
+import { MissingProviderKeyError, NvidiaProviderError } from "@/lib/agent/provider.server";
 
 type ChatBody = {
   messages?: unknown;
@@ -10,6 +10,8 @@ type ChatBody = {
   deepThink?: unknown;
   webSearch?: unknown;
   voiceMode?: unknown;
+  model?: unknown;
+  provider?: unknown;
 };
 
 function errorResponse(message: string, status: number) {
@@ -30,7 +32,7 @@ export const Route = createFileRoute("/api/chat")({
           return errorResponse("We couldn't read that request. Please try again.", 400);
         }
 
-        const { messages, mode, deepThink, webSearch, voiceMode } = body;
+        const { messages, mode, deepThink, webSearch, voiceMode, model, provider } = body;
         if (!Array.isArray(messages) || messages.length === 0) {
           return errorResponse("Please type a message first.", 400);
         }
@@ -52,13 +54,20 @@ export const Route = createFileRoute("/api/chat")({
             deepThink: deepThink === true,
             webSearch: webSearch === true,
             voiceMode: voiceMode === true,
+            model: typeof model === "string" ? model : undefined,
+            provider: typeof provider === "string" ? provider : undefined,
+            abortSignal: request.signal,
           });
         } catch (error) {
           if (error instanceof MissingProviderKeyError) {
             return errorResponse(
-              "Bravura AI isn't connected to a model yet. Add your AI provider key (e.g. GEMINI_API_KEY or GROQ_API_KEY) to continue.",
+              "Bravura AI isn't connected to a model yet. Add your AI provider key (e.g. NVIDIA_API_KEY, GROQ_API_KEY, or GEMINI_API_KEY) to continue.",
               503,
             );
+          }
+          if (error instanceof NvidiaProviderError) {
+            const status = error.statusCode || 500;
+            return errorResponse(error.message, status);
           }
           const status =
             typeof error === "object" && error !== null && "statusCode" in error

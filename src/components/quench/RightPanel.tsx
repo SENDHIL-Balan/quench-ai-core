@@ -14,19 +14,21 @@ export function RightPanel({
   state,
   mode,
   errorMessage,
+  model = "openai/gpt-oss-120b",
   onSendTranscript,
   onOpenVoiceSettings,
 }: {
   state: AgentState;
   mode: ModeId;
   errorMessage?: string | null | undefined;
+  model?: string;
   onSendTranscript?: (text: string) => void;
   onOpenVoiceSettings?: () => void;
 }) {
   return (
     <div className="flex w-full flex-col gap-4 xl:w-[330px]">
       <AgentOnlineCard state={state} />
-      <AgentRunCard state={state} mode={mode} errorMessage={errorMessage} />
+      <AgentRunCard state={state} mode={mode} errorMessage={errorMessage} model={model} />
 
       {/* Real-time Voice Agent Panel with visual waveform & Deepgram Nova-2 transcription */}
       <VoiceAgentPanel

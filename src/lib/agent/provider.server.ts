@@ -2,14 +2,61 @@ import { createGroq } from "@ai-sdk/groq";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText } from "ai";
 import type { LanguageModel, UIMessage } from "ai";
+import { GoogleGenAI } from "@google/genai";
 import {
   AGENT_LIMITS,
   getDataUrlSizeInBytes,
   SUPPORTED_ATTACHMENT_MEDIA_TYPES,
 } from "./limits.server";
 
-export const GROQ_MODEL = process.env["GROQ_MODEL"]?.trim() || "openai/gpt-oss-20b";
-export const GEMINI_MODEL = process.env["GEMINI_MODEL"]?.trim() || "gemini-2.5-flash";
+export const GROQ_MODEL = process.env["GROQ_MODEL"]?.trim() || "openai/gpt-oss-120b";
+export const GEMINI_MODEL = process.env["GEMINI_MODEL"]?.trim() || "gemini-3.8-flash";
+export const NVIDIA_MODEL =
+  process.env["NVIDIA_MODEL"]?.trim() || "nvidia/nemotron-3-super-120b-a12b";
+
+export type SupportedModelId =
+  "openai/gpt-oss-120b" | "nvidia/nemotron-3-super-120b-a12b" | "gemini-3.8-flash";
+
+export interface ModelMetadata {
+  id: SupportedModelId;
+  name: string;
+  provider: "groq" | "nvidia" | "gemini";
+  badge: string;
+  description: string;
+  contextWindow: number;
+  reasoningSupport: boolean;
+}
+
+export const SUPPORTED_MODELS: Record<SupportedModelId, ModelMetadata> = {
+  "openai/gpt-oss-120b": {
+    id: "openai/gpt-oss-120b",
+    name: "GPT-OSS 120B",
+    provider: "groq",
+    badge: "117B MoE",
+    description: "OpenAI 120B Mixture-of-Experts with ultra-fast Groq LPU reasoning & tools",
+    contextWindow: 131072,
+    reasoningSupport: true,
+  },
+  "nvidia/nemotron-3-super-120b-a12b": {
+    id: "nvidia/nemotron-3-super-120b-a12b",
+    name: "Nemotron 3 Super 120B",
+    provider: "nvidia",
+    badge: "120B Nemotron",
+    description: "NVIDIA flagship 120B MoE reasoning model running on NVIDIA NIM API",
+    contextWindow: 131072,
+    reasoningSupport: true,
+  },
+  "gemini-3.8-flash": {
+    id: "gemini-3.8-flash",
+    name: "Gemini 3.8 Flash",
+    provider: "gemini",
+    badge: "Multimodal",
+    description:
+      "Google next-gen reasoning model with multimodal analysis and live search grounding",
+    contextWindow: 1048576,
+    reasoningSupport: true,
+  },
+};
 
 export interface LLMProvider {
   generateText(options: {
@@ -31,8 +78,24 @@ export class AgentInputError extends Error {
 
 export class MissingProviderKeyError extends Error {
   constructor() {
-    super("No AI provider credentials configured. Please set GEMINI_API_KEY or GROQ_API_KEY.");
+    super(
+      "No AI provider credentials configured. Please set NVIDIA_API_KEY, GROQ_API_KEY, or GEMINI_API_KEY.",
+    );
     this.name = "MissingProviderKeyError";
+  }
+}
+
+export class NvidiaProviderError extends Error {
+  public readonly statusCode: number | undefined;
+
+  override name = "NvidiaProviderError";
+
+  constructor(message: string, statusCode?: number, cause?: unknown) {
+    super(message);
+    this.statusCode = statusCode;
+    if (cause) {
+      this.cause = cause;
+    }
   }
 }
 
@@ -326,9 +389,9 @@ export class ModelProvider implements LLMProvider {
 }
 
 export class GroqProvider extends ModelProvider {
-  constructor(apiKey: string) {
+  constructor(apiKey: string, modelName: string = GROQ_MODEL) {
     const client = createGroq({ apiKey });
-    super(client(GROQ_MODEL), GROQ_MODEL, true);
+    super(client(modelName), modelName, true);
   }
 }
 
@@ -353,15 +416,322 @@ export class OpenAICompatibleProvider extends ModelProvider {
   }
 }
 
-export function resolveProvider(): LLMProvider {
-  const groqKey = process.env["GROQ_API_KEY"]?.trim();
-  if (groqKey) {
-    return new GroqProvider(groqKey);
+export class GeminiNativeProvider implements LLMProvider {
+  private ai: GoogleGenAI;
+
+  constructor(apiKey: string) {
+    this.ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
   }
 
+  async generateText({
+    systemPrompt,
+    messages,
+    deepThink,
+    maxOutputTokens,
+    temperature,
+  }: {
+    systemPrompt: string;
+    messages: UIMessage[];
+    deepThink: boolean;
+    abortSignal?: AbortSignal;
+    maxOutputTokens?: number;
+    temperature?: number;
+  }): Promise<string> {
+    try {
+      const contents = [];
+      const textMessages = await mapUiMessagesToGroq(messages);
+
+      for (const m of textMessages) {
+        contents.push({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: m.content }],
+        });
+      }
+
+      if (contents.length === 0) {
+        throw new GroqProviderError("No message contents to send to Gemini.");
+      }
+
+      const response = await this.ai.models.generateContent({
+        model: GEMINI_MODEL,
+        contents,
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: temperature ?? (deepThink ? 0.35 : 0.7),
+          topP: 0.95,
+          ...(maxOutputTokens ? { maxOutputTokens } : {}),
+        },
+      });
+
+      const text = response.text?.trim();
+      if (!text) {
+        throw new GroqProviderError("Gemini returned an empty response.");
+      }
+      return text;
+    } catch (err) {
+      if (err instanceof GroqProviderError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[bravura] Gemini native provider error:", message);
+      throw new GroqProviderError(`Gemini model error: ${message}`, err);
+    }
+  }
+}
+
+export class NvidiaProvider implements LLMProvider {
+  constructor(
+    public readonly apiKey: string,
+    public readonly modelName: string = NVIDIA_MODEL,
+  ) {}
+
+  async generateText({
+    systemPrompt,
+    messages,
+    deepThink,
+    abortSignal,
+    maxOutputTokens,
+    temperature,
+  }: {
+    systemPrompt: string;
+    messages: UIMessage[];
+    deepThink: boolean;
+    abortSignal?: AbortSignal;
+    maxOutputTokens?: number;
+    temperature?: number;
+  }): Promise<string> {
+    const startTime = Date.now();
+    try {
+      console.info("[bravura] Dispatching NVIDIA API request", {
+        provider: "NVIDIA",
+        model: this.modelName,
+        deepThink,
+      });
+
+      const textMessages = await mapUiMessagesToGroq(messages);
+      const apiMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+        { role: "system", content: systemPrompt },
+        ...textMessages.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+      ];
+
+      const defaultMaxTokens = deepThink
+        ? AGENT_LIMITS.maxDeepThinkOutputTokens
+        : AGENT_LIMITS.maxOutputTokens;
+
+      const res = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          model: this.modelName,
+          messages: apiMessages,
+          max_tokens: maxOutputTokens ?? defaultMaxTokens,
+          temperature: temperature ?? (deepThink ? 0.3 : 0.6),
+          top_p: 0.95,
+        }),
+        ...(abortSignal ? { signal: abortSignal } : {}),
+      });
+
+      const durationMs = Date.now() - startTime;
+
+      if (!res.ok) {
+        let errBody: Record<string, unknown> = {};
+        try {
+          errBody = (await res.json()) as Record<string, unknown>;
+        } catch {
+          // non-json response
+        }
+
+        const errorDetail =
+          (errBody.detail as string) ||
+          (errBody.title as string) ||
+          ((errBody.error as { message?: string })?.message as string) ||
+          `HTTP ${res.status}`;
+
+        console.error("[bravura] NVIDIA API error response", {
+          provider: "NVIDIA",
+          model: this.modelName,
+          status: res.status,
+          latencyMs: durationMs,
+          errorDetail,
+        });
+
+        if (res.status === 401 || res.status === 403) {
+          throw new NvidiaProviderError(
+            "The NVIDIA API key is invalid, forbidden, or expired. Please verify your NVIDIA_API_KEY environment variable.",
+            res.status,
+          );
+        }
+        if (res.status === 404) {
+          throw new NvidiaProviderError(
+            `The requested NVIDIA model (${this.modelName}) is not available on this endpoint.`,
+            404,
+          );
+        }
+        if (res.status === 429) {
+          throw new NvidiaProviderError(
+            "NVIDIA API rate limit exceeded. Please try again in a moment.",
+            429,
+          );
+        }
+        if (res.status === 504 || res.status === 503) {
+          throw new NvidiaProviderError(
+            "NVIDIA API service timed out or is temporarily unavailable.",
+            res.status,
+          );
+        }
+
+        throw new NvidiaProviderError(`NVIDIA API error: ${errorDetail}`, res.status);
+      }
+
+      const data = (await res.json()) as {
+        choices?: Array<{
+          message?: { content?: string; reasoning_content?: string };
+        }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+      };
+
+      const choice = data.choices?.[0]?.message;
+      let text = choice?.content?.trim();
+
+      // If text content is empty but reasoning content exists
+      if (!text && choice?.reasoning_content) {
+        text = choice.reasoning_content.trim();
+      }
+
+      if (!text) {
+        throw new NvidiaProviderError("NVIDIA model returned an empty response.", 500);
+      }
+
+      console.info("[bravura] NVIDIA API response received successfully", {
+        provider: "NVIDIA",
+        model: this.modelName,
+        status: 200,
+        latencyMs: durationMs,
+        tokens: data.usage?.total_tokens,
+      });
+
+      return text;
+    } catch (err) {
+      const durationMs = Date.now() - startTime;
+      if (err instanceof NvidiaProviderError || err instanceof AgentInputError) {
+        throw err;
+      }
+      const isAbort = (err instanceof Error && err.name === "AbortError") || abortSignal?.aborted;
+      if (isAbort) {
+        console.info("[bravura] NVIDIA request aborted by user", {
+          provider: "NVIDIA",
+          model: this.modelName,
+          latencyMs: durationMs,
+        });
+        throw err;
+      }
+
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[bravura] NVIDIA request execution failed", {
+        provider: "NVIDIA",
+        model: this.modelName,
+        latencyMs: durationMs,
+        errorMessage: msg,
+      });
+      throw new NvidiaProviderError(`NVIDIA request failed: ${msg}`, 500, err);
+    }
+  }
+}
+
+/**
+ * Resolves the active LLM Provider based on explicit user preference,
+ * model identifier, or configured API credentials.
+ * Supports Nemotron 3 Super 120B (NVIDIA), GPT-OSS 120B (Groq), and Gemini 3.8 Flash.
+ */
+export function resolveProvider(preferredModel?: string, preferredProvider?: string): LLMProvider {
+  const modelToUse = preferredModel?.trim();
+  const nvidiaKey = process.env["NVIDIA_API_KEY"]?.trim();
+  const groqKey = process.env["GROQ_API_KEY"]?.trim();
   const geminiKey = process.env["GEMINI_API_KEY"]?.trim();
+
+  // 1. Explicit request for NVIDIA or Nemotron
+  if (
+    modelToUse === "nvidia/nemotron-3-super-120b-a12b" ||
+    modelToUse === "nemotron" ||
+    modelToUse === "mistralai/mistral-nemotron" ||
+    modelToUse?.startsWith("nvidia/") ||
+    preferredProvider === "nvidia"
+  ) {
+    if (nvidiaKey) {
+      const activeNvidiaModel =
+        modelToUse && (modelToUse.startsWith("nvidia/") || modelToUse.startsWith("mistralai/"))
+          ? modelToUse
+          : NVIDIA_MODEL;
+      console.info(
+        `[bravura] Routing AI request directly to NVIDIA NIM API (${activeNvidiaModel})`,
+      );
+      return new NvidiaProvider(nvidiaKey, activeNvidiaModel);
+    }
+    console.warn(
+      "[bravura] NVIDIA model requested but NVIDIA_API_KEY missing, attempting fallback...",
+    );
+  }
+
+  // 2. Explicit request for GPT-OSS 120B or Groq provider
+  if (
+    modelToUse === "openai/gpt-oss-120b" ||
+    modelToUse === "gpt-oss-120b" ||
+    preferredProvider === "groq"
+  ) {
+    if (groqKey) {
+      console.info("[bravura] Routing AI request directly to GPT-OSS 120B via Groq LPU");
+      return new GroqProvider(groqKey, "openai/gpt-oss-120b");
+    }
+    console.warn(
+      "[bravura] GPT-OSS 120B requested but GROQ_API_KEY missing, falling back to Gemini",
+    );
+  }
+
+  // 3. Explicit request for Gemini
+  if (
+    modelToUse === "gemini-3.8-flash" ||
+    modelToUse === "gemini" ||
+    preferredProvider === "gemini"
+  ) {
+    if (geminiKey && geminiKey.startsWith("AIzaSy")) {
+      console.info("[bravura] Routing AI request to Gemini Native Provider (gemini-3.8-flash)");
+      return new GeminiNativeProvider(geminiKey);
+    }
+    if (geminiKey) {
+      console.info("[bravura] Routing AI request to Gemini Compatible Provider");
+      return new GeminiCompatibleProvider(geminiKey);
+    }
+  }
+
+  // 4. Default priority if specific model not explicitly forced:
+  // If Groq is configured, use fast GPT-OSS 120B
+  if (groqKey) {
+    console.info(`[bravura] Active model: ${GROQ_MODEL} (Groq Provider)`);
+    return new GroqProvider(groqKey, GROQ_MODEL);
+  }
+
+  // If NVIDIA is configured, use Nemotron
+  if (nvidiaKey) {
+    console.info(`[bravura] Active model: ${NVIDIA_MODEL} (NVIDIA Provider)`);
+    return new NvidiaProvider(nvidiaKey, NVIDIA_MODEL);
+  }
+
+  // Fallback to Gemini
   if (geminiKey && geminiKey.startsWith("AIzaSy")) {
-    return new GeminiCompatibleProvider(geminiKey);
+    console.info("[bravura] Active model: gemini-3.8-flash (Gemini Provider)");
+    return new GeminiNativeProvider(geminiKey);
   }
 
   const openAiKey = process.env["OPENAI_API_KEY"]?.trim();
@@ -370,7 +740,7 @@ export function resolveProvider(): LLMProvider {
   }
 
   if (geminiKey) {
-    return new GeminiCompatibleProvider(geminiKey);
+    return new GeminiNativeProvider(geminiKey);
   }
 
   throw new MissingProviderKeyError();

@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   Plus,
   Search,
-  Brain,
   Paperclip,
   ArrowUp,
   Square,
@@ -23,6 +22,7 @@ import { AGENT_MODES, VISIBLE_MODES, type ModeId } from "@/lib/agent/modes";
 import { cn } from "@/lib/utils";
 import { MicButton } from "./MicButton";
 import { LiveVoiceAgentButton } from "./LiveVoiceAgentButton";
+import { ModelSelector, type SupportedModelId } from "./ModelSelector";
 
 const MODE_ICONS: Record<ModeId, typeof MessageSquare> = {
   chat: MessageSquare,
@@ -50,6 +50,8 @@ export function PromptComposer({
   onOpenPdfStudio,
   mode,
   onModeChange,
+  selectedModel,
+  onSelectModel,
   busy,
   disabled,
   error,
@@ -59,10 +61,10 @@ export function PromptComposer({
   onChange: (v: string) => void;
   onSubmit: (files?: File[]) => void;
   onStop: () => void;
-  deepThink: boolean;
-  onToggleDeepThink: () => void;
-  webSearch: boolean;
-  onToggleWebSearch: () => void;
+  deepThink?: boolean;
+  onToggleDeepThink?: () => void;
+  webSearch?: boolean;
+  onToggleWebSearch?: () => void;
   onTranscribed: (text: string) => void;
   onOpenLiveVoice?: () => void;
   isLiveVoiceActive?: boolean;
@@ -70,6 +72,8 @@ export function PromptComposer({
   onOpenPdfStudio?: () => void;
   mode?: ModeId;
   onModeChange?: (mode: ModeId) => void;
+  selectedModel?: SupportedModelId;
+  onSelectModel?: (model: SupportedModelId) => void;
   busy: boolean;
   disabled?: boolean;
   error?: string | null;
@@ -372,56 +376,14 @@ export function PromptComposer({
               </div>
             )}
 
-            {/* Search Chip */}
-            <button
-              type="button"
-              onClick={onToggleWebSearch}
-              aria-pressed={webSearch}
-              title={
-                webSearch ? "Real-Time Search Active (Live Web Data)" : "Enable Real-Time Search"
-              }
-              className={cn(
-                "flex items-center gap-1 sm:gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors cursor-pointer",
-                webSearch
-                  ? "border-cyan-500/60 bg-cyan-500/20 text-cyan-200 font-medium shadow-[0_0_12px_rgba(6,182,212,0.3)]"
-                  : "border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-white",
-              )}
-            >
-              <Search
-                className={cn(
-                  "size-3.5 shrink-0",
-                  webSearch ? "text-cyan-300" : "text-muted-foreground",
-                )}
+            {/* LLM Model Option Chip (Replacing search & think toggles right in the chat action bar) */}
+            {selectedModel && onSelectModel && (
+              <ModelSelector
+                selectedModel={selectedModel}
+                onSelectModel={onSelectModel}
+                direction="up"
               />
-              <span>Search</span>
-              {webSearch && <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />}
-            </button>
-
-            {/* Think Chip (Brain icon + Think) */}
-            <button
-              type="button"
-              onClick={onToggleDeepThink}
-              aria-pressed={deepThink}
-              title={
-                deepThink
-                  ? "Deep Think Active (Multi-step Reasoning)"
-                  : "Enable Deep Think reasoning"
-              }
-              className={cn(
-                "flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors cursor-pointer sm:gap-1.5",
-                deepThink
-                  ? "border-purple-500/60 bg-purple-500/20 text-purple-200 font-medium shadow-[0_0_12px_rgba(168,85,247,0.3)]"
-                  : "border-white/10 bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-white",
-              )}
-            >
-              <Brain
-                className={cn(
-                  "size-3.5 shrink-0",
-                  deepThink ? "text-purple-300" : "text-muted-foreground",
-                )}
-              />
-              <span className="hidden sm:inline">Think</span>
-            </button>
+            )}
           </div>
 
           {/* Right Action Controls: If chatbox has letter/content, ONLY send button is shown; if empty, ONLY voice agent & transcribe are shown */}
@@ -483,14 +445,9 @@ export function PromptComposer({
         </div>
       </motion.div>
 
-      {error ? (
+      {error && (
         <p className="text-destructive mt-2 px-2 text-sm" role="alert">
           {error}
-        </p>
-      ) : (
-        <p className="text-muted-foreground mt-2 px-2 text-[11px]">
-          Enter to send · Shift + Enter for newline · Tap{" "}
-          <span className="text-cyan-400 font-medium">blue orb</span> to talk in live
         </p>
       )}
     </div>

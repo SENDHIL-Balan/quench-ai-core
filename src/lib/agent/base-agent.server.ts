@@ -5,6 +5,7 @@ import { searchWeb } from "@/lib/tools/web-search.server";
 import { formatSearchForPrompt } from "@/lib/tools/format-search";
 import { WebSearchError } from "@/lib/tools/web-search-types";
 import { GoogleGenAI } from "@google/genai";
+import { orchestrateAgentRun } from "./orchestrator.server";
 
 /**
  * Bravura AI base agent.
@@ -23,6 +24,8 @@ export interface AgentRunInput {
   deepThink?: boolean;
   webSearch?: boolean;
   voiceMode?: boolean;
+  model?: string;
+  provider?: string;
   abortSignal?: AbortSignal;
 }
 
@@ -333,6 +336,8 @@ export async function runBaseAgent({
   deepThink = false,
   webSearch = false,
   voiceMode = false,
+  model,
+  provider,
   abortSignal,
 }: AgentRunInput): Promise<Response> {
   // If in Image mode, route directly to image generation
@@ -340,68 +345,133 @@ export async function runBaseAgent({
     return handleImageModeAgent(messages);
   }
 
-  const query = lastUserText(messages);
   const shouldSearch = Boolean(webSearch || mode === "research");
 
-  // Build the base prompt with real-time search context and voice mode
-  let systemInstruction = buildSystemPrompt({
+  // Run full Agent Orchestration (plan, select tools, execute RAG/Search/Calculator, evaluate)
+  const orchestration = await orchestrateAgentRun({
+    messages,
     mode,
     deepThink,
     webSearch: shouldSearch,
     voiceMode,
+    model,
+    provider,
+    abortSignal,
   });
 
-  // When real-time data is requested, attempt native Gemini Google Search Grounding first (gemini-3.5-flash with googleSearch tool)
-  if (shouldSearch) {
-    const groundedText = await tryGeminiSearchGrounding({
-      messages,
-      systemInstruction,
-    });
-
-    if (groundedText) {
-      const stream = createUIMessageStream({
-        originalMessages: messages,
-        async execute({ writer }) {
-          writer.write({ type: "start" });
-          writer.write({ type: "text-start", id: "bravura-response" });
-          writer.write({ type: "text-delta", id: "bravura-response", delta: groundedText });
-          writer.write({ type: "text-end", id: "bravura-response" });
-        },
-        onError(error) {
-          console.error("[bravura] ui stream error", error);
-          return "Bravura AI couldn't complete that request. Please try again.";
-        },
-      });
-
-      return createUIMessageStreamResponse({ stream });
-    }
-  }
-
-  // Fallback to active provider with real-time web search injection
-  const provider = resolveProvider();
-  let searchSources: Array<{ title: string; url: string }> = [];
-
-  if (shouldSearch) {
-    const searchData = await resolveSearchBlock(query, abortSignal);
-    if (searchData) {
-      systemInstruction = `${systemInstruction}\n\n${searchData.block}`;
-      searchSources = searchData.sources;
-    }
-  }
-
   try {
-    let text = await provider.generateText({
-      systemPrompt: systemInstruction,
-      messages,
-      deepThink,
-      ...(abortSignal ? { abortSignal } : {}),
-    });
+    let text: string;
+    try {
+      text = await orchestration.provider.generateText({
+        systemPrompt: orchestration.finalPrompt,
+        messages,
+        deepThink,
+        ...(abortSignal ? { abortSignal } : {}),
+      });
+    } catch (primaryError) {
+      // Graceful fallback: If primary provider failed (e.g. rate limit, temporary outage) and alternative provider exists
+      const geminiKey = process.env["GEMINI_API_KEY"]?.trim();
+      const groqKey = process.env["GROQ_API_KEY"]?.trim();
+      const nvidiaKey = process.env["NVIDIA_API_KEY"]?.trim();
 
-    // If search sources were retrieved and not yet linked in text, append real-time citations
-    if (searchSources.length > 0 && !text.includes(searchSources[0].url)) {
+      const isNvidiaPrimary =
+        model?.includes("nemotron") || model?.includes("nvidia") || provider === "nvidia";
+      const isGroqPrimary =
+        !isNvidiaPrimary &&
+        (!model || model.includes("gpt-oss") || model.includes("groq") || provider === "groq");
+
+      if (isNvidiaPrimary) {
+        if (groqKey) {
+          console.warn(
+            "[bravura] NVIDIA model request failed, executing graceful fallback to GPT-OSS 120B on Groq...",
+            primaryError instanceof Error ? primaryError.message : primaryError,
+          );
+          const fallbackProvider = resolveProvider("openai/gpt-oss-120b");
+          text = await fallbackProvider.generateText({
+            systemPrompt: orchestration.finalPrompt,
+            messages,
+            deepThink,
+            ...(abortSignal ? { abortSignal } : {}),
+          });
+        } else if (geminiKey) {
+          console.warn(
+            "[bravura] NVIDIA model request failed, executing graceful fallback to Gemini 3.8 Flash...",
+            primaryError instanceof Error ? primaryError.message : primaryError,
+          );
+          const fallbackProvider = resolveProvider("gemini-3.8-flash");
+          text = await fallbackProvider.generateText({
+            systemPrompt: orchestration.finalPrompt,
+            messages,
+            deepThink,
+            ...(abortSignal ? { abortSignal } : {}),
+          });
+        } else {
+          throw primaryError;
+        }
+      } else if (isGroqPrimary) {
+        if (nvidiaKey) {
+          console.warn(
+            "[bravura] Primary Groq request failed, executing graceful fallback to Nemotron on NVIDIA...",
+            primaryError instanceof Error ? primaryError.message : primaryError,
+          );
+          const fallbackProvider = resolveProvider("nvidia/nemotron-3-super-120b-a12b");
+          text = await fallbackProvider.generateText({
+            systemPrompt: orchestration.finalPrompt,
+            messages,
+            deepThink,
+            ...(abortSignal ? { abortSignal } : {}),
+          });
+        } else if (geminiKey) {
+          console.warn(
+            "[bravura] Primary Groq request failed, executing graceful fallback to Gemini 3.8 Flash...",
+            primaryError instanceof Error ? primaryError.message : primaryError,
+          );
+          const fallbackProvider = resolveProvider("gemini-3.8-flash");
+          text = await fallbackProvider.generateText({
+            systemPrompt: orchestration.finalPrompt,
+            messages,
+            deepThink,
+            ...(abortSignal ? { abortSignal } : {}),
+          });
+        } else {
+          throw primaryError;
+        }
+      } else {
+        if (groqKey) {
+          console.warn(
+            "[bravura] Gemini request failed, executing graceful fallback to GPT-OSS 120B on Groq...",
+            primaryError instanceof Error ? primaryError.message : primaryError,
+          );
+          const fallbackProvider = resolveProvider("openai/gpt-oss-120b");
+          text = await fallbackProvider.generateText({
+            systemPrompt: orchestration.finalPrompt,
+            messages,
+            deepThink,
+            ...(abortSignal ? { abortSignal } : {}),
+          });
+        } else if (nvidiaKey) {
+          console.warn(
+            "[bravura] Gemini request failed, executing graceful fallback to Nemotron on NVIDIA...",
+            primaryError instanceof Error ? primaryError.message : primaryError,
+          );
+          const fallbackProvider = resolveProvider("nvidia/nemotron-3-super-120b-a12b");
+          text = await fallbackProvider.generateText({
+            systemPrompt: orchestration.finalPrompt,
+            messages,
+            deepThink,
+            ...(abortSignal ? { abortSignal } : {}),
+          });
+        } else {
+          throw primaryError;
+        }
+      }
+    }
+
+    // If search or RAG sources were retrieved and not yet linked in text, append citations
+    if (orchestration.sources.length > 0 && !text.includes(orchestration.sources[0]!.url)) {
       const sourcesBlock = [
-        "\n\n---\n**🌐 Real-Time Sources:**",
-        ...searchSources.slice(0, 5).map((s, idx) => `${idx + 1}. [${s.title}](${s.url})`),
+        "\n\n---\n**🌐 Verified Sources & Grounding:**",
+        ...orchestration.sources.slice(0, 5).map((s, idx) => `${idx + 1}. [${s.title}](${s.url})`),
       ].join("\n");
       text += sourcesBlock;
     }
@@ -411,7 +481,18 @@ export async function runBaseAgent({
       async execute({ writer }) {
         writer.write({ type: "start" });
         writer.write({ type: "text-start", id: "bravura-response" });
-        writer.write({ type: "text-delta", id: "bravura-response", delta: text });
+
+        // Stream in natural-sized token chunks to ensure smooth UI responsiveness
+        const chunkSize = 24;
+        for (let i = 0; i < text.length; i += chunkSize) {
+          if (abortSignal?.aborted) break;
+          const chunk = text.slice(i, i + chunkSize);
+          writer.write({ type: "text-delta", id: "bravura-response", delta: chunk });
+          if (text.length > 300) {
+            await new Promise((r) => setTimeout(r, 6));
+          }
+        }
+
         writer.write({ type: "text-end", id: "bravura-response" });
       },
       onError(error) {

@@ -50,6 +50,31 @@ async function fetchSarvamAudio(
   playbackSpeed = 1.0,
 ): Promise<Response> {
   const pace = Math.max(0.7, Math.min(1.8, playbackSpeed || 1.0));
+
+  // Sarvam Bulbul:v3 limits each input chunk to 500 characters.
+  // Split into natural sentence chunks of <= 400 characters so multi-sentence responses synthesize flawlessly.
+  const chunks: string[] = [];
+  let remaining = text.trim();
+  while (remaining.length > 0) {
+    if (remaining.length <= 420) {
+      chunks.push(remaining);
+      break;
+    }
+    let idx = remaining.lastIndexOf(". ", 420);
+    if (idx < 120) idx = remaining.lastIndexOf("! ", 420);
+    if (idx < 120) idx = remaining.lastIndexOf("? ", 420);
+    if (idx < 120) idx = remaining.lastIndexOf("\n", 420);
+    if (idx < 120) idx = remaining.lastIndexOf(", ", 420);
+    if (idx < 100) idx = remaining.lastIndexOf(" ", 420);
+    if (idx < 50) idx = 420;
+
+    const chunk = remaining.slice(0, idx + 1).trim();
+    if (chunk) chunks.push(chunk);
+    remaining = remaining.slice(idx + 1).trim();
+  }
+
+  const inputs = chunks.length > 0 ? chunks : [text.slice(0, 420)];
+
   const callSarvam = async (key: string) => {
     return fetch("https://api.sarvam.ai/text-to-speech", {
       method: "POST",
@@ -58,7 +83,7 @@ async function fetchSarvamAudio(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        inputs: [text],
+        inputs,
         target_language_code: "en-IN",
         speaker: speaker || "kavya",
         pace,
