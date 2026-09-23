@@ -61,6 +61,8 @@ export function VoiceAgentPanel({
   const animFrameRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const playbackControllerRef = useRef<AudioPlaybackController | null>(null);
+  const volumeLevelRef = useRef<number>(0);
+  volumeLevelRef.current = volumeLevel;
 
   // Clean up on unmount
   useEffect(() => {

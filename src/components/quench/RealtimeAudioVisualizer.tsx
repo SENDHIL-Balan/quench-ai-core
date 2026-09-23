@@ -34,8 +34,8 @@ export function RealtimeAudioVisualizer({
 }: RealtimeAudioVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const dbTextRef = useRef<HTMLSpanElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentDb, setCurrentDb] = useState<number>(-60);
 
   // Subscribe to core playback queue state if no custom analyser provided
   useEffect(() => {
@@ -68,7 +68,7 @@ export function RealtimeAudioVisualizer({
         const freqData = new Uint8Array(binCount);
         targetAnalyser.getByteFrequencyData(freqData);
 
-        // Calculate average energy / dB
+        // Calculate average energy / dB without triggering React re-renders
         let sum = 0;
         for (let i = 0; i < binCount; i++) {
           sum += freqData[i];
@@ -78,7 +78,9 @@ export function RealtimeAudioVisualizer({
         const calculatedDb = Math.round(
           normalizedVolume > 0 ? 20 * Math.log10(normalizedVolume) : -60,
         );
-        setCurrentDb(Math.max(-60, calculatedDb));
+        if (dbTextRef.current) {
+          dbTextRef.current.textContent = `${Math.max(-60, calculatedDb)} dB`;
+        }
 
         if (variant === "wave") {
           // Smooth illuminated waveform
@@ -178,7 +180,7 @@ export function RealtimeAudioVisualizer({
       animationFrameId = requestAnimationFrame(render);
     };
 
-    render();
+    animationFrameId = requestAnimationFrame(render);
 
     return () => {
       cancelAnimationFrame(animationFrameId);
@@ -233,8 +235,8 @@ export function RealtimeAudioVisualizer({
                 active ? "bg-emerald-400 animate-ping" : "bg-white/20",
               )}
             />
-            <span className={active ? "text-cyan-300" : "text-white/40"}>
-              {active ? `${currentDb} dB` : "Idle"}
+            <span ref={dbTextRef} className={active ? "text-cyan-300" : "text-white/40"}>
+              {active ? "-60 dB" : "Idle"}
             </span>
           </div>
         )}
