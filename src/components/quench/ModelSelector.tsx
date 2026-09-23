@@ -1,14 +1,18 @@
 import { useState, useRef, useEffect } from "react";
-import { ChevronDown, Cpu, Sparkles, Check, Zap } from "lucide-react";
+import { ChevronDown, Cpu, Sparkles, Check, Zap, Orbit, Code2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type SupportedModelId =
-  "openai/gpt-oss-120b" | "nvidia/nemotron-3-super-120b-a12b" | "gemini-3.8-flash";
+  | "openai/gpt-oss-120b"
+  | "nvidia/nemotron-3-super-120b-a12b"
+  | "gemini-3.8-flash"
+  | "kimi-k2.6"
+  | "kimi-k2.7-code";
 
 export interface ModelOption {
   id: SupportedModelId;
   name: string;
-  provider: "Groq" | "NVIDIA" | "Google";
+  provider: "Groq" | "NVIDIA" | "Google" | "Kimi";
   badge: string;
   description: string;
   highlight?: boolean;
@@ -16,19 +20,33 @@ export interface ModelOption {
 
 export const MODEL_OPTIONS: ModelOption[] = [
   {
-    id: "openai/gpt-oss-120b",
-    name: "GPT-OSS 120B",
-    provider: "Groq",
-    badge: "117B MoE",
-    description: "Ultra-fast OpenAI open-weight 120B MoE on Groq LPU with deep reasoning & tools",
-    highlight: true,
-  },
-  {
     id: "nvidia/nemotron-3-super-120b-a12b",
     name: "Nemotron 3 Super 120B",
     provider: "NVIDIA",
     badge: "120B Nemotron",
     description: "NVIDIA flagship 120B MoE reasoning model on official NVIDIA NIM API",
+    highlight: true,
+  },
+  {
+    id: "openai/gpt-oss-120b",
+    name: "GPT-OSS 120B",
+    provider: "Groq",
+    badge: "117B MoE",
+    description: "Ultra-fast OpenAI open-weight 120B MoE on Groq LPU with deep reasoning & tools",
+  },
+  {
+    id: "kimi-k2.6",
+    name: "Kimi K2.6",
+    provider: "Kimi",
+    badge: "262K Context",
+    description: "Moonshot AI Kimi K2.6 with 262K token context & deep multimodal reasoning",
+  },
+  {
+    id: "kimi-k2.7-code",
+    name: "Kimi K2.7 Code",
+    provider: "Kimi",
+    badge: "Code Agent",
+    description: "Moonshot AI specialized coding & algorithmic engineering model with 262K context",
   },
   {
     id: "gemini-3.8-flash",
@@ -88,6 +106,12 @@ export function ModelSelector({
             <Zap className="size-3.5 text-cyan-400 fill-cyan-400/20 shrink-0" />
           ) : activeOption.provider === "NVIDIA" ? (
             <Cpu className="size-3.5 text-emerald-400 shrink-0" />
+          ) : activeOption.provider === "Kimi" ? (
+            activeOption.id === "kimi-k2.7-code" ? (
+              <Code2 className="size-3.5 text-sky-400 shrink-0" />
+            ) : (
+              <Orbit className="size-3.5 text-sky-400 shrink-0" />
+            )
           ) : (
             <Sparkles className="size-3.5 text-purple-400 shrink-0" />
           )}
@@ -103,7 +127,9 @@ export function ModelSelector({
               ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/25"
               : activeOption.provider === "Groq"
                 ? "bg-cyan-500/15 text-cyan-300 border-cyan-500/20"
-                : "bg-purple-500/15 text-purple-300 border-purple-500/20",
+                : activeOption.provider === "Kimi"
+                  ? "bg-sky-500/15 text-sky-300 border-sky-500/20"
+                  : "bg-purple-500/15 text-purple-300 border-purple-500/20",
           )}
         >
           {activeOption.provider}
@@ -160,6 +186,14 @@ export function ModelSelector({
                     ) : option.provider === "NVIDIA" ? (
                       <span className="flex size-6 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-300">
                         <Cpu className="size-3.5" />
+                      </span>
+                    ) : option.provider === "Kimi" ? (
+                      <span className="flex size-6 items-center justify-center rounded-lg bg-sky-500/20 text-sky-300">
+                        {option.id === "kimi-k2.7-code" ? (
+                          <Code2 className="size-3.5" />
+                        ) : (
+                          <Orbit className="size-3.5" />
+                        )}
                       </span>
                     ) : (
                       <span className="flex size-6 items-center justify-center rounded-lg bg-purple-500/20 text-purple-300">

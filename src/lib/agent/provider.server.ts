@@ -13,14 +13,20 @@ export const GROQ_MODEL = process.env["GROQ_MODEL"]?.trim() || "openai/gpt-oss-1
 export const GEMINI_MODEL = process.env["GEMINI_MODEL"]?.trim() || "gemini-3.8-flash";
 export const NVIDIA_MODEL =
   process.env["NVIDIA_MODEL"]?.trim() || "nvidia/nemotron-3-super-120b-a12b";
+export const KIMI_MODEL = process.env["KIMI_MODEL"]?.trim() || "kimi-k2.6";
+export const KIMI_BASE_URL = process.env["KIMI_BASE_URL"]?.trim() || "https://api.moonshot.ai/v1";
 
 export type SupportedModelId =
-  "openai/gpt-oss-120b" | "nvidia/nemotron-3-super-120b-a12b" | "gemini-3.8-flash";
+  | "openai/gpt-oss-120b"
+  | "nvidia/nemotron-3-super-120b-a12b"
+  | "gemini-3.8-flash"
+  | "kimi-k2.6"
+  | "kimi-k2.7-code";
 
 export interface ModelMetadata {
   id: SupportedModelId;
   name: string;
-  provider: "groq" | "nvidia" | "gemini";
+  provider: "groq" | "nvidia" | "gemini" | "kimi";
   badge: string;
   description: string;
   contextWindow: number;
@@ -56,6 +62,24 @@ export const SUPPORTED_MODELS: Record<SupportedModelId, ModelMetadata> = {
     contextWindow: 1048576,
     reasoningSupport: true,
   },
+  "kimi-k2.6": {
+    id: "kimi-k2.6",
+    name: "Kimi K2.6",
+    provider: "kimi",
+    badge: "262K Long Context",
+    description: "Moonshot AI Kimi K2.6 flagship model with 262K token context & deep reasoning",
+    contextWindow: 262144,
+    reasoningSupport: true,
+  },
+  "kimi-k2.7-code": {
+    id: "kimi-k2.7-code",
+    name: "Kimi K2.7 Code",
+    provider: "kimi",
+    badge: "Code Agent",
+    description: "Moonshot AI specialized coding & algorithmic reasoning model with 262K context",
+    contextWindow: 262144,
+    reasoningSupport: true,
+  },
 };
 
 export interface LLMProvider {
@@ -79,9 +103,23 @@ export class AgentInputError extends Error {
 export class MissingProviderKeyError extends Error {
   constructor() {
     super(
-      "No AI provider credentials configured. Please set NVIDIA_API_KEY, GROQ_API_KEY, or GEMINI_API_KEY.",
+      "No AI provider credentials configured. Please set KIMI_API_KEY, NVIDIA_API_KEY, GROQ_API_KEY, or GEMINI_API_KEY.",
     );
     this.name = "MissingProviderKeyError";
+  }
+}
+
+export class KimiProviderError extends Error {
+  public readonly statusCode: number | undefined;
+
+  override name = "KimiProviderError";
+
+  constructor(message: string, statusCode?: number, cause?: unknown) {
+    super(message);
+    this.statusCode = statusCode;
+    if (cause) {
+      this.cause = cause;
+    }
   }
 }
 
@@ -650,18 +688,221 @@ export class NvidiaProvider implements LLMProvider {
   }
 }
 
+export class KimiProvider implements LLMProvider {
+  constructor(
+    private readonly apiKey: string,
+    public readonly modelName: string = KIMI_MODEL,
+    private readonly baseURL: string = KIMI_BASE_URL,
+  ) {}
+
+  async generateText({
+    systemPrompt,
+    messages,
+    deepThink,
+    abortSignal,
+    maxOutputTokens,
+    temperature,
+  }: {
+    systemPrompt: string;
+    messages: UIMessage[];
+    deepThink: boolean;
+    abortSignal?: AbortSignal;
+    maxOutputTokens?: number;
+    temperature?: number;
+  }): Promise<string> {
+    const startTime = Date.now();
+    try {
+      console.info("[bravura] Dispatching Kimi (Moonshot AI) API request", {
+        provider: "Kimi",
+        model: this.modelName,
+        deepThink,
+      });
+
+      const textMessages = await mapUiMessagesToGroq(messages);
+      const apiMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+        { role: "system", content: systemPrompt },
+        ...textMessages.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        })),
+      ];
+
+      const defaultMaxTokens = deepThink
+        ? AGENT_LIMITS.maxDeepThinkOutputTokens
+        : AGENT_LIMITS.maxOutputTokens;
+
+      const endpoint = `${this.baseURL.replace(/\/+$/, "")}/chat/completions`;
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          model: this.modelName,
+          messages: apiMessages,
+          max_tokens: maxOutputTokens ?? defaultMaxTokens,
+          temperature: temperature ?? (deepThink ? 0.3 : 0.6),
+        }),
+        ...(abortSignal ? { signal: abortSignal } : {}),
+      });
+
+      const durationMs = Date.now() - startTime;
+
+      if (!res.ok) {
+        let errBody: Record<string, unknown> = {};
+        try {
+          errBody = (await res.json()) as Record<string, unknown>;
+        } catch {
+          // non-json response
+        }
+
+        const errObj = (errBody.error as { message?: string; type?: string }) || {};
+        const errorType = (errObj.type as string) || "";
+        const errorDetail =
+          errObj.message ||
+          (errBody.message as string) ||
+          (errBody.detail as string) ||
+          `HTTP ${res.status}`;
+
+        const isQuotaNotice =
+          res.status === 402 ||
+          res.status === 429 ||
+          errorType === "exceeded_current_quota_error" ||
+          errorDetail.toLowerCase().includes("balance") ||
+          errorDetail.toLowerCase().includes("quota");
+
+        if (isQuotaNotice) {
+          console.warn("[bravura] Kimi account notice (insufficient balance / quota)", {
+            provider: "Kimi",
+            model: this.modelName,
+            status: res.status,
+            latencyMs: durationMs,
+            errorType,
+            errorDetail,
+          });
+        } else {
+          console.error("[bravura] Kimi API unexpected error", {
+            provider: "Kimi",
+            model: this.modelName,
+            status: res.status,
+            latencyMs: durationMs,
+            errorType,
+            errorDetail,
+          });
+        }
+
+        if (isQuotaNotice) {
+          throw new KimiProviderError(
+            `Kimi (Moonshot AI) quota exceeded: ${errorDetail}. Please check your Moonshot account balance or choose Nemotron / Gemini / Groq.`,
+            res.status,
+          );
+        }
+
+        if (res.status === 401 || res.status === 403) {
+          throw new KimiProviderError(
+            "The Kimi API key is invalid or unauthorized. Please verify your KIMI_API_KEY.",
+            res.status,
+          );
+        }
+
+        throw new KimiProviderError(`Kimi API error: ${errorDetail}`, res.status);
+      }
+
+      const data = (await res.json()) as {
+        choices?: Array<{
+          message?: { content?: string; reasoning_content?: string };
+        }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+      };
+
+      const choice = data.choices?.[0]?.message;
+      let text = choice?.content?.trim();
+
+      if (!text && choice?.reasoning_content) {
+        text = choice.reasoning_content.trim();
+      }
+
+      if (!text) {
+        throw new KimiProviderError("Kimi model returned an empty response.", 500);
+      }
+
+      console.info("[bravura] Kimi API response received successfully", {
+        provider: "Kimi",
+        model: this.modelName,
+        status: 200,
+        latencyMs: durationMs,
+        tokens: data.usage?.total_tokens,
+      });
+
+      return text;
+    } catch (err) {
+      const durationMs = Date.now() - startTime;
+      if (err instanceof KimiProviderError || err instanceof AgentInputError) {
+        throw err;
+      }
+      const isAbort = (err instanceof Error && err.name === "AbortError") || abortSignal?.aborted;
+      if (isAbort) {
+        console.info("[bravura] Kimi request aborted by user", {
+          provider: "Kimi",
+          model: this.modelName,
+          latencyMs: durationMs,
+        });
+        throw err;
+      }
+
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[bravura] Kimi request execution failed", {
+        provider: "Kimi",
+        model: this.modelName,
+        latencyMs: durationMs,
+        errorMessage: msg,
+      });
+      throw new KimiProviderError(`Kimi request failed: ${msg}`, 500, err);
+    }
+  }
+}
+
 /**
  * Resolves the active LLM Provider based on explicit user preference,
  * model identifier, or configured API credentials.
- * Supports Nemotron 3 Super 120B (NVIDIA), GPT-OSS 120B (Groq), and Gemini 3.8 Flash.
+ * Supports Kimi (Moonshot AI), Nemotron 3 Super 120B (NVIDIA), GPT-OSS 120B (Groq), and Gemini 3.8 Flash.
  */
 export function resolveProvider(preferredModel?: string, preferredProvider?: string): LLMProvider {
   const modelToUse = preferredModel?.trim();
+  const kimiKey = process.env["KIMI_API_KEY"]?.trim() || process.env["MOONSHOT_API_KEY"]?.trim();
   const nvidiaKey = process.env["NVIDIA_API_KEY"]?.trim();
   const groqKey = process.env["GROQ_API_KEY"]?.trim();
   const geminiKey = process.env["GEMINI_API_KEY"]?.trim();
 
-  // 1. Explicit request for NVIDIA or Nemotron
+  // 1. Explicit request for Kimi / Moonshot
+  if (
+    modelToUse === "kimi-k2.6" ||
+    modelToUse === "kimi-k2.7-code" ||
+    modelToUse === "kimi" ||
+    modelToUse?.startsWith("kimi-") ||
+    modelToUse?.startsWith("moonshot-") ||
+    preferredProvider === "kimi" ||
+    preferredProvider === "moonshot"
+  ) {
+    if (kimiKey) {
+      const activeKimiModel =
+        modelToUse === "kimi-k2.7-code"
+          ? "kimi-k2.7-code"
+          : modelToUse && modelToUse.startsWith("kimi-")
+            ? modelToUse
+            : KIMI_MODEL;
+      console.info(
+        `[bravura] Routing AI request directly to Kimi Moonshot API (${activeKimiModel})`,
+      );
+      return new KimiProvider(kimiKey, activeKimiModel);
+    }
+    console.warn("[bravura] Kimi model requested but KIMI_API_KEY missing, attempting fallback...");
+  }
+
+  // 2. Explicit request for NVIDIA or Nemotron
   if (
     modelToUse === "nvidia/nemotron-3-super-120b-a12b" ||
     modelToUse === "nemotron" ||
@@ -684,7 +925,7 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
     );
   }
 
-  // 2. Explicit request for GPT-OSS 120B or Groq provider
+  // 3. Explicit request for GPT-OSS 120B or Groq provider
   if (
     modelToUse === "openai/gpt-oss-120b" ||
     modelToUse === "gpt-oss-120b" ||
@@ -695,11 +936,11 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
       return new GroqProvider(groqKey, "openai/gpt-oss-120b");
     }
     console.warn(
-      "[bravura] GPT-OSS 120B requested but GROQ_API_KEY missing, falling back to Gemini",
+      "[bravura] GPT-OSS 120B requested but GROQ_API_KEY missing, falling back to other providers",
     );
   }
 
-  // 3. Explicit request for Gemini
+  // 4. Explicit request for Gemini
   if (
     modelToUse === "gemini-3.8-flash" ||
     modelToUse === "gemini" ||
@@ -715,17 +956,29 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
     }
   }
 
-  // 4. Default priority if specific model not explicitly forced:
-  // If Groq is configured, use fast GPT-OSS 120B
-  if (groqKey) {
-    console.info(`[bravura] Active model: ${GROQ_MODEL} (Groq Provider)`);
-    return new GroqProvider(groqKey, GROQ_MODEL);
+  // 5. Default priority if specific model not explicitly forced:
+  // If Kimi is configured, use Kimi
+  if (kimiKey && (modelToUse?.startsWith("kimi") || !nvidiaKey)) {
+    console.info(`[bravura] Active model: ${KIMI_MODEL} (Kimi Provider)`);
+    return new KimiProvider(kimiKey, KIMI_MODEL);
   }
 
   // If NVIDIA is configured, use Nemotron
   if (nvidiaKey) {
     console.info(`[bravura] Active model: ${NVIDIA_MODEL} (NVIDIA Provider)`);
     return new NvidiaProvider(nvidiaKey, NVIDIA_MODEL);
+  }
+
+  // If Groq is configured, use fast GPT-OSS 120B
+  if (groqKey) {
+    console.info(`[bravura] Active model: ${GROQ_MODEL} (Groq Provider)`);
+    return new GroqProvider(groqKey, GROQ_MODEL);
+  }
+
+  // Fallback to Kimi if key present
+  if (kimiKey) {
+    console.info(`[bravura] Active model: ${KIMI_MODEL} (Kimi Provider)`);
+    return new KimiProvider(kimiKey, KIMI_MODEL);
   }
 
   // Fallback to Gemini

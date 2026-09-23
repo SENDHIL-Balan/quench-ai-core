@@ -2,7 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import type { UIMessage } from "ai";
 import { runBaseAgent } from "@/lib/agent/base-agent.server";
 import { AGENT_MODES, type ModeId } from "@/lib/agent/modes";
-import { MissingProviderKeyError, NvidiaProviderError } from "@/lib/agent/provider.server";
+import {
+  MissingProviderKeyError,
+  NvidiaProviderError,
+  KimiProviderError,
+} from "@/lib/agent/provider.server";
 
 type ChatBody = {
   messages?: unknown;
@@ -61,9 +65,13 @@ export const Route = createFileRoute("/api/chat")({
         } catch (error) {
           if (error instanceof MissingProviderKeyError) {
             return errorResponse(
-              "Bravura AI isn't connected to a model yet. Add your AI provider key (e.g. NVIDIA_API_KEY, GROQ_API_KEY, or GEMINI_API_KEY) to continue.",
+              "Bravura AI isn't connected to a model yet. Add your AI provider key (e.g. KIMI_API_KEY, NVIDIA_API_KEY, GROQ_API_KEY, or GEMINI_API_KEY) to continue.",
               503,
             );
+          }
+          if (error instanceof KimiProviderError) {
+            const status = error.statusCode || 500;
+            return errorResponse(error.message, status);
           }
           if (error instanceof NvidiaProviderError) {
             const status = error.statusCode || 500;

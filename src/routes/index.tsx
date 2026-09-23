@@ -144,7 +144,9 @@ function BravuraApp() {
   const [pdfStudioOpen, setPdfStudioOpen] = useState(false);
   const [authUser, setAuthUser] = useState<AuthUserProfile | null>(null);
   const [authInitialized, setAuthInitialized] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<SupportedModelId>("openai/gpt-oss-120b");
+  const [selectedModel, setSelectedModel] = useState<SupportedModelId>(
+    "nvidia/nemotron-3-super-120b-a12b",
+  );
 
   useEffect(() => {
     try {
@@ -152,7 +154,9 @@ function BravuraApp() {
       if (
         saved === "gemini-3.8-flash" ||
         saved === "openai/gpt-oss-120b" ||
-        saved === "nvidia/nemotron-3-super-120b-a12b"
+        saved === "nvidia/nemotron-3-super-120b-a12b" ||
+        saved === "kimi-k2.6" ||
+        saved === "kimi-k2.7-code"
       ) {
         setSelectedModel(saved);
       }

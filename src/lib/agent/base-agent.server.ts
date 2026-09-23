@@ -370,17 +370,66 @@ export async function runBaseAgent({
       });
     } catch (primaryError) {
       // Graceful fallback: If primary provider failed (e.g. rate limit, temporary outage) and alternative provider exists
+      const kimiKey =
+        process.env["KIMI_API_KEY"]?.trim() || process.env["MOONSHOT_API_KEY"]?.trim();
       const geminiKey = process.env["GEMINI_API_KEY"]?.trim();
       const groqKey = process.env["GROQ_API_KEY"]?.trim();
       const nvidiaKey = process.env["NVIDIA_API_KEY"]?.trim();
 
+      const isKimiPrimary =
+        model?.includes("kimi") || model?.includes("moonshot") || provider === "kimi";
       const isNvidiaPrimary =
-        model?.includes("nemotron") || model?.includes("nvidia") || provider === "nvidia";
+        !isKimiPrimary &&
+        (model?.includes("nemotron") || model?.includes("nvidia") || provider === "nvidia");
       const isGroqPrimary =
+        !isKimiPrimary &&
         !isNvidiaPrimary &&
         (!model || model.includes("gpt-oss") || model.includes("groq") || provider === "groq");
 
-      if (isNvidiaPrimary) {
+      if (isKimiPrimary) {
+        if (nvidiaKey) {
+          console.info(
+            "[bravura] Kimi key has insufficient balance/quota; gracefully routing request to NVIDIA Nemotron 3 Super 120B",
+          );
+          const fallbackProvider = resolveProvider("nvidia/nemotron-3-super-120b-a12b");
+          text = await fallbackProvider.generateText({
+            systemPrompt: orchestration.finalPrompt,
+            messages,
+            deepThink,
+            ...(abortSignal ? { abortSignal } : {}),
+          });
+          text +=
+            "\n\n> ℹ️ *Fulfilled by **NVIDIA Nemotron 3 Super 120B** because the Kimi (Moonshot AI) key has 0 remaining credits. Recharge your Moonshot AI balance to enable Kimi responses directly.*";
+        } else if (groqKey) {
+          console.info(
+            "[bravura] Kimi key has insufficient balance/quota; gracefully routing request to GPT-OSS 120B on Groq",
+          );
+          const fallbackProvider = resolveProvider("openai/gpt-oss-120b");
+          text = await fallbackProvider.generateText({
+            systemPrompt: orchestration.finalPrompt,
+            messages,
+            deepThink,
+            ...(abortSignal ? { abortSignal } : {}),
+          });
+          text +=
+            "\n\n> ℹ️ *Fulfilled by **GPT-OSS 120B** because the Kimi (Moonshot AI) key has 0 remaining credits. Recharge your Moonshot AI balance to enable Kimi responses directly.*";
+        } else if (geminiKey) {
+          console.info(
+            "[bravura] Kimi key has insufficient balance/quota; gracefully routing request to Gemini 3.8 Flash",
+          );
+          const fallbackProvider = resolveProvider("gemini-3.8-flash");
+          text = await fallbackProvider.generateText({
+            systemPrompt: orchestration.finalPrompt,
+            messages,
+            deepThink,
+            ...(abortSignal ? { abortSignal } : {}),
+          });
+          text +=
+            "\n\n> ℹ️ *Fulfilled by **Gemini 3.8 Flash** because the Kimi (Moonshot AI) key has 0 remaining credits. Recharge your Moonshot AI balance to enable Kimi responses directly.*";
+        } else {
+          throw primaryError;
+        }
+      } else if (isNvidiaPrimary) {
         if (groqKey) {
           console.warn(
             "[bravura] NVIDIA model request failed, executing graceful fallback to GPT-OSS 120B on Groq...",

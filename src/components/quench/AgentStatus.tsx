@@ -60,7 +60,11 @@ export function AgentRunCard({
       ? "Gemini 3.8 Flash (Google)"
       : model === "nvidia/nemotron-3-super-120b-a12b"
         ? "Nemotron 3 Super 120B (NVIDIA)"
-        : "GPT-OSS 120B (Groq)";
+        : model === "kimi-k2.7-code"
+          ? "Kimi K2.7 Code (Moonshot AI)"
+          : model === "kimi-k2.6"
+            ? "Kimi K2.6 (Moonshot AI)"
+            : "GPT-OSS 120B (Groq)";
 
   return (
     <section className="glass-panel rounded-3xl p-4">
