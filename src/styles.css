@@ -55,71 +55,506 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-cosmic-bg: var(--cosmic-background);
+  --color-cosmic-surface: var(--cosmic-surface);
+  --color-cosmic-surface-secondary: var(--cosmic-surface-secondary);
+  --color-cosmic-border: var(--cosmic-border);
+  --color-cosmic-primary: var(--cosmic-primary);
+  --color-cosmic-secondary: var(--cosmic-secondary);
+  --color-cosmic-glow: var(--cosmic-glow);
+  --color-cosmic-text: var(--cosmic-text);
+  --color-cosmic-muted: var(--cosmic-muted);
+  --color-cosmic-particle: var(--cosmic-particle);
   --font-sans: "Sora", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-:root {
+/* ==========================================================================
+   COSMIC DESIGN TOKEN THEMES (10 Distinct Environments)
+   ========================================================================== */
+
+:root,
+[data-cosmic-theme="deep-space"] {
   --radius: 0.9rem;
 
-  --background: oklch(0.13 0.02 240);
-  --foreground: oklch(0.97 0.005 220);
+  --cosmic-background: oklch(0.12 0.02 240);
+  --cosmic-surface: oklch(0.16 0.025 240 / 72%);
+  --cosmic-surface-secondary: oklch(0.2 0.03 240 / 80%);
+  --cosmic-border: oklch(0.98 0.015 220 / 11%);
+  --cosmic-primary: oklch(0.78 0.17 210);
+  --cosmic-secondary: oklch(0.24 0.03 240);
+  --cosmic-glow: 0 0 0 1px oklch(0.78 0.17 210 / 25%), 0 12px 40px -12px oklch(0.78 0.17 210 / 45%);
+  --cosmic-text: oklch(0.97 0.005 220);
+  --cosmic-muted: oklch(0.68 0.02 230);
+  --cosmic-particle: #00f0ff;
 
-  --card: oklch(0.17 0.022 235 / 70%);
-  --card-foreground: oklch(0.97 0.005 220);
-  --popover: oklch(0.17 0.022 235);
-  --popover-foreground: oklch(0.97 0.005 220);
-
-  --panel: oklch(0.17 0.022 235 / 55%);
-  --panel-foreground: oklch(0.97 0.005 220);
-
-  --primary: oklch(0.84 0.16 173);
-  --primary-foreground: oklch(0.16 0.03 200);
-
-  --secondary: oklch(0.24 0.025 235);
-  --secondary-foreground: oklch(0.95 0.005 220);
-
-  --muted: oklch(0.22 0.022 235);
-  --muted-foreground: oklch(0.68 0.018 230);
-
-  --accent: oklch(0.26 0.03 220);
-  --accent-foreground: oklch(0.95 0.005 220);
-
+  --background: var(--cosmic-background);
+  --foreground: var(--cosmic-text);
+  --card: var(--cosmic-surface);
+  --card-foreground: var(--cosmic-text);
+  --popover: var(--cosmic-surface-secondary);
+  --popover-foreground: var(--cosmic-text);
+  --panel: var(--cosmic-surface);
+  --panel-foreground: var(--cosmic-text);
+  --primary: var(--cosmic-primary);
+  --primary-foreground: oklch(0.12 0.02 240);
+  --secondary: var(--cosmic-secondary);
+  --secondary-foreground: var(--cosmic-text);
+  --muted: var(--cosmic-surface-secondary);
+  --muted-foreground: var(--cosmic-muted);
+  --accent: var(--cosmic-secondary);
+  --accent-foreground: var(--cosmic-text);
   --destructive: oklch(0.62 0.2 22);
   --destructive-foreground: oklch(0.98 0.005 220);
+  --border: var(--cosmic-border);
+  --input: var(--cosmic-border);
+  --ring: var(--cosmic-primary);
 
-  --border: oklch(0.98 0.01 200 / 10%);
-  --input: oklch(0.98 0.01 200 / 12%);
-  --ring: oklch(0.84 0.16 173 / 60%);
+  --gradient-brand: linear-gradient(100deg, #0099ff, #00f0ff 48%, #38bdf8);
+  --gradient-panel: linear-gradient(160deg, oklch(0.2 0.03 240 / 55%), oklch(0.14 0.02 245 / 45%));
+  --glow-primary: var(--cosmic-glow);
+  --glow-soft: 0 18px 60px -28px oklch(0.78 0.17 210 / 40%);
 
-  --quench-green: oklch(0.82 0.2 148);
-  --quench-cyan: oklch(0.85 0.14 190);
-  --quench-blue: oklch(0.66 0.17 250);
-
-  --gradient-brand: linear-gradient(
-    100deg,
-    var(--quench-green),
-    var(--quench-cyan) 48%,
-    var(--quench-blue)
-  );
-  --gradient-panel: linear-gradient(160deg, oklch(0.22 0.03 220 / 55%), oklch(0.15 0.02 240 / 45%));
-  --glow-primary:
-    0 0 0 1px oklch(0.84 0.16 173 / 25%), 0 12px 40px -12px oklch(0.84 0.16 173 / 45%);
-  --glow-soft: 0 18px 60px -28px oklch(0.7 0.16 200 / 60%);
-
-  --chart-1: oklch(0.82 0.2 148);
+  --chart-1: oklch(0.78 0.17 210);
   --chart-2: oklch(0.85 0.14 190);
   --chart-3: oklch(0.66 0.17 250);
   --chart-4: oklch(0.75 0.13 210);
   --chart-5: oklch(0.6 0.14 170);
 
-  --sidebar: oklch(0.15 0.02 238 / 75%);
-  --sidebar-foreground: oklch(0.95 0.005 220);
-  --sidebar-primary: oklch(0.84 0.16 173);
-  --sidebar-primary-foreground: oklch(0.16 0.03 200);
-  --sidebar-accent: oklch(0.24 0.03 225);
-  --sidebar-accent-foreground: oklch(0.96 0.005 220);
-  --sidebar-border: oklch(0.98 0.01 200 / 10%);
-  --sidebar-ring: oklch(0.84 0.16 173 / 50%);
+  --sidebar: var(--cosmic-surface);
+  --sidebar-foreground: var(--cosmic-text);
+  --sidebar-primary: var(--cosmic-primary);
+  --sidebar-primary-foreground: oklch(0.12 0.02 240);
+  --sidebar-accent: var(--cosmic-secondary);
+  --sidebar-accent-foreground: var(--cosmic-text);
+  --sidebar-border: var(--cosmic-border);
+  --sidebar-ring: var(--cosmic-primary);
+}
+
+[data-cosmic-theme="nebula"] {
+  --cosmic-background: oklch(0.11 0.04 300);
+  --cosmic-surface: oklch(0.16 0.05 305 / 72%);
+  --cosmic-surface-secondary: oklch(0.2 0.06 305 / 80%);
+  --cosmic-border: oklch(0.98 0.02 300 / 14%);
+  --cosmic-primary: oklch(0.78 0.22 315);
+  --cosmic-secondary: oklch(0.24 0.06 295);
+  --cosmic-glow: 0 0 0 1px oklch(0.78 0.22 315 / 28%), 0 12px 40px -12px oklch(0.78 0.22 315 / 48%);
+  --cosmic-text: oklch(0.98 0.01 300);
+  --cosmic-muted: oklch(0.7 0.03 300);
+  --cosmic-particle: #c084fc;
+
+  --background: var(--cosmic-background);
+  --foreground: var(--cosmic-text);
+  --card: var(--cosmic-surface);
+  --card-foreground: var(--cosmic-text);
+  --popover: var(--cosmic-surface-secondary);
+  --popover-foreground: var(--cosmic-text);
+  --panel: var(--cosmic-surface);
+  --panel-foreground: var(--cosmic-text);
+  --primary: var(--cosmic-primary);
+  --primary-foreground: oklch(0.12 0.03 300);
+  --secondary: var(--cosmic-secondary);
+  --secondary-foreground: var(--cosmic-text);
+  --muted: var(--cosmic-surface-secondary);
+  --muted-foreground: var(--cosmic-muted);
+  --accent: var(--cosmic-secondary);
+  --accent-foreground: var(--cosmic-text);
+  --border: var(--cosmic-border);
+  --input: var(--cosmic-border);
+  --ring: var(--cosmic-primary);
+
+  --gradient-brand: linear-gradient(100deg, #c084fc, #ec4899 48%, #06b6d4);
+  --gradient-panel: linear-gradient(160deg, oklch(0.22 0.06 305 / 55%), oklch(0.14 0.04 300 / 45%));
+  --glow-primary: var(--cosmic-glow);
+  --glow-soft: 0 18px 60px -28px oklch(0.78 0.22 315 / 42%);
+
+  --sidebar: var(--cosmic-surface);
+  --sidebar-foreground: var(--cosmic-text);
+  --sidebar-primary: var(--cosmic-primary);
+  --sidebar-primary-foreground: oklch(0.12 0.03 300);
+  --sidebar-accent: var(--cosmic-secondary);
+  --sidebar-accent-foreground: var(--cosmic-text);
+  --sidebar-border: var(--cosmic-border);
+  --sidebar-ring: var(--cosmic-primary);
+}
+
+[data-cosmic-theme="galaxy"] {
+  --cosmic-background: oklch(0.11 0.03 270);
+  --cosmic-surface: oklch(0.15 0.035 265 / 72%);
+  --cosmic-surface-secondary: oklch(0.19 0.045 265 / 80%);
+  --cosmic-border: oklch(0.98 0.015 270 / 12%);
+  --cosmic-primary: oklch(0.76 0.19 265);
+  --cosmic-secondary: oklch(0.23 0.04 270);
+  --cosmic-glow: 0 0 0 1px oklch(0.76 0.19 265 / 25%), 0 12px 40px -12px oklch(0.76 0.19 265 / 45%);
+  --cosmic-text: oklch(0.97 0.005 260);
+  --cosmic-muted: oklch(0.68 0.02 265);
+  --cosmic-particle: #818cf8;
+
+  --background: var(--cosmic-background);
+  --foreground: var(--cosmic-text);
+  --card: var(--cosmic-surface);
+  --card-foreground: var(--cosmic-text);
+  --popover: var(--cosmic-surface-secondary);
+  --popover-foreground: var(--cosmic-text);
+  --panel: var(--cosmic-surface);
+  --panel-foreground: var(--cosmic-text);
+  --primary: var(--cosmic-primary);
+  --primary-foreground: oklch(0.12 0.03 270);
+  --secondary: var(--cosmic-secondary);
+  --secondary-foreground: var(--cosmic-text);
+  --muted: var(--cosmic-surface-secondary);
+  --muted-foreground: var(--cosmic-muted);
+  --accent: var(--cosmic-secondary);
+  --accent-foreground: var(--cosmic-text);
+  --border: var(--cosmic-border);
+  --input: var(--cosmic-border);
+  --ring: var(--cosmic-primary);
+
+  --gradient-brand: linear-gradient(100deg, #3b82f6, #8b5cf6 50%, #a855f7);
+  --gradient-panel: linear-gradient(160deg, oklch(0.2 0.04 265 / 55%), oklch(0.14 0.03 270 / 45%));
+  --glow-primary: var(--cosmic-glow);
+  --glow-soft: 0 18px 60px -28px oklch(0.76 0.19 265 / 40%);
+
+  --sidebar: var(--cosmic-surface);
+  --sidebar-foreground: var(--cosmic-text);
+  --sidebar-primary: var(--cosmic-primary);
+  --sidebar-primary-foreground: oklch(0.12 0.03 270);
+  --sidebar-accent: var(--cosmic-secondary);
+  --sidebar-accent-foreground: var(--cosmic-text);
+  --sidebar-border: var(--cosmic-border);
+  --sidebar-ring: var(--cosmic-primary);
+}
+
+[data-cosmic-theme="aurora-space"] {
+  --cosmic-background: oklch(0.11 0.03 180);
+  --cosmic-surface: oklch(0.15 0.035 175 / 72%);
+  --cosmic-surface-secondary: oklch(0.19 0.045 175 / 80%);
+  --cosmic-border: oklch(0.98 0.02 170 / 12%);
+  --cosmic-primary: oklch(0.82 0.18 165);
+  --cosmic-secondary: oklch(0.22 0.04 175);
+  --cosmic-glow: 0 0 0 1px oklch(0.82 0.18 165 / 26%), 0 12px 40px -12px oklch(0.82 0.18 165 / 45%);
+  --cosmic-text: oklch(0.98 0.01 170);
+  --cosmic-muted: oklch(0.7 0.025 175);
+  --cosmic-particle: #34d399;
+
+  --background: var(--cosmic-background);
+  --foreground: var(--cosmic-text);
+  --card: var(--cosmic-surface);
+  --card-foreground: var(--cosmic-text);
+  --popover: var(--cosmic-surface-secondary);
+  --popover-foreground: var(--cosmic-text);
+  --panel: var(--cosmic-surface);
+  --panel-foreground: var(--cosmic-text);
+  --primary: var(--cosmic-primary);
+  --primary-foreground: oklch(0.12 0.03 175);
+  --secondary: var(--cosmic-secondary);
+  --secondary-foreground: var(--cosmic-text);
+  --muted: var(--cosmic-surface-secondary);
+  --muted-foreground: var(--cosmic-muted);
+  --accent: var(--cosmic-secondary);
+  --accent-foreground: var(--cosmic-text);
+  --border: var(--cosmic-border);
+  --input: var(--cosmic-border);
+  --ring: var(--cosmic-primary);
+
+  --gradient-brand: linear-gradient(100deg, #10b981, #06b6d4 48%, #38bdf8);
+  --gradient-panel: linear-gradient(160deg, oklch(0.2 0.04 175 / 55%), oklch(0.14 0.03 180 / 45%));
+  --glow-primary: var(--cosmic-glow);
+  --glow-soft: 0 18px 60px -28px oklch(0.82 0.18 165 / 40%);
+
+  --sidebar: var(--cosmic-surface);
+  --sidebar-foreground: var(--cosmic-text);
+  --sidebar-primary: var(--cosmic-primary);
+  --sidebar-primary-foreground: oklch(0.12 0.03 175);
+  --sidebar-accent: var(--cosmic-secondary);
+  --sidebar-accent-foreground: var(--cosmic-text);
+  --sidebar-border: var(--cosmic-border);
+  --sidebar-ring: var(--cosmic-primary);
+}
+
+[data-cosmic-theme="solar-flare"] {
+  --cosmic-background: oklch(0.12 0.03 45);
+  --cosmic-surface: oklch(0.16 0.035 45 / 72%);
+  --cosmic-surface-secondary: oklch(0.2 0.045 45 / 80%);
+  --cosmic-border: oklch(0.98 0.025 55 / 13%);
+  --cosmic-primary: oklch(0.79 0.19 55);
+  --cosmic-secondary: oklch(0.24 0.04 50);
+  --cosmic-glow: 0 0 0 1px oklch(0.79 0.19 55 / 28%), 0 12px 40px -12px oklch(0.79 0.19 55 / 46%);
+  --cosmic-text: oklch(0.98 0.01 55);
+  --cosmic-muted: oklch(0.7 0.03 55);
+  --cosmic-particle: #fbbf24;
+
+  --background: var(--cosmic-background);
+  --foreground: var(--cosmic-text);
+  --card: var(--cosmic-surface);
+  --card-foreground: var(--cosmic-text);
+  --popover: var(--cosmic-surface-secondary);
+  --popover-foreground: var(--cosmic-text);
+  --panel: var(--cosmic-surface);
+  --panel-foreground: var(--cosmic-text);
+  --primary: var(--cosmic-primary);
+  --primary-foreground: oklch(0.13 0.03 45);
+  --secondary: var(--cosmic-secondary);
+  --secondary-foreground: var(--cosmic-text);
+  --muted: var(--cosmic-surface-secondary);
+  --muted-foreground: var(--cosmic-muted);
+  --accent: var(--cosmic-secondary);
+  --accent-foreground: var(--cosmic-text);
+  --border: var(--cosmic-border);
+  --input: var(--cosmic-border);
+  --ring: var(--cosmic-primary);
+
+  --gradient-brand: linear-gradient(100deg, #f97316, #eab308 50%, #f59e0b);
+  --gradient-panel: linear-gradient(160deg, oklch(0.21 0.04 45 / 55%), oklch(0.14 0.03 45 / 45%));
+  --glow-primary: var(--cosmic-glow);
+  --glow-soft: 0 18px 60px -28px oklch(0.79 0.19 55 / 40%);
+
+  --sidebar: var(--cosmic-surface);
+  --sidebar-foreground: var(--cosmic-text);
+  --sidebar-primary: var(--cosmic-primary);
+  --sidebar-primary-foreground: oklch(0.13 0.03 45);
+  --sidebar-accent: var(--cosmic-secondary);
+  --sidebar-accent-foreground: var(--cosmic-text);
+  --sidebar-border: var(--cosmic-border);
+  --sidebar-ring: var(--cosmic-primary);
+}
+
+[data-cosmic-theme="void"] {
+  --cosmic-background: oklch(0.08 0.005 280);
+  --cosmic-surface: oklch(0.12 0.01 280 / 72%);
+  --cosmic-surface-secondary: oklch(0.15 0.015 280 / 80%);
+  --cosmic-border: oklch(0.98 0.01 280 / 10%);
+  --cosmic-primary: oklch(0.74 0.18 290);
+  --cosmic-secondary: oklch(0.18 0.02 280);
+  --cosmic-glow: 0 0 0 1px oklch(0.74 0.18 290 / 22%), 0 12px 40px -12px oklch(0.74 0.18 290 / 38%);
+  --cosmic-text: oklch(0.95 0.005 280);
+  --cosmic-muted: oklch(0.62 0.015 280);
+  --cosmic-particle: #a78bfa;
+
+  --background: var(--cosmic-background);
+  --foreground: var(--cosmic-text);
+  --card: var(--cosmic-surface);
+  --card-foreground: var(--cosmic-text);
+  --popover: var(--cosmic-surface-secondary);
+  --popover-foreground: var(--cosmic-text);
+  --panel: var(--cosmic-surface);
+  --panel-foreground: var(--cosmic-text);
+  --primary: var(--cosmic-primary);
+  --primary-foreground: oklch(0.1 0.01 280);
+  --secondary: var(--cosmic-secondary);
+  --secondary-foreground: var(--cosmic-text);
+  --muted: var(--cosmic-surface-secondary);
+  --muted-foreground: var(--cosmic-muted);
+  --accent: var(--cosmic-secondary);
+  --accent-foreground: var(--cosmic-text);
+  --border: var(--cosmic-border);
+  --input: var(--cosmic-border);
+  --ring: var(--cosmic-primary);
+
+  --gradient-brand: linear-gradient(100deg, #8b5cf6, #7c3aed 50%, #6366f1);
+  --gradient-panel: linear-gradient(160deg, oklch(0.16 0.015 280 / 55%), oklch(0.1 0.01 280 / 45%));
+  --glow-primary: var(--cosmic-glow);
+  --glow-soft: 0 18px 60px -28px oklch(0.74 0.18 290 / 35%);
+
+  --sidebar: var(--cosmic-surface);
+  --sidebar-foreground: var(--cosmic-text);
+  --sidebar-primary: var(--cosmic-primary);
+  --sidebar-primary-foreground: oklch(0.1 0.01 280);
+  --sidebar-accent: var(--cosmic-secondary);
+  --sidebar-accent-foreground: var(--cosmic-text);
+  --sidebar-border: var(--cosmic-border);
+  --sidebar-ring: var(--cosmic-primary);
+}
+
+[data-cosmic-theme="quantum"] {
+  --cosmic-background: oklch(0.11 0.03 245);
+  --cosmic-surface: oklch(0.15 0.035 240 / 72%);
+  --cosmic-surface-secondary: oklch(0.19 0.045 240 / 80%);
+  --cosmic-border: oklch(0.98 0.02 230 / 14%);
+  --cosmic-primary: oklch(0.82 0.17 205);
+  --cosmic-secondary: oklch(0.22 0.04 245);
+  --cosmic-glow: 0 0 0 1px oklch(0.82 0.17 205 / 28%), 0 12px 40px -12px oklch(0.82 0.17 205 / 50%);
+  --cosmic-text: oklch(0.98 0.01 220);
+  --cosmic-muted: oklch(0.7 0.025 235);
+  --cosmic-particle: #00f0ff;
+
+  --background: var(--cosmic-background);
+  --foreground: var(--cosmic-text);
+  --card: var(--cosmic-surface);
+  --card-foreground: var(--cosmic-text);
+  --popover: var(--cosmic-surface-secondary);
+  --popover-foreground: var(--cosmic-text);
+  --panel: var(--cosmic-surface);
+  --panel-foreground: var(--cosmic-text);
+  --primary: var(--cosmic-primary);
+  --primary-foreground: oklch(0.12 0.03 245);
+  --secondary: var(--cosmic-secondary);
+  --secondary-foreground: var(--cosmic-text);
+  --muted: var(--cosmic-surface-secondary);
+  --muted-foreground: var(--cosmic-muted);
+  --accent: var(--cosmic-secondary);
+  --accent-foreground: var(--cosmic-text);
+  --border: var(--cosmic-border);
+  --input: var(--cosmic-border);
+  --ring: var(--cosmic-primary);
+
+  --gradient-brand: linear-gradient(100deg, #00f0ff, #818cf8 48%, #c084fc);
+  --gradient-panel: linear-gradient(160deg, oklch(0.2 0.04 240 / 55%), oklch(0.14 0.03 245 / 45%));
+  --glow-primary: var(--cosmic-glow);
+  --glow-soft: 0 18px 60px -28px oklch(0.82 0.17 205 / 42%);
+
+  --sidebar: var(--cosmic-surface);
+  --sidebar-foreground: var(--cosmic-text);
+  --sidebar-primary: var(--cosmic-primary);
+  --sidebar-primary-foreground: oklch(0.12 0.03 245);
+  --sidebar-accent: var(--cosmic-secondary);
+  --sidebar-accent-foreground: var(--cosmic-text);
+  --sidebar-border: var(--cosmic-border);
+  --sidebar-ring: var(--cosmic-primary);
+}
+
+[data-cosmic-theme="cosmic-ocean"] {
+  --cosmic-background: oklch(0.11 0.035 215);
+  --cosmic-surface: oklch(0.15 0.04 210 / 72%);
+  --cosmic-surface-secondary: oklch(0.19 0.05 210 / 80%);
+  --cosmic-border: oklch(0.98 0.02 210 / 12%);
+  --cosmic-primary: oklch(0.8 0.16 195);
+  --cosmic-secondary: oklch(0.22 0.04 215);
+  --cosmic-glow: 0 0 0 1px oklch(0.8 0.16 195 / 26%), 0 12px 40px -12px oklch(0.8 0.16 195 / 44%);
+  --cosmic-text: oklch(0.97 0.01 210);
+  --cosmic-muted: oklch(0.68 0.025 215);
+  --cosmic-particle: #22d3ee;
+
+  --background: var(--cosmic-background);
+  --foreground: var(--cosmic-text);
+  --card: var(--cosmic-surface);
+  --card-foreground: var(--cosmic-text);
+  --popover: var(--cosmic-surface-secondary);
+  --popover-foreground: var(--cosmic-text);
+  --panel: var(--cosmic-surface);
+  --panel-foreground: var(--cosmic-text);
+  --primary: var(--cosmic-primary);
+  --primary-foreground: oklch(0.12 0.03 215);
+  --secondary: var(--cosmic-secondary);
+  --secondary-foreground: var(--cosmic-text);
+  --muted: var(--cosmic-surface-secondary);
+  --muted-foreground: var(--cosmic-muted);
+  --accent: var(--cosmic-secondary);
+  --accent-foreground: var(--cosmic-text);
+  --border: var(--cosmic-border);
+  --input: var(--cosmic-border);
+  --ring: var(--cosmic-primary);
+
+  --gradient-brand: linear-gradient(100deg, #06b6d4, #14b8a6 48%, #0284c7);
+  --gradient-panel: linear-gradient(160deg, oklch(0.2 0.04 210 / 55%), oklch(0.14 0.03 215 / 45%));
+  --glow-primary: var(--cosmic-glow);
+  --glow-soft: 0 18px 60px -28px oklch(0.8 0.16 195 / 40%);
+
+  --sidebar: var(--cosmic-surface);
+  --sidebar-foreground: var(--cosmic-text);
+  --sidebar-primary: var(--cosmic-primary);
+  --sidebar-primary-foreground: oklch(0.12 0.03 215);
+  --sidebar-accent: var(--cosmic-secondary);
+  --sidebar-accent-foreground: var(--cosmic-text);
+  --sidebar-border: var(--cosmic-border);
+  --sidebar-ring: var(--cosmic-primary);
+}
+
+[data-cosmic-theme="supernova"] {
+  --cosmic-background: oklch(0.11 0.035 320);
+  --cosmic-surface: oklch(0.15 0.045 325 / 72%);
+  --cosmic-surface-secondary: oklch(0.19 0.055 325 / 80%);
+  --cosmic-border: oklch(0.98 0.02 330 / 14%);
+  --cosmic-primary: oklch(0.77 0.22 340);
+  --cosmic-secondary: oklch(0.24 0.05 320);
+  --cosmic-glow: 0 0 0 1px oklch(0.77 0.22 340 / 30%), 0 12px 40px -12px oklch(0.77 0.22 340 / 50%);
+  --cosmic-text: oklch(0.98 0.01 330);
+  --cosmic-muted: oklch(0.7 0.025 330);
+  --cosmic-particle: #f472b6;
+
+  --background: var(--cosmic-background);
+  --foreground: var(--cosmic-text);
+  --card: var(--cosmic-surface);
+  --card-foreground: var(--cosmic-text);
+  --popover: var(--cosmic-surface-secondary);
+  --popover-foreground: var(--cosmic-text);
+  --panel: var(--cosmic-surface);
+  --panel-foreground: var(--cosmic-text);
+  --primary: var(--cosmic-primary);
+  --primary-foreground: oklch(0.12 0.03 320);
+  --secondary: var(--cosmic-secondary);
+  --secondary-foreground: var(--cosmic-text);
+  --muted: var(--cosmic-surface-secondary);
+  --muted-foreground: var(--cosmic-muted);
+  --accent: var(--cosmic-secondary);
+  --accent-foreground: var(--cosmic-text);
+  --border: var(--cosmic-border);
+  --input: var(--cosmic-border);
+  --ring: var(--cosmic-primary);
+
+  --gradient-brand: linear-gradient(100deg, #f43f5e, #a855f7 48%, #38bdf8);
+  --gradient-panel: linear-gradient(160deg, oklch(0.21 0.05 325 / 55%), oklch(0.14 0.03 320 / 45%));
+  --glow-primary: var(--cosmic-glow);
+  --glow-soft: 0 18px 60px -28px oklch(0.77 0.22 340 / 42%);
+
+  --sidebar: var(--cosmic-surface);
+  --sidebar-foreground: var(--cosmic-text);
+  --sidebar-primary: var(--cosmic-primary);
+  --sidebar-primary-foreground: oklch(0.12 0.03 320);
+  --sidebar-accent: var(--cosmic-secondary);
+  --sidebar-accent-foreground: var(--cosmic-text);
+  --sidebar-border: var(--cosmic-border);
+  --sidebar-ring: var(--cosmic-primary);
+}
+
+[data-cosmic-theme="stellar"] {
+  --cosmic-background: oklch(0.13 0.015 240);
+  --cosmic-surface: oklch(0.17 0.02 240 / 72%);
+  --cosmic-surface-secondary: oklch(0.21 0.025 240 / 80%);
+  --cosmic-border: oklch(0.98 0.01 240 / 11%);
+  --cosmic-primary: oklch(0.85 0.09 230);
+  --cosmic-secondary: oklch(0.24 0.02 240);
+  --cosmic-glow: 0 0 0 1px oklch(0.85 0.09 230 / 24%), 0 12px 40px -12px oklch(0.85 0.09 230 / 42%);
+  --cosmic-text: oklch(0.99 0.002 240);
+  --cosmic-muted: oklch(0.72 0.015 240);
+  --cosmic-particle: #bae6fd;
+
+  --background: var(--cosmic-background);
+  --foreground: var(--cosmic-text);
+  --card: var(--cosmic-surface);
+  --card-foreground: var(--cosmic-text);
+  --popover: var(--cosmic-surface-secondary);
+  --popover-foreground: var(--cosmic-text);
+  --panel: var(--cosmic-surface);
+  --panel-foreground: var(--cosmic-text);
+  --primary: var(--cosmic-primary);
+  --primary-foreground: oklch(0.13 0.02 240);
+  --secondary: var(--cosmic-secondary);
+  --secondary-foreground: var(--cosmic-text);
+  --muted: var(--cosmic-surface-secondary);
+  --muted-foreground: var(--cosmic-muted);
+  --accent: var(--cosmic-secondary);
+  --accent-foreground: var(--cosmic-text);
+  --border: var(--cosmic-border);
+  --input: var(--cosmic-border);
+  --ring: var(--cosmic-primary);
+
+  --gradient-brand: linear-gradient(100deg, #93c5fd, #e0f2fe 48%, #38bdf8);
+  --gradient-panel: linear-gradient(
+    160deg,
+    oklch(0.21 0.025 240 / 55%),
+    oklch(0.15 0.02 240 / 45%)
+  );
+  --glow-primary: var(--cosmic-glow);
+  --glow-soft: 0 18px 60px -28px oklch(0.85 0.09 230 / 38%);
+
+  --sidebar: var(--cosmic-surface);
+  --sidebar-foreground: var(--cosmic-text);
+  --sidebar-primary: var(--cosmic-primary);
+  --sidebar-primary-foreground: oklch(0.13 0.02 240);
+  --sidebar-accent: var(--cosmic-secondary);
+  --sidebar-accent-foreground: var(--cosmic-text);
+  --sidebar-border: var(--cosmic-border);
+  --sidebar-ring: var(--cosmic-primary);
 }
 
 .dark {

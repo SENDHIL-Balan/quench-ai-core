@@ -13,6 +13,9 @@ import {
   Menu,
   X,
   Radio,
+  Orbit,
+  Check,
+  Palette,
 } from "lucide-react";
 import { CosmicBackground } from "@/components/quench/CosmicBackground";
 import { Sidebar } from "@/components/quench/Sidebar";
@@ -20,6 +23,8 @@ import { cn } from "@/lib/utils";
 import { PdfStudioModal } from "@/components/quench/PdfStudioModal";
 import { ImageStudioModal } from "@/components/quench/ImageStudioModal";
 import { LiveVoiceAgentModal } from "@/components/quench/LiveVoiceAgentModal";
+import { CosmicThemeGalleryModal } from "@/components/quench/CosmicThemeGalleryModal";
+import { useCosmicTheme } from "@/lib/theme/CosmicThemeContext";
 import type { VoiceSetting } from "@/components/quench/VoiceAgentModal";
 
 export const Route = createFileRoute("/tools")({
@@ -56,6 +61,8 @@ function ToolsPage() {
   const [liveVoiceOpen, setLiveVoiceOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [voiceSetting, setVoiceSetting] = useState<VoiceSetting>(DEFAULT_VOICE_SETTING);
+  const [cosmicModalOpen, setCosmicModalOpen] = useState(false);
+  const { theme, setTheme, themes, currentThemeMeta } = useCosmicTheme();
 
   const handleBack = () => {
     void router.navigate({ to: "/" });
@@ -358,6 +365,101 @@ function ToolsPage() {
             </div>
           </section>
 
+          {/* Cosmic Environment & Themes Settings Section */}
+          <section className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs tracking-[0.2em] text-cyan-200/60 uppercase">
+                  Appearance & Atmosphere
+                </p>
+                <h2 className="text-lg font-semibold text-foreground mt-0.5">
+                  Cosmic Universe Themes
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCosmicModalOpen(true)}
+                className="text-xs font-medium text-cyan-300 hover:text-cyan-200 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/20 transition-colors cursor-pointer"
+              >
+                <Orbit className="size-3.5" />
+                View 10 Realms Gallery
+              </button>
+            </div>
+
+            <div className="glass-panel rounded-2xl p-5 border-border/80 relative overflow-hidden">
+              <div
+                className="absolute inset-0 opacity-20 pointer-events-none transition-all duration-700"
+                style={{ background: currentThemeMeta.previewGradient }}
+              />
+
+              <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
+                <div className="flex items-center gap-3">
+                  <span
+                    className="size-4 rounded-full shrink-0 ring-2 ring-white/20 shadow-md"
+                    style={{
+                      background: currentThemeMeta.accents[0],
+                      boxShadow: `0 0 12px ${currentThemeMeta.accents[0]}`,
+                    }}
+                  />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-semibold text-foreground">
+                        {currentThemeMeta.name}
+                      </h3>
+                      <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
+                        Active
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {currentThemeMeta.tagline} · {currentThemeMeta.accentLabels}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-xs text-muted-foreground/90 max-w-md italic">
+                  "{currentThemeMeta.atmosphere}"
+                </p>
+              </div>
+
+              {/* Theme Quick Switcher Grid */}
+              <div className="relative z-10 grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-4">
+                {themes.map((item) => {
+                  const isCurrent = theme === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setTheme(item.id)}
+                      className={cn(
+                        "relative flex flex-col items-start gap-1.5 p-3 rounded-xl border text-left transition-all cursor-pointer overflow-hidden group",
+                        isCurrent
+                          ? "border-primary bg-primary/15 ring-1 ring-primary/40 shadow-sm"
+                          : "border-white/10 hover:border-white/25 hover:bg-white/[0.04] bg-card/50",
+                      )}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex -space-x-1 items-center">
+                          <span
+                            className="size-3 rounded-full border border-black/40"
+                            style={{ background: item.accents[0] }}
+                          />
+                          <span
+                            className="size-3 rounded-full border border-black/40"
+                            style={{ background: item.accents[1] }}
+                          />
+                        </div>
+                        {isCurrent && <Check className="size-3 text-primary shrink-0" />}
+                      </div>
+                      <span className="text-xs font-medium text-foreground tracking-tight line-clamp-1">
+                        {item.name}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+
           {/* Reasoning & Search Section */}
           <section className="flex flex-col gap-3 pb-8">
             <p className="text-xs tracking-[0.2em] text-cyan-200/60 uppercase">
@@ -389,6 +491,7 @@ function ToolsPage() {
 
       {pdfOpen && <PdfStudioModal onClose={() => setPdfOpen(false)} />}
       {imageOpen && <ImageStudioModal onClose={() => setImageOpen(false)} />}
+      <CosmicThemeGalleryModal open={cosmicModalOpen} onOpenChange={setCosmicModalOpen} />
       {liveVoiceOpen && (
         <LiveVoiceAgentModal
           isOpen={liveVoiceOpen}

@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import { CosmicThemeProvider } from "@/lib/theme/CosmicThemeContext";
 
 import appCss from "../styles.css?url";
 
@@ -122,6 +123,11 @@ function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('bravura_cosmic_theme');if(t){document.documentElement.setAttribute('data-cosmic-theme',t);}}catch(e){}})();`,
+          }}
+        />
         <HeadContent />
       </head>
       <body>
@@ -137,9 +143,11 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
-      <Toaster position="top-right" richColors />
+      <CosmicThemeProvider>
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <Outlet />
+        <Toaster position="top-right" richColors />
+      </CosmicThemeProvider>
     </QueryClientProvider>
   );
 }

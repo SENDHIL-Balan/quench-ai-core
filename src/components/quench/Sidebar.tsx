@@ -13,6 +13,7 @@ import {
   Loader2,
   Sliders,
   Volume2,
+  Orbit,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -20,6 +21,8 @@ import { toast } from "sonner";
 import { QuenchOrb } from "./QuenchOrb";
 import { cn } from "@/lib/utils";
 import { signInWithGoogle, signOutUser, onAuthState, type AuthUserProfile } from "@/lib/firebase";
+import { useCosmicTheme } from "@/lib/theme/CosmicThemeContext";
+import { CosmicThemeGalleryModal } from "./CosmicThemeGalleryModal";
 
 const NAV = [
   { label: "Explore", icon: Compass, to: null },
@@ -50,6 +53,8 @@ export function Sidebar({
   const [internalUser, setInternalUser] = useState<AuthUserProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [internalAuthInitialized, setInternalAuthInitialized] = useState(false);
+  const [themeModalOpen, setThemeModalOpen] = useState(false);
+  const { currentThemeMeta } = useCosmicTheme();
 
   useEffect(() => {
     // If props are passed from parent, do not duplicate listener
@@ -164,6 +169,25 @@ export function Sidebar({
 
         <button
           type="button"
+          onClick={() => setThemeModalOpen(true)}
+          className="text-muted-foreground hover:bg-accent/60 hover:text-foreground flex items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors cursor-pointer group"
+          title="Change cosmic theme"
+        >
+          <span className="flex items-center gap-3">
+            <Orbit className="size-[18px] text-cyan-400 group-hover:rotate-45 transition-transform" />
+            <span>Cosmic Themes</span>
+          </span>
+          <span
+            className="size-2 rounded-full ring-1 ring-white/20"
+            style={{
+              background: currentThemeMeta.accents[0],
+              boxShadow: `0 0 6px ${currentThemeMeta.accents[0]}`,
+            }}
+          />
+        </button>
+
+        <button
+          type="button"
           onClick={onHistory}
           className="text-muted-foreground hover:bg-accent/60 hover:text-foreground flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors cursor-pointer"
         >
@@ -262,6 +286,8 @@ export function Sidebar({
           </div>
         )}
       </div>
+
+      <CosmicThemeGalleryModal open={themeModalOpen} onOpenChange={setThemeModalOpen} />
     </aside>
   );
 }

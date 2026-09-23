@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { Menu, Search, X } from "lucide-react";
+import { CosmicThemeButton } from "./CosmicThemeButton";
 
 export function TopBar({
   onToggleSidebar,
@@ -111,6 +112,11 @@ export function TopBar({
             >
               <Search className="size-5" />
             </button>
+          </div>
+
+          {/* Right Top Actions: Cosmic Theme Switcher */}
+          <div className="flex items-center gap-2 shrink-0">
+            <CosmicThemeButton />
           </div>
         </div>
       )}
