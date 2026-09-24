@@ -110,7 +110,10 @@ export function VoiceAgentPanel({
           const sampleIndex = Math.floor((i / numBars) * (freqData.length * 0.7));
           const val = freqData[sampleIndex] ?? 0;
           const normalized = val / 255;
-          barHeight = Math.max(4, normalized * (height * 0.85) * (0.4 + volumeLevel * 0.6));
+          barHeight = Math.max(
+            4,
+            normalized * (height * 0.85) * (0.4 + volumeLevelRef.current * 0.6),
+          );
         } else if (state === "transcribing") {
           // Animated shimmer wave while transcribing
           const t = Date.now() / 200;
@@ -166,7 +169,7 @@ export function VoiceAgentPanel({
         if (isLive && freqData && freqData.length > 0) {
           const sampleIndex = Math.floor((i / points) * (freqData.length * 0.5));
           const val = freqData[sampleIndex] ?? 0;
-          v = 0.5 + ((val - 128) / 255) * (0.8 + volumeLevel);
+          v = 0.5 + ((val - 128) / 255) * (0.8 + volumeLevelRef.current);
         } else {
           const t = Date.now() / 600;
           v = 0.5 + Math.sin(t + i * 0.15) * 0.08;
@@ -184,7 +187,7 @@ export function VoiceAgentPanel({
     }
 
     animFrameRef.current = requestAnimationFrame(renderWaveform);
-  }, [state, volumeLevel, waveformMode]);
+  }, [state, waveformMode]);
 
   // Start animation loop
   useEffect(() => {
@@ -205,7 +208,8 @@ export function VoiceAgentPanel({
       silenceMs: autoSilenceStop ? 2000 : 0,
       silenceThreshold: 0.02,
       onLevel: (level) => {
-        setVolumeLevel(level);
+        volumeLevelRef.current = level;
+        setVolumeLevel((prev) => (Math.abs(prev - level) > 0.05 ? level : prev));
       },
       onFrequencyData: (freq) => {
         freqDataRef.current = freq;

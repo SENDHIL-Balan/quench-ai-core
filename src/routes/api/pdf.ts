@@ -138,30 +138,37 @@ function parseAndSanitizePdfJson(rawText: string, fallbackPrompt: string): Gener
 
 function sanitizeDoc(obj: Record<string, unknown>, prompt: string): GeneratedPdfContent {
   const title =
-    typeof obj.title === "string" && obj.title.trim() ? obj.title.trim() : prompt.slice(0, 60);
+    typeof obj["title"] === "string" && (obj["title"] as string).trim()
+      ? (obj["title"] as string).trim()
+      : prompt.slice(0, 60);
 
   const sections: GeneratedPdfContent["sections"] = [];
-  if (Array.isArray(obj.sections) && obj.sections.length > 0) {
-    for (let i = 0; i < obj.sections.length; i++) {
-      const s = obj.sections[i] as Record<string, unknown>;
-      sections.push({
+  if (Array.isArray(obj["sections"]) && (obj["sections"] as unknown[]).length > 0) {
+    const rawSections = obj["sections"] as unknown[];
+    for (let i = 0; i < rawSections.length; i++) {
+      const s = rawSections[i] as Record<string, unknown> | undefined;
+      const sectionItem: GeneratedPdfContent["sections"][number] = {
         heading:
-          typeof s?.heading === "string" && s.heading.trim()
-            ? s.heading.trim()
+          typeof s?.["heading"] === "string" && (s["heading"] as string).trim()
+            ? (s["heading"] as string).trim()
             : `Section ${i + 1}`,
-        content: typeof s?.content === "string" ? s.content : "",
-        bullets: Array.isArray(s?.bullets)
-          ? (s.bullets.filter((b) => typeof b === "string") as string[])
+        content: typeof s?.["content"] === "string" ? (s["content"] as string) : "",
+        bullets: Array.isArray(s?.["bullets"])
+          ? ((s["bullets"] as unknown[]).filter((b) => typeof b === "string") as string[])
           : [],
-        table:
-          s?.table &&
-          typeof s.table === "object" &&
-          Array.isArray((s.table as { headers?: unknown[] }).headers) &&
-          Array.isArray((s.table as { rows?: unknown[][] }).rows)
-            ? (s.table as { headers: string[]; rows: string[][] })
-            : undefined,
-        callout: typeof s?.callout === "string" ? s.callout : undefined,
-      });
+      };
+      if (
+        s?.["table"] &&
+        typeof s["table"] === "object" &&
+        Array.isArray((s["table"] as { headers?: unknown[] }).headers) &&
+        Array.isArray((s["table"] as { rows?: unknown[][] }).rows)
+      ) {
+        sectionItem.table = s["table"] as { headers: string[]; rows: string[][] };
+      }
+      if (typeof s?.["callout"] === "string") {
+        sectionItem.callout = s["callout"] as string;
+      }
+      sections.push(sectionItem);
     }
   }
 
@@ -169,49 +176,60 @@ function sanitizeDoc(obj: Record<string, unknown>, prompt: string): GeneratedPdf
     sections.push({
       heading: "Overview",
       content:
-        typeof obj.summary === "string" ? obj.summary : "Document draft produced by Bravura AI.",
+        typeof obj["summary"] === "string"
+          ? (obj["summary"] as string)
+          : "Document draft produced by Bravura AI.",
     });
   }
 
   const metaFields: Array<{ label: string; value: string }> = [];
-  if (Array.isArray(obj.metaFields)) {
-    for (const m of obj.metaFields) {
+  if (Array.isArray(obj["metaFields"])) {
+    for (const m of obj["metaFields"] as unknown[]) {
       if (
         m &&
         typeof m === "object" &&
-        typeof m.label === "string" &&
-        typeof m.value === "string"
+        typeof (m as Record<string, unknown>)["label"] === "string" &&
+        typeof (m as Record<string, unknown>)["value"] === "string"
       ) {
-        metaFields.push({ label: m.label, value: m.value });
+        metaFields.push({
+          label: (m as Record<string, string>)["label"],
+          value: (m as Record<string, string>)["value"],
+        });
       }
     }
   }
 
-  return {
+  const result: GeneratedPdfContent = {
     title,
-    subtitle: typeof obj.subtitle === "string" ? obj.subtitle : "",
-    documentType: typeof obj.documentType === "string" ? obj.documentType : "Report",
+    subtitle: typeof obj["subtitle"] === "string" ? (obj["subtitle"] as string) : "",
+    documentType:
+      typeof obj["documentType"] === "string" ? (obj["documentType"] as string) : "Report",
     author:
-      typeof obj.author === "string" && obj.author.trim()
-        ? obj.author
+      typeof obj["author"] === "string" && (obj["author"] as string).trim()
+        ? (obj["author"] as string)
         : "Bravura AI Document Studio",
     date:
-      typeof obj.date === "string" && obj.date.trim()
-        ? obj.date
+      typeof obj["date"] === "string" && (obj["date"] as string).trim()
+        ? (obj["date"] as string)
         : new Date().toLocaleDateString("en-US", {
             year: "numeric",
             month: "long",
             day: "numeric",
           }),
     summary:
-      typeof obj.summary === "string"
-        ? obj.summary
+      typeof obj["summary"] === "string"
+        ? (obj["summary"] as string)
         : "Executive document overview generated for " + title,
     metaFields,
     sections,
-    conclusion: typeof obj.conclusion === "string" ? obj.conclusion : undefined,
-    footerNotes: typeof obj.footerNotes === "string" ? obj.footerNotes : undefined,
   };
+  if (typeof obj["conclusion"] === "string") {
+    result.conclusion = obj["conclusion"] as string;
+  }
+  if (typeof obj["footerNotes"] === "string") {
+    result.footerNotes = obj["footerNotes"] as string;
+  }
+  return result;
 }
 
 function extractDocumentFallback(rawText: string, prompt: string): GeneratedPdfContent {
@@ -219,7 +237,7 @@ function extractDocumentFallback(rawText: string, prompt: string): GeneratedPdfC
   const summaryMatch = rawText.match(/"summary"\s*:\s*"([^"]+)"/);
 
   return {
-    title: titleMatch ? titleMatch[1] : prompt.slice(0, 60),
+    title: titleMatch && titleMatch[1] ? titleMatch[1] : prompt.slice(0, 60),
     subtitle: "Automated Document Export",
     documentType: "Report",
     author: "Bravura AI Document Studio",
@@ -228,9 +246,10 @@ function extractDocumentFallback(rawText: string, prompt: string): GeneratedPdfC
       month: "long",
       day: "numeric",
     }),
-    summary: summaryMatch
-      ? summaryMatch[1]
-      : "Structured publication document compiled from requested topic.",
+    summary:
+      summaryMatch && summaryMatch[1]
+        ? summaryMatch[1]
+        : "Structured publication document compiled from requested topic.",
     metaFields: [{ label: "Generated", value: "Bravura AI Engine" }],
     sections: [
       {
@@ -305,8 +324,11 @@ Include relevant sections, metrics, realistic data tables, and key takeaways.`;
         let rawText = "";
 
         // 1. Try Gemini first via @google/genai if standard AIzaSy key is configured
-        const geminiKey = process.env.GEMINI_API_KEY?.trim();
+        const geminiKey = process.env["GEMINI_API_KEY"]?.trim();
+        const groqKey = process.env["GROQ_API_KEY"]?.trim();
+        const nvidiaKey = process.env["NVIDIA_API_KEY"]?.trim();
         const isStandardGeminiKey = Boolean(geminiKey && geminiKey.startsWith("AIzaSy"));
+
         if (isStandardGeminiKey) {
           try {
             const ai = new GoogleGenAI({
@@ -332,7 +354,41 @@ Include relevant sections, metrics, realistic data tables, and key takeaways.`;
           }
         }
 
-        // 2. Fallback to existing LLM provider (Groq / OpenAI) if Gemini wasn't available or failed
+        // 2. Try Groq (high-speed structured output)
+        if (!rawText && groqKey) {
+          try {
+            const groqProvider = resolveProvider("openai/gpt-oss-120b");
+            rawText = await groqProvider.generateText({
+              systemPrompt,
+              messages: [
+                { id: "pdf-req", role: "user", parts: [{ type: "text", text: userPrompt }] },
+              ],
+              deepThink: false,
+              maxOutputTokens: 2_500,
+            });
+          } catch (groqError) {
+            console.warn("[bravura-pdf] Groq attempt failed, attempting fallback:", groqError);
+          }
+        }
+
+        // 3. Try NVIDIA Nemotron 3 Super 120B
+        if (!rawText && nvidiaKey) {
+          try {
+            const nvidiaProvider = resolveProvider("nvidia/nemotron-3-super-120b-a12b");
+            rawText = await nvidiaProvider.generateText({
+              systemPrompt,
+              messages: [
+                { id: "pdf-req", role: "user", parts: [{ type: "text", text: userPrompt }] },
+              ],
+              deepThink: false,
+              maxOutputTokens: 2_500,
+            });
+          } catch (nvidiaError) {
+            console.warn("[bravura-pdf] NVIDIA attempt failed, attempting fallback:", nvidiaError);
+          }
+        }
+
+        // 4. Final attempt with default resolved provider
         if (!rawText) {
           try {
             const provider = resolveProvider();
@@ -342,10 +398,10 @@ Include relevant sections, metrics, realistic data tables, and key takeaways.`;
                 { id: "pdf-req", role: "user", parts: [{ type: "text", text: userPrompt }] },
               ],
               deepThink: false,
-              maxOutputTokens: 3_500,
+              maxOutputTokens: 2_500,
             });
           } catch (fallbackError) {
-            console.error("[bravura-pdf] Fallback provider failed:", fallbackError);
+            console.error("[bravura-pdf] All providers failed:", fallbackError);
             return errorResponse(
               "Bravura AI could not connect to an AI model to generate this PDF. Please check your API keys.",
               503,

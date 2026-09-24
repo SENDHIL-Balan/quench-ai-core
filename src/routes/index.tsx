@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Clock3, Trash2, X, Sparkles, FileText } from "lucide-react";
 import { CosmicBackground } from "@/components/quench/CosmicBackground";
@@ -25,7 +25,7 @@ import { messageText } from "@/components/quench/ChatView";
 import { ImageStudioModal } from "@/components/quench/ImageStudioModal";
 import { PdfStudioModal } from "@/components/quench/PdfStudioModal";
 import { AppLoadingScreen } from "@/components/quench/AppLoadingScreen";
-import type { SupportedModelId } from "@/components/quench/ModelSelector";
+import { type SupportedModelId, DEFAULT_MODEL_ID } from "@/components/quench/ModelSelector";
 
 // Track if the initial splash animation has already run in this session
 let hasBootedOnce = false;
@@ -144,35 +144,28 @@ function BravuraApp() {
   const [pdfStudioOpen, setPdfStudioOpen] = useState(false);
   const [authUser, setAuthUser] = useState<AuthUserProfile | null>(null);
   const [authInitialized, setAuthInitialized] = useState(false);
-  const [selectedModel, setSelectedModel] = useState<SupportedModelId>(
-    "nvidia/nemotron-3-super-120b-a12b",
-  );
+  const [selectedModel, setSelectedModel] = useState<SupportedModelId>(DEFAULT_MODEL_ID);
 
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("bravura_selected_model");
-      if (
-        saved === "gemini-3.8-flash" ||
-        saved === "openai/gpt-oss-120b" ||
-        saved === "nvidia/nemotron-3-super-120b-a12b" ||
-        saved === "kimi-k2.6" ||
-        saved === "kimi-k2.7-code"
-      ) {
-        setSelectedModel(saved);
+  const handleSelectModel = useCallback((model: SupportedModelId) => {
+    if (
+      model !== "gemini-3.8-flash" &&
+      model !== "openai/gpt-oss-120b" &&
+      model !== "nvidia/nemotron-3-super-120b-a12b" &&
+      model !== "kimi-k2.6" &&
+      model !== "kimi-k2.7-code"
+    ) {
+      return;
+    }
+    setSelectedModel((prev) => {
+      if (prev === model) return prev;
+      try {
+        window.localStorage.setItem("bravura_selected_model", model);
+      } catch {
+        // ignore storage errors
       }
-    } catch {
-      // ignore storage errors
-    }
+      return model;
+    });
   }, []);
-
-  const handleSelectModel = (model: SupportedModelId) => {
-    setSelectedModel(model);
-    try {
-      window.localStorage.setItem("bravura_selected_model", model);
-    } catch {
-      // ignore storage errors
-    }
-  };
   const { isSpeaking, playingId, speak, stop: stopSpeech } = useTextToSpeech();
   const lastSpokenMsgIdRef = useRef<string | null>(null);
   const hasActiveTurnRef = useRef<boolean>(false);
@@ -183,7 +176,16 @@ function BravuraApp() {
   const activeChatIdRef = useRef<string | null>(activeChatId);
   activeChatIdRef.current = activeChatId;
 
+  const hasLoadedStorageRef = useRef<boolean>(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastLoadedChatIdRef = useRef<string | null>(null);
+
+  const transport = useMemo(() => new DefaultChatTransport({ api: "/api/chat" }), []);
+  const { messages, sendMessage, status, error, stop, setMessages } = useChat({
+    transport,
+  });
+  const setMessagesRef = useRef(setMessages);
+  setMessagesRef.current = setMessages;
 
   useEffect(() => {
     const startTime = Date.now();
@@ -223,8 +225,9 @@ function BravuraApp() {
 
   // Sync chats from Firestore when authenticated
   useEffect(() => {
-    if (!authUser) return;
-    const unsubscribe = subscribeUserChats(authUser.uid, (remoteChats) => {
+    const uid = authUser?.uid;
+    if (!uid) return;
+    const unsubscribe = subscribeUserChats(uid, (remoteChats) => {
       if (remoteChats.length > 0) {
         setChats((current) => {
           const activeId = activeChatIdRef.current;
@@ -242,7 +245,7 @@ function BravuraApp() {
       }
     });
     return () => unsubscribe();
-  }, [authUser]);
+  }, [authUser?.uid]);
 
   useEffect(() => {
     try {
@@ -284,24 +287,47 @@ function BravuraApp() {
     }
   }, []);
 
+  // Hydrate chats & model from localStorage on client mount (avoids SSR hydration mismatch)
   useEffect(() => {
+    if (hasLoadedStorageRef.current) return;
+    hasLoadedStorageRef.current = true;
     try {
-      const savedChats = window.localStorage.getItem(CHATS_KEY);
-      if (savedChats) {
-        setChats((current) =>
-          current.length === 0 ? (JSON.parse(savedChats) as StoredChat[]) : current,
-        );
-      }
+      const savedChatsRaw = window.localStorage.getItem(CHATS_KEY);
+      const savedChats = savedChatsRaw ? (JSON.parse(savedChatsRaw) as StoredChat[]) : [];
       const savedActiveId = window.localStorage.getItem(ACTIVE_CHAT_KEY);
-      if (savedActiveId) {
-        setActiveChatId(savedActiveId);
+      const savedModel = window.localStorage.getItem("bravura_selected_model");
+
+      if (
+        savedModel &&
+        (savedModel === "gemini-3.8-flash" ||
+          savedModel === "openai/gpt-oss-120b" ||
+          savedModel === "nvidia/nemotron-3-super-120b-a12b" ||
+          savedModel === "kimi-k2.6" ||
+          savedModel === "kimi-k2.7-code")
+      ) {
+        setSelectedModel(savedModel as SupportedModelId);
+      }
+
+      if (Array.isArray(savedChats) && savedChats.length > 0) {
+        setChats(savedChats);
+        chatsRef.current = savedChats;
+        if (savedActiveId && savedChats.some((c) => c.id === savedActiveId)) {
+          setActiveChatId(savedActiveId);
+          activeChatIdRef.current = savedActiveId;
+          const activeChat = savedChats.find((c) => c.id === savedActiveId);
+          if (activeChat && Array.isArray(activeChat.messages) && activeChat.messages.length > 0) {
+            setMessagesRef.current(activeChat.messages);
+            lastLoadedChatIdRef.current = savedActiveId;
+          }
+        }
       }
     } catch {
-      // Ignore unavailable or malformed local history.
+      // ignore storage errors
     }
   }, []);
 
   useEffect(() => {
+    if (!hasLoadedStorageRef.current) return;
     try {
       window.localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
     } catch {
@@ -310,6 +336,7 @@ function BravuraApp() {
   }, [chats]);
 
   useEffect(() => {
+    if (!hasLoadedStorageRef.current) return;
     try {
       if (activeChatId) {
         window.localStorage.setItem(ACTIVE_CHAT_KEY, activeChatId);
@@ -321,35 +348,24 @@ function BravuraApp() {
     }
   }, [activeChatId]);
 
-  const transport = useMemo(() => new DefaultChatTransport({ api: "/api/chat" }), []);
-  const { messages, sendMessage, status, error, stop, setMessages } = useChat({
-    transport,
-  });
-
-  // Hydrate messages from the active chat on client mount or active chat change
+  // Hydrate messages only when activeChatId changes to a different chat
   useEffect(() => {
-    if (activeChatId) {
-      const chat = chatsRef.current.find((c) => c.id === activeChatId);
-      if (chat && chat.messages.length > 0) {
-        setMessages(chat.messages);
-        return;
+    if (!hasLoadedStorageRef.current) return;
+    if (!activeChatId) {
+      if (lastLoadedChatIdRef.current !== null) {
+        lastLoadedChatIdRef.current = null;
+        setMessagesRef.current([]);
       }
+      return;
     }
-    // If chats aren't in ref yet (initial mount), check localStorage
-    try {
-      const savedActiveId = window.localStorage.getItem(ACTIVE_CHAT_KEY);
-      const savedChats = window.localStorage.getItem(CHATS_KEY);
-      if (savedActiveId && savedChats) {
-        const parsed = JSON.parse(savedChats) as StoredChat[];
-        const found = parsed.find((c) => c.id === savedActiveId);
-        if (found && found.messages && found.messages.length > 0) {
-          setMessages(found.messages as UIMessage[]);
-        }
-      }
-    } catch {
-      // ignore
+    if (lastLoadedChatIdRef.current === activeChatId) return;
+
+    lastLoadedChatIdRef.current = activeChatId;
+    const chat = chatsRef.current.find((c) => c.id === activeChatId);
+    if (chat && Array.isArray(chat.messages)) {
+      setMessagesRef.current(chat.messages);
     }
-  }, [activeChatId, setMessages]);
+  }, [activeChatId]);
 
   useEffect(() => {
     if (!activeChatId || messages.length === 0) return;
@@ -359,12 +375,23 @@ function BravuraApp() {
       if (!existing) return current;
       if (existing.messages === messages) return current;
 
+      // Stable comparison: bail out if lengths, ids, and content match
+      if (existing.messages.length === messages.length && existing.messages.length > 0) {
+        const isIdentical = existing.messages.every((m, idx) => {
+          const target = messages[idx];
+          if (!target || m.id !== target.id) return false;
+          return messageText(m) === messageText(target);
+        });
+        if (isIdentical) return current;
+      }
+
       return current.map((c) =>
         c.id === activeChatId ? { ...c, messages, updatedAt: new Date().toISOString() } : c,
       );
     });
 
-    if (authUser && activeChatId) {
+    const currentUserId = authUser?.uid;
+    if (currentUserId && activeChatId) {
       if (saveTimeoutRef.current) {
         clearTimeout(saveTimeoutRef.current);
       }
@@ -373,7 +400,7 @@ function BravuraApp() {
         const title =
           currentChat?.title ||
           (messages[0] ? messageText(messages[0]).slice(0, 45) : "New Conversation");
-        void saveChatToFirestore(authUser.uid, activeChatId, title, messages);
+        void saveChatToFirestore(currentUserId, activeChatId, title, messages);
       }, 600);
     }
 
@@ -382,31 +409,7 @@ function BravuraApp() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [messages, activeChatId, authUser]);
-
-  useEffect(() => {
-    if (status !== "ready") return;
-
-    setMessages((current) => {
-      const hasAttachments = current.some((message) =>
-        message.parts.some((part) => part.type === "file"),
-      );
-      if (!hasAttachments) return current;
-      return current.map((message) => ({
-        ...message,
-        parts: message.parts.flatMap((part) =>
-          part.type === "file"
-            ? [
-                {
-                  type: "text" as const,
-                  text: `Attached file: ${part.filename ?? "document"}`,
-                },
-              ]
-            : [part],
-        ),
-      }));
-    });
-  }, [setMessages, status]);
+  }, [messages, activeChatId, authUser?.uid]);
 
   useEffect(() => {
     if (status === "submitted" || status === "streaming") {
@@ -437,7 +440,7 @@ function BravuraApp() {
           id: last.id,
           voice: voiceSetting.voiceId,
           provider: voiceSetting.provider,
-          playbackSpeed: voiceSetting.playbackSpeed,
+          playbackSpeed: voiceSetting.playbackSpeed ?? 1.0,
           forceReplay: false,
         });
       }
@@ -475,6 +478,20 @@ function BravuraApp() {
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
   }, [messages, state]);
+
+  const handleSpeak = useCallback(
+    (id: string, text: string) => {
+      unlockAudio();
+      void speak(text, {
+        id,
+        voice: voiceSetting?.voiceId || "kavya",
+        provider: voiceSetting?.provider || "sarvam",
+        playbackSpeed: voiceSetting?.playbackSpeed || 1.0,
+        forceReplay: true,
+      });
+    },
+    [speak, voiceSetting],
+  );
 
   const handleTranscribed = (text: string) => {
     setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
@@ -572,40 +589,49 @@ function BravuraApp() {
     );
   };
 
-  const newChat = () => {
+  const newChat = useCallback(() => {
     stop();
     stopSpeech();
     hasActiveTurnRef.current = false;
+    lastLoadedChatIdRef.current = null;
     setMessages([]);
     setInput("");
     setActiveChatId(null);
     setSidebarOpen(false);
-  };
+  }, [stop, stopSpeech, setMessages]);
 
-  const openChat = (id: string) => {
-    stop();
-    stopSpeech();
-    hasActiveTurnRef.current = false;
-    const chat = chats.find((c) => c.id === id);
-    if (!chat) return;
-    setMessages(chat.messages);
-    setActiveChatId(id);
-    setHistoryOpen(false);
-  };
-
-  const deleteChat = (id: string) => {
-    setChats((current) => current.filter((c) => c.id !== id));
-    if (authUser) {
-      void deleteChatFromFirestore(id);
-    }
-    if (activeChatId === id) {
+  const openChat = useCallback(
+    (id: string) => {
       stop();
       stopSpeech();
       hasActiveTurnRef.current = false;
-      setMessages([]);
-      setActiveChatId(null);
-    }
-  };
+      const chat = chatsRef.current.find((c) => c.id === id);
+      if (!chat) return;
+      lastLoadedChatIdRef.current = id;
+      setMessages(chat.messages);
+      setActiveChatId(id);
+      setHistoryOpen(false);
+    },
+    [stop, stopSpeech, setMessages],
+  );
+
+  const deleteChat = useCallback(
+    (id: string) => {
+      setChats((current) => current.filter((c) => c.id !== id));
+      if (authUser) {
+        void deleteChatFromFirestore(id);
+      }
+      if (activeChatIdRef.current === id) {
+        stop();
+        stopSpeech();
+        hasActiveTurnRef.current = false;
+        lastLoadedChatIdRef.current = null;
+        setMessages([]);
+        setActiveChatId(null);
+      }
+    },
+    [authUser, stop, stopSpeech, setMessages],
+  );
 
   const conversation = messages.length > 0;
 
@@ -703,7 +729,7 @@ function BravuraApp() {
                     c.messages.some((m) => messageText(m).toLowerCase().includes(q.toLowerCase())),
                 );
                 if (found) {
-                  selectChat(found.id);
+                  openChat(found.id);
                 }
               }
             }}
@@ -728,16 +754,7 @@ function BravuraApp() {
                   state={state}
                   playingId={playingId}
                   isSpeaking={isSpeaking}
-                  onSpeak={(id, text) => {
-                    unlockAudio();
-                    void speak(text, {
-                      id,
-                      voice: voiceSetting?.voiceId || "kavya",
-                      provider: voiceSetting?.provider || "sarvam",
-                      playbackSpeed: voiceSetting?.playbackSpeed || 1.0,
-                      forceReplay: true,
-                    });
-                  }}
+                  onSpeak={handleSpeak}
                   onStopSpeak={stopSpeech}
                 />
               </div>

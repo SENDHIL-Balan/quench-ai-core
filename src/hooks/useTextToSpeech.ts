@@ -41,18 +41,15 @@ export function useTextToSpeech(): UseTextToSpeechResult {
   // Synchronize with voice queue state
   useEffect(() => {
     return voiceQueue.subscribe((qState, currentItem) => {
-      setQueueState(qState);
-      if (qState === "idle") {
-        setState("idle");
-        setPlayingId(null);
+      setQueueState((prev) => (prev === qState ? prev : qState));
+      if (qState === "idle" || qState === "interrupted") {
+        setState((prev) => (prev === "idle" ? prev : "idle"));
+        setPlayingId((prev) => (prev === null ? prev : null));
       } else if (qState === "playing" || qState === "fetching") {
-        setState("speaking");
+        setState((prev) => (prev === "speaking" ? prev : "speaking"));
         if (currentItem) {
-          setPlayingId(currentItem.id);
+          setPlayingId((prev) => (prev === currentItem.id ? prev : currentItem.id));
         }
-      } else if (qState === "interrupted") {
-        setState("idle");
-        setPlayingId(null);
       }
     });
   }, []);

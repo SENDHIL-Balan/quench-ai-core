@@ -9,11 +9,29 @@ import {
   SUPPORTED_ATTACHMENT_MEDIA_TYPES,
 } from "./limits.server";
 
-export const GROQ_MODEL = process.env["GROQ_MODEL"]?.trim() || "openai/gpt-oss-120b";
-export const GEMINI_MODEL = process.env["GEMINI_MODEL"]?.trim() || "gemini-3.8-flash";
-export const NVIDIA_MODEL =
-  process.env["NVIDIA_MODEL"]?.trim() || "nvidia/nemotron-3-super-120b-a12b";
-export const KIMI_MODEL = process.env["KIMI_MODEL"]?.trim() || "kimi-k2.6";
+function sanitizeModelName(envVal: string | undefined, defaultModel: string): string {
+  if (!envVal) return defaultModel;
+  const trimmed = envVal.trim();
+  if (
+    trimmed.startsWith("nvapi-") ||
+    trimmed.startsWith("AIzaSy") ||
+    trimmed.startsWith("AQ.") ||
+    trimmed.startsWith("sk-") ||
+    trimmed.startsWith("gsk_") ||
+    trimmed.length > 60
+  ) {
+    return defaultModel;
+  }
+  return trimmed || defaultModel;
+}
+
+export const GROQ_MODEL = sanitizeModelName(process.env["GROQ_MODEL"], "openai/gpt-oss-120b");
+export const GEMINI_MODEL = sanitizeModelName(process.env["GEMINI_MODEL"], "gemini-3.8-flash");
+export const NVIDIA_MODEL = sanitizeModelName(
+  process.env["NVIDIA_MODEL"],
+  "nvidia/nemotron-3-super-120b-a12b",
+);
+export const KIMI_MODEL = sanitizeModelName(process.env["KIMI_MODEL"], "kimi-k2.6");
 export const KIMI_BASE_URL = process.env["KIMI_BASE_URL"]?.trim() || "https://api.moonshot.ai/v1";
 
 export type SupportedModelId =

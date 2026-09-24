@@ -9,6 +9,8 @@ export type SupportedModelId =
   | "kimi-k2.6"
   | "kimi-k2.7-code";
 
+export const DEFAULT_MODEL_ID: SupportedModelId = "nvidia/nemotron-3-super-120b-a12b";
+
 export interface ModelOption {
   id: SupportedModelId;
   name: string;

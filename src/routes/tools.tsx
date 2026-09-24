@@ -63,6 +63,7 @@ function ToolsPage() {
   const [voiceSetting, setVoiceSetting] = useState<VoiceSetting>(DEFAULT_VOICE_SETTING);
   const [cosmicModalOpen, setCosmicModalOpen] = useState(false);
   const { theme, setTheme, themes, currentThemeMeta } = useCosmicTheme();
+  const activeMeta = currentThemeMeta || themes[0];
 
   const handleBack = () => {
     void router.navigate({ to: "/" });
@@ -389,7 +390,7 @@ function ToolsPage() {
             <div className="glass-panel rounded-2xl p-5 border-border/80 relative overflow-hidden">
               <div
                 className="absolute inset-0 opacity-20 pointer-events-none transition-all duration-700"
-                style={{ background: currentThemeMeta.previewGradient }}
+                style={{ background: activeMeta.previewGradient }}
               />
 
               <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
@@ -397,27 +398,25 @@ function ToolsPage() {
                   <span
                     className="size-4 rounded-full shrink-0 ring-2 ring-white/20 shadow-md"
                     style={{
-                      background: currentThemeMeta.accents[0],
-                      boxShadow: `0 0 12px ${currentThemeMeta.accents[0]}`,
+                      background: activeMeta.accents[0],
+                      boxShadow: `0 0 12px ${activeMeta.accents[0]}`,
                     }}
                   />
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-base font-semibold text-foreground">
-                        {currentThemeMeta.name}
-                      </h3>
+                      <h3 className="text-base font-semibold text-foreground">{activeMeta.name}</h3>
                       <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
                         Active
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {currentThemeMeta.tagline} · {currentThemeMeta.accentLabels}
+                      {activeMeta.tagline} · {activeMeta.accentLabels}
                     </p>
                   </div>
                 </div>
 
                 <p className="text-xs text-muted-foreground/90 max-w-md italic">
-                  "{currentThemeMeta.atmosphere}"
+                  "{activeMeta.atmosphere}"
                 </p>
               </div>
 
