@@ -1,14 +1,14 @@
 const DEFAULTS = {
-  maxRequestBytes: 6 * 1024 * 1024,
-  maxMessages: 24,
-  maxContextChars: 24_000,
-  maxPdfChars: 12_000,
-  maxTextFileChars: 12_000,
-  maxAttachmentBytes: 2 * 1024 * 1024,
-  maxAttachmentsPerMessage: 2,
-  maxOutputTokens: 2_500,
-  maxDeepThinkOutputTokens: 4_000,
-  requestsPerMinute: 10,
+  maxRequestBytes: 30 * 1024 * 1024,
+  maxMessages: 30,
+  maxContextChars: 80_000,
+  maxPdfChars: 100_000,
+  maxTextFileChars: 60_000,
+  maxAttachmentBytes: 25 * 1024 * 1024, // 25 MB
+  maxAttachmentsPerMessage: 6,
+  maxOutputTokens: 3_000,
+  maxDeepThinkOutputTokens: 6_000,
+  requestsPerMinute: 30,
 } as const;
 
 function readBoundedInteger(
@@ -34,33 +34,33 @@ export const AGENT_LIMITS = {
     "QUENCH_MAX_REQUEST_BYTES",
     DEFAULTS.maxRequestBytes,
     64 * 1024,
-    20 * 1024 * 1024,
+    50 * 1024 * 1024,
   ),
   maxMessages: readBoundedInteger("QUENCH_MAX_MESSAGES", DEFAULTS.maxMessages, 2, 100),
   maxContextChars: readBoundedInteger(
     "QUENCH_MAX_CONTEXT_CHARS",
     DEFAULTS.maxContextChars,
     4_000,
-    100_000,
+    200_000,
   ),
-  maxPdfChars: readBoundedInteger("QUENCH_MAX_PDF_CHARS", DEFAULTS.maxPdfChars, 1_000, 40_000),
+  maxPdfChars: readBoundedInteger("QUENCH_MAX_PDF_CHARS", DEFAULTS.maxPdfChars, 1_000, 250_000),
   maxTextFileChars: readBoundedInteger(
     "QUENCH_MAX_TEXT_FILE_CHARS",
     DEFAULTS.maxTextFileChars,
     1_000,
-    40_000,
+    100_000,
   ),
   maxAttachmentBytes: readBoundedInteger(
     "QUENCH_MAX_ATTACHMENT_BYTES",
     DEFAULTS.maxAttachmentBytes,
     64 * 1024,
-    5 * 1024 * 1024,
+    35 * 1024 * 1024,
   ),
   maxAttachmentsPerMessage: readBoundedInteger(
     "QUENCH_MAX_ATTACHMENTS_PER_MESSAGE",
     DEFAULTS.maxAttachmentsPerMessage,
     1,
-    5,
+    10,
   ),
   maxOutputTokens: readBoundedInteger(
     "QUENCH_MAX_OUTPUT_TOKENS",
@@ -72,7 +72,7 @@ export const AGENT_LIMITS = {
     "QUENCH_MAX_DEEP_THINK_OUTPUT_TOKENS",
     DEFAULTS.maxDeepThinkOutputTokens,
     128,
-    6_000,
+    8_000,
   ),
   requestsPerMinute: readBoundedInteger(
     "QUENCH_REQUESTS_PER_MINUTE",
@@ -82,7 +82,15 @@ export const AGENT_LIMITS = {
   ),
 } as const;
 
-export const SUPPORTED_ATTACHMENT_MEDIA_TYPES = new Set([
+export const SUPPORTED_IMAGE_MEDIA_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+  "image/gif",
+]);
+
+export const SUPPORTED_DOCUMENT_MEDIA_TYPES = new Set([
   "application/pdf",
   "text/plain",
   "text/markdown",
@@ -90,6 +98,11 @@ export const SUPPORTED_ATTACHMENT_MEDIA_TYPES = new Set([
   "application/json",
   "application/ld+json",
   "application/x-ndjson",
+]);
+
+export const SUPPORTED_ATTACHMENT_MEDIA_TYPES = new Set([
+  ...SUPPORTED_IMAGE_MEDIA_TYPES,
+  ...SUPPORTED_DOCUMENT_MEDIA_TYPES,
 ]);
 
 export function getDataUrlSizeInBytes(url: string): number | undefined {

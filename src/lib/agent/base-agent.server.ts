@@ -1,6 +1,12 @@
 import { createUIMessageStream, createUIMessageStreamResponse, type UIMessage } from "ai";
 import { buildSystemPrompt, type ModeId } from "./modes";
-import { AgentInputError, GroqProviderError, resolveProvider } from "./provider.server";
+import {
+  AgentInputError,
+  GroqProviderError,
+  OpenRouterProviderError,
+  DEFAULT_OPENROUTER_MODEL,
+  resolveProvider,
+} from "./provider.server";
 import { searchWeb } from "@/lib/tools/web-search.server";
 import { formatSearchForPrompt } from "@/lib/tools/format-search";
 import { WebSearchError } from "@/lib/tools/web-search-types";
@@ -360,6 +366,112 @@ export async function runBaseAgent({
   });
 
   try {
+    // If the provider supports direct streaming (e.g. OpenRouter SSE), stream tokens progressively
+    if (typeof orchestration.provider.streamText === "function") {
+      const activeProvider = orchestration.provider;
+      const stream = createUIMessageStream({
+        originalMessages: messages,
+        async execute({ writer }) {
+          writer.write({ type: "start" });
+          writer.write({ type: "text-start", id: "bravura-response" });
+          try {
+            const streamedText = await activeProvider.streamText!({
+              systemPrompt: orchestration.finalPrompt,
+              messages,
+              deepThink,
+              abortSignal,
+              onDelta(delta) {
+                writer.write({ type: "text-delta", id: "bravura-response", delta });
+              },
+            });
+
+            if (
+              orchestration.sources.length > 0 &&
+              !streamedText.includes(orchestration.sources[0]!.url)
+            ) {
+              const sourcesBlock = [
+                "\n\n---\n**🌐 Verified Sources & Grounding:**",
+                ...orchestration.sources
+                  .slice(0, 5)
+                  .map((s, idx) => `${idx + 1}. [${s.title}](${s.url})`),
+              ].join("\n");
+              writer.write({ type: "text-delta", id: "bravura-response", delta: sourcesBlock });
+            }
+          } catch (streamErr) {
+            console.warn(
+              "[bravura] Stream failed on primary provider, executing graceful fallback:",
+              streamErr,
+            );
+            const openrouterKey = process.env["OPENROUTER_API_KEY"]?.trim();
+            const nvidiaKey = process.env["NVIDIA_API_KEY"]?.trim();
+            const groqKey = process.env["GROQ_API_KEY"]?.trim();
+            const geminiKey = process.env["GEMINI_API_KEY"]?.trim();
+
+            let fallbackText = "";
+            let fallbackName = "";
+            if (openrouterKey) {
+              fallbackName = "OpenRouter Free Models Router";
+              const fallback = resolveProvider(DEFAULT_OPENROUTER_MODEL);
+              fallbackText = await fallback.generateText({
+                systemPrompt: orchestration.finalPrompt,
+                messages,
+                deepThink,
+                ...(abortSignal ? { abortSignal } : {}),
+              });
+            } else if (nvidiaKey) {
+              fallbackName = "NVIDIA Nemotron 3 Super 120B";
+              const fallback = resolveProvider("nvidia/nemotron-3-super-120b-a12b");
+              fallbackText = await fallback.generateText({
+                systemPrompt: orchestration.finalPrompt,
+                messages,
+                deepThink,
+                ...(abortSignal ? { abortSignal } : {}),
+              });
+            } else if (groqKey) {
+              fallbackName = "GPT-OSS 120B";
+              const fallback = resolveProvider("openai/gpt-oss-120b");
+              fallbackText = await fallback.generateText({
+                systemPrompt: orchestration.finalPrompt,
+                messages,
+                deepThink,
+                ...(abortSignal ? { abortSignal } : {}),
+              });
+            } else if (geminiKey) {
+              fallbackName = "Gemini 3.8 Flash";
+              const fallback = resolveProvider("gemini-3.8-flash");
+              fallbackText = await fallback.generateText({
+                systemPrompt: orchestration.finalPrompt,
+                messages,
+                deepThink,
+                ...(abortSignal ? { abortSignal } : {}),
+              });
+            } else {
+              throw streamErr;
+            }
+
+            if (fallbackText) {
+              const note = `\n\n> ℹ️ *Fulfilled by **${fallbackName}** because the requested model was temporarily unavailable.*`;
+              writer.write({
+                type: "text-delta",
+                id: "bravura-response",
+                delta: fallbackText + note,
+              });
+            }
+          } finally {
+            writer.write({ type: "text-end", id: "bravura-response" });
+          }
+        },
+        onError(error) {
+          console.error("[bravura] provider stream error", error);
+          return error instanceof Error
+            ? error.message
+            : "Bravura AI couldn't complete that request.";
+        },
+      });
+
+      return createUIMessageStreamResponse({ stream });
+    }
+
     let text: string;
     try {
       text = await orchestration.provider.generateText({
@@ -552,7 +664,11 @@ export async function runBaseAgent({
 
     return createUIMessageStreamResponse({ stream });
   } catch (error) {
-    if (error instanceof GroqProviderError || error instanceof AgentInputError) {
+    if (
+      error instanceof GroqProviderError ||
+      error instanceof AgentInputError ||
+      error instanceof OpenRouterProviderError
+    ) {
       throw error;
     }
 

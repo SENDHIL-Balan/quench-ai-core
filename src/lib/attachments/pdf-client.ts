@@ -45,10 +45,16 @@ export class PdfExtractError extends Error {
   }
 }
 
-export async function extractPdfTextFromFile(file: File): Promise<string> {
+export interface PdfExtractionResult {
+  text: string;
+  pageCount: number;
+  isScanned: boolean;
+}
+
+export async function extractPdfTextFromFile(file: File): Promise<PdfExtractionResult> {
   if (file.size > MAX_PDF_BYTES) {
     throw new PdfExtractError(
-      `PDF is too large (${Math.round(file.size / 1024 / 1024)} MB). Try one under 20 MB.`,
+      `PDF is too large (${Math.round(file.size / 1024 / 1024)} MB). Maximum allowed size is 20 MB.`,
     );
   }
 
@@ -83,6 +89,8 @@ export async function extractPdfTextFromFile(file: File): Promise<string> {
 
   try {
     const pageTexts: string[] = [];
+    let totalChars = 0;
+
     for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
       const page = await pdf.getPage(pageNumber);
       const content = await page.getTextContent();
@@ -93,19 +101,24 @@ export async function extractPdfTextFromFile(file: File): Promise<string> {
           }
           return "";
         })
-        .join(" ");
-      pageTexts.push(pageText);
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      if (pageText) {
+        pageTexts.push(`[Page ${pageNumber}]\n${pageText}`);
+        totalChars += pageText.length;
+      }
     }
 
     const fullText = pageTexts.join("\n\n").trim();
+    const isScanned = totalChars < 50;
 
-    if (!fullText) {
-      throw new PdfExtractError(
-        "That PDF has no extractable text. If it's a scanned image, paste the text instead.",
-      );
-    }
-
-    return clipText(fullText, MAX_OUTPUT_CHARS);
+    return {
+      text: fullText ? clipText(fullText, MAX_OUTPUT_CHARS) : "",
+      pageCount: pdf.numPages,
+      isScanned,
+    };
   } catch (error) {
     if (error instanceof PdfExtractError) throw error;
     const message = error instanceof Error ? error.message : String(error);

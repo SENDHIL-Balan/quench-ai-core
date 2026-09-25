@@ -64,7 +64,16 @@ export function AgentRunCard({
           ? "Kimi K2.7 Code (Moonshot AI)"
           : model === "kimi-k2.6"
             ? "Kimi K2.6 (Moonshot AI)"
-            : "GPT-OSS 120B (Groq)";
+            : model === "openrouter/free"
+              ? "Free Models Router (OpenRouter)"
+              : model.startsWith("openrouter/") || model.includes(":free")
+                ? `${model
+                    .split("/")
+                    .pop()
+                    ?.replace(/:free$/, " (free)")} (OpenRouter)`
+                : model === "openai/gpt-oss-120b"
+                  ? "GPT-OSS 120B (Groq)"
+                  : model;
 
   return (
     <section className="glass-panel rounded-3xl p-4">

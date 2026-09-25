@@ -33,22 +33,44 @@ export const NVIDIA_MODEL = sanitizeModelName(
 );
 export const KIMI_MODEL = sanitizeModelName(process.env["KIMI_MODEL"], "kimi-k2.6");
 export const KIMI_BASE_URL = process.env["KIMI_BASE_URL"]?.trim() || "https://api.moonshot.ai/v1";
+export const OPENROUTER_BASE_URL =
+  process.env["OPENROUTER_BASE_URL"]?.trim() || "https://openrouter.ai/api/v1";
+export const DEFAULT_OPENROUTER_MODEL = "openrouter/free";
+
+export function isVisionCapableModel(modelId?: string): boolean {
+  if (!modelId) return false;
+  const lower = modelId.toLowerCase().trim();
+  return (
+    lower.startsWith("gemini") ||
+    lower.includes("gemini") ||
+    lower.includes("vision") ||
+    lower.includes("-vl") ||
+    lower.includes("vl-") ||
+    lower.includes("4o") ||
+    lower.includes("omni") ||
+    lower.includes("pixtral") ||
+    lower.includes("claude-3") ||
+    lower === "openrouter/free"
+  );
+}
 
 export type SupportedModelId =
   | "openai/gpt-oss-120b"
   | "nvidia/nemotron-3-super-120b-a12b"
   | "gemini-3.8-flash"
   | "kimi-k2.6"
-  | "kimi-k2.7-code";
+  | "kimi-k2.7-code"
+  | string;
 
 export interface ModelMetadata {
-  id: SupportedModelId;
+  id: string;
   name: string;
-  provider: "groq" | "nvidia" | "gemini" | "kimi";
+  provider: "groq" | "nvidia" | "gemini" | "kimi" | "openrouter";
   badge: string;
   description: string;
   contextWindow: number;
   reasoningSupport: boolean;
+  isFree?: boolean;
 }
 
 export const SUPPORTED_MODELS: Record<SupportedModelId, ModelMetadata> = {
@@ -109,6 +131,15 @@ export interface LLMProvider {
     maxOutputTokens?: number;
     temperature?: number;
   }): Promise<string>;
+  streamText?(options: {
+    systemPrompt: string;
+    messages: UIMessage[];
+    deepThink: boolean;
+    abortSignal?: AbortSignal;
+    maxOutputTokens?: number;
+    temperature?: number;
+    onDelta: (delta: string) => void | Promise<void>;
+  }): Promise<string>;
 }
 
 export class AgentInputError extends Error {
@@ -121,9 +152,23 @@ export class AgentInputError extends Error {
 export class MissingProviderKeyError extends Error {
   constructor() {
     super(
-      "No AI provider credentials configured. Please set KIMI_API_KEY, NVIDIA_API_KEY, GROQ_API_KEY, or GEMINI_API_KEY.",
+      "No AI provider credentials configured. Please set OPENROUTER_API_KEY, NVIDIA_API_KEY, KIMI_API_KEY, GROQ_API_KEY, or GEMINI_API_KEY.",
     );
     this.name = "MissingProviderKeyError";
+  }
+}
+
+export class OpenRouterProviderError extends Error {
+  public readonly statusCode: number | undefined;
+
+  override name = "OpenRouterProviderError";
+
+  constructor(message: string, statusCode?: number, cause?: unknown) {
+    super(message);
+    this.statusCode = statusCode;
+    if (cause) {
+      this.cause = cause;
+    }
   }
 }
 
@@ -307,15 +352,23 @@ async function extractAttachmentText(
   part: Extract<UIMessage["parts"][number], { type: "file" }>,
 ): Promise<string> {
   const mediaType = part.mediaType.toLowerCase();
+  if (mediaType.startsWith("image/")) {
+    return `\n\n[Attached image: ${part.filename ?? "image"}]`;
+  }
   if (!SUPPORTED_ATTACHMENT_MEDIA_TYPES.has(mediaType)) {
-    throw new AgentInputError("Supported attachments are PDF, TXT, Markdown, CSV, and JSON files.");
+    return `\n\n[Attached document: ${part.filename ?? "document"}]`;
   }
 
-  const text =
-    mediaType === "application/pdf"
-      ? await extractPdfText(part.url)
-      : extractPlainTextFile(part.url, mediaType);
-  return text ? `\n\n[Attached file: ${part.filename ?? "document"}]\n${text}` : "";
+  try {
+    const text =
+      mediaType === "application/pdf"
+        ? await extractPdfText(part.url)
+        : extractPlainTextFile(part.url, mediaType);
+    return text ? `\n\n[Attached file: ${part.filename ?? "document"}]\n${text}` : "";
+  } catch (err) {
+    console.warn("[bravura] extractAttachmentText fallback:", err);
+    return `\n\n[Attached file: ${part.filename ?? "document"}]`;
+  }
 }
 
 function trimConversation(messages: TextMessage[]): TextMessage[] {
@@ -472,6 +525,54 @@ export class OpenAICompatibleProvider extends ModelProvider {
   }
 }
 
+export function mapUiMessagesToGemini(messages: UIMessage[]) {
+  const contents = [];
+  const recentMessages = messages.slice(-AGENT_LIMITS.maxMessages);
+
+  for (const m of recentMessages) {
+    if (m.role !== "user" && m.role !== "assistant") continue;
+    const role = m.role === "assistant" ? "model" : "user";
+    const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+
+    for (const p of m.parts) {
+      if (p.type === "text" && p.text) {
+        parts.push({ text: p.text });
+      } else if (p.type === "file" && typeof p.url === "string") {
+        const match = p.url.match(/^data:([^;,]+)(?:;[^,]*)?;base64,([a-z0-9+/=\s]+)$/is);
+        if (match && match[1] && match[2]) {
+          const mimeType = match[1].toLowerCase().trim();
+          const base64Data = match[2].replace(/\s/g, "");
+          if (mimeType.startsWith("image/") || mimeType === "application/pdf") {
+            parts.push({
+              inlineData: {
+                mimeType,
+                data: base64Data,
+              },
+            });
+          } else {
+            try {
+              const textContent = Buffer.from(base64Data, "base64").toString("utf-8");
+              if (textContent && !textContent.startsWith("%PDF")) {
+                parts.push({
+                  text: `\n[Attached document: ${p.filename || "file"}]\n${textContent}`,
+                });
+              }
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
+    }
+
+    if (parts.length > 0) {
+      contents.push({ role, parts });
+    }
+  }
+
+  return contents;
+}
+
 export class GeminiNativeProvider implements LLMProvider {
   private ai: GoogleGenAI;
 
@@ -501,15 +602,7 @@ export class GeminiNativeProvider implements LLMProvider {
     temperature?: number;
   }): Promise<string> {
     try {
-      const contents = [];
-      const textMessages = await mapUiMessagesToGroq(messages);
-
-      for (const m of textMessages) {
-        contents.push({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content }],
-        });
-      }
+      const contents = mapUiMessagesToGemini(messages);
 
       if (contents.length === 0) {
         throw new GroqProviderError("No message contents to send to Gemini.");
@@ -536,6 +629,60 @@ export class GeminiNativeProvider implements LLMProvider {
       const message = err instanceof Error ? err.message : String(err);
       console.error("[bravura] Gemini native provider error:", message);
       throw new GroqProviderError(`Gemini model error: ${message}`, err);
+    }
+  }
+
+  async streamText({
+    systemPrompt,
+    messages,
+    deepThink,
+    abortSignal,
+    maxOutputTokens,
+    temperature,
+    onDelta,
+  }: {
+    systemPrompt: string;
+    messages: UIMessage[];
+    deepThink: boolean;
+    abortSignal?: AbortSignal;
+    maxOutputTokens?: number;
+    temperature?: number;
+    onDelta: (delta: string) => void | Promise<void>;
+  }): Promise<string> {
+    try {
+      const contents = mapUiMessagesToGemini(messages);
+
+      if (contents.length === 0) {
+        throw new GroqProviderError("No message contents to send to Gemini.");
+      }
+
+      const responseStream = await this.ai.models.generateContentStream({
+        model: GEMINI_MODEL,
+        contents,
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: temperature ?? (deepThink ? 0.35 : 0.7),
+          topP: 0.95,
+          ...(maxOutputTokens ? { maxOutputTokens } : {}),
+        },
+      });
+
+      let fullText = "";
+      for await (const chunk of responseStream) {
+        if (abortSignal?.aborted) break;
+        const text = chunk.text;
+        if (text) {
+          fullText += text;
+          await onDelta(text);
+        }
+      }
+
+      return fullText;
+    } catch (err) {
+      if (err instanceof GroqProviderError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[bravura] Gemini native streaming error:", message);
+      throw new GroqProviderError(`Gemini model streaming error: ${message}`, err);
     }
   }
 }
@@ -569,14 +716,36 @@ export class NvidiaProvider implements LLMProvider {
         deepThink,
       });
 
-      const textMessages = await mapUiMessagesToGroq(messages);
-      const apiMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
-        { role: "system", content: systemPrompt },
-        ...textMessages.map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        })),
-      ];
+      const hasImages = messages.some((m) =>
+        m.parts?.some(
+          (p) =>
+            p.type === "file" &&
+            (p.mediaType?.startsWith("image/") ||
+              (typeof p.url === "string" && p.url.startsWith("data:image/"))),
+        ),
+      );
+
+      const activeModel =
+        hasImages && !this.modelName.includes("vision") && !this.modelName.includes("vl")
+          ? "meta/llama-3.2-11b-vision-instruct"
+          : this.modelName;
+
+      let apiMessages: Array<{ role: string; content: unknown }>;
+      if (hasImages) {
+        apiMessages = [
+          { role: "system", content: systemPrompt },
+          ...mapUiMessagesToOpenRouter(messages),
+        ];
+      } else {
+        const textMessages = await mapUiMessagesToGroq(messages);
+        apiMessages = [
+          { role: "system", content: systemPrompt },
+          ...textMessages.map((m) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          })),
+        ];
+      }
 
       const defaultMaxTokens = deepThink
         ? AGENT_LIMITS.maxDeepThinkOutputTokens
@@ -590,7 +759,7 @@ export class NvidiaProvider implements LLMProvider {
           Accept: "application/json",
         },
         body: JSON.stringify({
-          model: this.modelName,
+          model: activeModel,
           messages: apiMessages,
           max_tokens: maxOutputTokens ?? defaultMaxTokens,
           temperature: temperature ?? (deepThink ? 0.3 : 0.6),
@@ -883,19 +1052,569 @@ export class KimiProvider implements LLMProvider {
   }
 }
 
+export function mapUiMessagesToOpenRouter(messages: UIMessage[]) {
+  const recentMessages = messages.slice(-AGENT_LIMITS.maxMessages);
+  const result: Array<{
+    role: "system" | "user" | "assistant";
+    content:
+      | string
+      | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
+  }> = [];
+
+  for (const m of recentMessages) {
+    if (m.role !== "user" && m.role !== "assistant") continue;
+
+    const textParts = m.parts
+      .filter((p) => p.type === "text")
+      .map((p) => p.text)
+      .join("\n")
+      .trim();
+
+    const fileParts = m.parts.filter(
+      (p): p is Extract<(typeof m.parts)[number], { type: "file" }> => p.type === "file",
+    );
+
+    const hasImages = fileParts.some(
+      (p) => p.mediaType?.startsWith("image/") || p.url?.startsWith("data:image/"),
+    );
+
+    if (hasImages && m.role === "user") {
+      const contentParts: Array<
+        { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
+      > = [];
+
+      if (textParts) {
+        contentParts.push({ type: "text", text: textParts });
+      }
+
+      for (const f of fileParts) {
+        if (f.mediaType?.startsWith("image/") || f.url?.startsWith("data:image/")) {
+          contentParts.push({
+            type: "image_url",
+            image_url: { url: f.url },
+          });
+        }
+      }
+
+      result.push({ role: m.role, content: contentParts });
+    } else {
+      let content = textParts;
+      for (const f of fileParts) {
+        if (!f.mediaType?.startsWith("image/")) {
+          try {
+            const match = f.url.match(/^data:([^;,]+)(?:;[^,]*)?;base64,([a-z0-9+/=\s]+)$/is);
+            if (match && match[2]) {
+              const textContent = Buffer.from(match[2], "base64").toString("utf-8");
+              if (textContent && !textContent.startsWith("%PDF")) {
+                content += `\n\n[Attached document: ${f.filename || "file"}]\n${textContent}`;
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+      if (content) {
+        result.push({ role: m.role, content });
+      }
+    }
+  }
+
+  return result;
+}
+
+export class OpenRouterProvider implements LLMProvider {
+  constructor(
+    public readonly apiKey: string,
+    public readonly modelName: string = DEFAULT_OPENROUTER_MODEL,
+    public readonly baseURL: string = OPENROUTER_BASE_URL,
+  ) {}
+
+  async generateText({
+    systemPrompt,
+    messages,
+    deepThink,
+    abortSignal,
+    maxOutputTokens,
+    temperature,
+  }: {
+    systemPrompt: string;
+    messages: UIMessage[];
+    deepThink: boolean;
+    abortSignal?: AbortSignal;
+    maxOutputTokens?: number;
+    temperature?: number;
+  }): Promise<string> {
+    const startTime = Date.now();
+    try {
+      console.info("[bravura] Dispatching OpenRouter API request", {
+        provider: "OpenRouter",
+        model: this.modelName,
+        deepThink,
+      });
+
+      const hasImages = messages.some((m) =>
+        m.parts?.some(
+          (p) =>
+            p.type === "file" &&
+            (p.mediaType?.startsWith("image/") ||
+              (typeof p.url === "string" && p.url.startsWith("data:image/"))),
+        ),
+      );
+
+      const targetModel =
+        hasImages && !isVisionCapableModel(this.modelName)
+          ? DEFAULT_OPENROUTER_MODEL
+          : this.modelName;
+
+      const apiMessages = [
+        { role: "system" as const, content: systemPrompt },
+        ...mapUiMessagesToOpenRouter(messages),
+      ];
+
+      const defaultMaxTokens = deepThink
+        ? AGENT_LIMITS.maxDeepThinkOutputTokens
+        : AGENT_LIMITS.maxOutputTokens;
+
+      const endpoint = `${this.baseURL.replace(/\/+$/, "")}/chat/completions`;
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "HTTP-Referer": "https://bravura.ai",
+          "X-Title": "Bravura AI",
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          model: targetModel,
+          messages: apiMessages,
+          max_tokens: maxOutputTokens ?? defaultMaxTokens,
+          temperature: temperature ?? (deepThink ? 0.3 : 0.6),
+          top_p: 0.95,
+        }),
+        ...(abortSignal ? { signal: abortSignal } : {}),
+      });
+
+      const durationMs = Date.now() - startTime;
+
+      if (!res.ok) {
+        let errBody: Record<string, unknown> = {};
+        try {
+          errBody = (await res.json()) as Record<string, unknown>;
+        } catch {
+          // non-json response
+        }
+
+        const errObj =
+          (errBody.error as { message?: string; code?: number; metadata?: { raw?: string } }) || {};
+        const errorDetail =
+          errObj.message ||
+          (errBody.message as string) ||
+          (errBody.detail as string) ||
+          `HTTP ${res.status}`;
+
+        console.error("[bravura] OpenRouter API error response", {
+          provider: "OpenRouter",
+          model: this.modelName,
+          status: res.status,
+          latencyMs: durationMs,
+          errorDetail,
+        });
+
+        if (res.status === 401) {
+          throw new OpenRouterProviderError(
+            "The OpenRouter API key is invalid or unauthorized. Please verify your OPENROUTER_API_KEY environment variable.",
+            401,
+          );
+        }
+        if (res.status === 403) {
+          throw new OpenRouterProviderError(
+            `Access to OpenRouter model (${this.modelName}) was denied (HTTP 403). Please verify model permissions or select another model.`,
+            403,
+          );
+        }
+
+        // Automatic seamless failover if a specific model is offline, decommissioned (404/400), or rate-limited
+        const isModelAvailabilityError =
+          res.status === 400 ||
+          res.status === 404 ||
+          res.status === 429 ||
+          res.status >= 500 ||
+          /not found|decommissioned|unknown model|does not exist/i.test(errorDetail);
+
+        if (isModelAvailabilityError) {
+          const fallbackModel =
+            this.modelName !== DEFAULT_OPENROUTER_MODEL
+              ? DEFAULT_OPENROUTER_MODEL
+              : "nvidia/nemotron-3.5-lightning:free";
+
+          if (this.modelName !== fallbackModel) {
+            console.warn(
+              `[bravura] OpenRouter model (${this.modelName}) returned HTTP ${res.status} (${errorDetail}). Automatically routing to ${fallbackModel}...`,
+            );
+            const fallbackProvider = new OpenRouterProvider(
+              this.apiKey,
+              fallbackModel,
+              this.baseURL,
+            );
+            return await fallbackProvider.generateText({
+              systemPrompt,
+              messages,
+              deepThink,
+              abortSignal,
+              maxOutputTokens,
+              temperature,
+            });
+          }
+        }
+
+        if (res.status === 404) {
+          throw new OpenRouterProviderError(
+            `The requested OpenRouter model (${this.modelName}) was not found or is currently decommissioned.`,
+            404,
+          );
+        }
+        if (res.status === 429) {
+          throw new OpenRouterProviderError(
+            `OpenRouter rate limit reached or upstream model provider is temporarily busy for ${this.modelName}. Please try again shortly or switch to the Free Models Router (openrouter/free).`,
+            429,
+          );
+        }
+        if (res.status === 500 || res.status === 502 || res.status === 503 || res.status === 504) {
+          throw new OpenRouterProviderError(
+            "OpenRouter or upstream model service is temporarily unavailable. Please try again in a few moments.",
+            res.status,
+          );
+        }
+
+        throw new OpenRouterProviderError(`OpenRouter API error: ${errorDetail}`, res.status);
+      }
+
+      const data = (await res.json()) as {
+        choices?: Array<{
+          message?: { content?: string; reasoning?: string; reasoning_content?: string };
+        }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+      };
+
+      const choice = data.choices?.[0]?.message;
+      let text = choice?.content?.trim();
+
+      if (!text && (choice?.reasoning || choice?.reasoning_content)) {
+        text = (choice.reasoning || choice.reasoning_content)?.trim();
+      }
+
+      if (!text) {
+        throw new OpenRouterProviderError("OpenRouter model returned an empty response.", 500);
+      }
+
+      console.info("[bravura] OpenRouter API response received successfully", {
+        provider: "OpenRouter",
+        model: this.modelName,
+        status: 200,
+        latencyMs: durationMs,
+        tokens: data.usage?.total_tokens,
+      });
+
+      return text;
+    } catch (err) {
+      const durationMs = Date.now() - startTime;
+      if (err instanceof OpenRouterProviderError || err instanceof AgentInputError) {
+        throw err;
+      }
+      const isAbort = (err instanceof Error && err.name === "AbortError") || abortSignal?.aborted;
+      if (isAbort) {
+        console.info("[bravura] OpenRouter request aborted by user", {
+          provider: "OpenRouter",
+          model: this.modelName,
+          latencyMs: durationMs,
+        });
+        throw err;
+      }
+
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[bravura] OpenRouter request execution failed", {
+        provider: "OpenRouter",
+        model: this.modelName,
+        latencyMs: durationMs,
+        errorMessage: msg,
+      });
+      throw new OpenRouterProviderError(`OpenRouter request failed: ${msg}`, 500, err);
+    }
+  }
+
+  async streamText({
+    systemPrompt,
+    messages,
+    deepThink,
+    abortSignal,
+    maxOutputTokens,
+    temperature,
+    onDelta,
+  }: {
+    systemPrompt: string;
+    messages: UIMessage[];
+    deepThink: boolean;
+    abortSignal?: AbortSignal;
+    maxOutputTokens?: number;
+    temperature?: number;
+    onDelta: (delta: string) => void | Promise<void>;
+  }): Promise<string> {
+    const startTime = Date.now();
+    try {
+      console.info("[bravura] Dispatching OpenRouter streaming request", {
+        provider: "OpenRouter",
+        model: this.modelName,
+        deepThink,
+      });
+
+      const hasImages = messages.some((m) =>
+        m.parts?.some(
+          (p) =>
+            p.type === "file" &&
+            (p.mediaType?.startsWith("image/") ||
+              (typeof p.url === "string" && p.url.startsWith("data:image/"))),
+        ),
+      );
+
+      const targetModel =
+        hasImages && !isVisionCapableModel(this.modelName)
+          ? DEFAULT_OPENROUTER_MODEL
+          : this.modelName;
+
+      const apiMessages = [
+        { role: "system" as const, content: systemPrompt },
+        ...mapUiMessagesToOpenRouter(messages),
+      ];
+
+      const defaultMaxTokens = deepThink
+        ? AGENT_LIMITS.maxDeepThinkOutputTokens
+        : AGENT_LIMITS.maxOutputTokens;
+
+      const endpoint = `${this.baseURL.replace(/\/+$/, "")}/chat/completions`;
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "HTTP-Referer": "https://bravura.ai",
+          "X-Title": "Bravura AI",
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({
+          model: targetModel,
+          messages: apiMessages,
+          stream: true,
+          max_tokens: maxOutputTokens ?? defaultMaxTokens,
+          temperature: temperature ?? (deepThink ? 0.3 : 0.6),
+          top_p: 0.95,
+        }),
+        ...(abortSignal ? { signal: abortSignal } : {}),
+      });
+
+      if (!res.ok) {
+        let errBody: Record<string, unknown> = {};
+        try {
+          errBody = (await res.json()) as Record<string, unknown>;
+        } catch {
+          // ignore non-json
+        }
+        const errObj = (errBody.error as { message?: string }) || {};
+        const errorDetail = errObj.message || (errBody.message as string) || `HTTP ${res.status}`;
+
+        if (res.status === 401) {
+          throw new OpenRouterProviderError(
+            "The OpenRouter API key is invalid or unauthorized. Please verify your OPENROUTER_API_KEY environment variable.",
+            401,
+          );
+        }
+        if (res.status === 403) {
+          throw new OpenRouterProviderError(
+            `Access to OpenRouter model (${this.modelName}) was denied (HTTP 403).`,
+            403,
+          );
+        }
+
+        // Automatic seamless failover if a specific model is offline, decommissioned (404/400), or rate-limited
+        const isModelAvailabilityError =
+          res.status === 400 ||
+          res.status === 404 ||
+          res.status === 429 ||
+          res.status >= 500 ||
+          /not found|decommissioned|unknown model|does not exist/i.test(errorDetail);
+
+        if (isModelAvailabilityError) {
+          const fallbackModel =
+            this.modelName !== DEFAULT_OPENROUTER_MODEL
+              ? DEFAULT_OPENROUTER_MODEL
+              : "nvidia/nemotron-3.5-lightning:free";
+
+          if (this.modelName !== fallbackModel) {
+            console.warn(
+              `[bravura] OpenRouter model (${this.modelName}) returned HTTP ${res.status} (${errorDetail}). Seamlessly falling back to ${fallbackModel}...`,
+            );
+            const fallbackProvider = new OpenRouterProvider(
+              this.apiKey,
+              fallbackModel,
+              this.baseURL,
+            );
+            return await fallbackProvider.streamText({
+              systemPrompt,
+              messages,
+              deepThink,
+              abortSignal,
+              maxOutputTokens,
+              temperature,
+              onDelta,
+            });
+          }
+        }
+
+        if (res.status === 404) {
+          throw new OpenRouterProviderError(
+            `The requested OpenRouter model (${this.modelName}) was not found or is currently decommissioned.`,
+            404,
+          );
+        }
+        if (res.status === 429) {
+          throw new OpenRouterProviderError(
+            `OpenRouter rate limit reached for ${this.modelName}. Please try again shortly or select openrouter/free.`,
+            429,
+          );
+        }
+        throw new OpenRouterProviderError(`OpenRouter streaming error: ${errorDetail}`, res.status);
+      }
+
+      if (!res.body) {
+        throw new OpenRouterProviderError("OpenRouter returned an empty stream body.", 500);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let fullContent = "";
+      let fullReasoning = "";
+      let buffer = "";
+
+      try {
+        while (true) {
+          if (abortSignal?.aborted) {
+            await reader.cancel();
+            break;
+          }
+
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const rawLine of lines) {
+            const line = rawLine.trim();
+            if (!line || !line.startsWith("data:")) continue;
+            const dataStr = line.slice(5).trim();
+            if (dataStr === "[DONE]") continue;
+
+            try {
+              const chunk = JSON.parse(dataStr) as {
+                choices?: Array<{
+                  delta?: { content?: string; reasoning?: string; reasoning_content?: string };
+                }>;
+              };
+              const delta = chunk.choices?.[0]?.delta;
+              if (delta) {
+                if (delta.content) {
+                  fullContent += delta.content;
+                  await onDelta(delta.content);
+                } else if (delta.reasoning || delta.reasoning_content) {
+                  const reasoningDelta = delta.reasoning || delta.reasoning_content || "";
+                  fullReasoning += reasoningDelta;
+                  if (deepThink) {
+                    await onDelta(reasoningDelta);
+                  }
+                }
+              }
+            } catch {
+              // ignore partial chunk json
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+
+      if (!fullContent && fullReasoning && !deepThink) {
+        await onDelta(fullReasoning);
+        fullContent = fullReasoning;
+      }
+
+      const durationMs = Date.now() - startTime;
+      console.info("[bravura] OpenRouter streaming completed successfully", {
+        provider: "OpenRouter",
+        model: this.modelName,
+        latencyMs: durationMs,
+        chars: fullContent.length,
+      });
+
+      return fullContent;
+    } catch (err) {
+      if (err instanceof OpenRouterProviderError) throw err;
+      const isAbort = (err instanceof Error && err.name === "AbortError") || abortSignal?.aborted;
+      if (isAbort) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new OpenRouterProviderError(`OpenRouter streaming failed: ${msg}`, 500, err);
+    }
+  }
+}
+
 /**
  * Resolves the active LLM Provider based on explicit user preference,
  * model identifier, or configured API credentials.
- * Supports Kimi (Moonshot AI), Nemotron 3 Super 120B (NVIDIA), GPT-OSS 120B (Groq), and Gemini 3.8 Flash.
+ * Supports OpenRouter, Kimi (Moonshot AI), Nemotron 3 Super 120B (NVIDIA), GPT-OSS 120B (Groq), and Gemini 3.8 Flash.
  */
 export function resolveProvider(preferredModel?: string, preferredProvider?: string): LLMProvider {
   const modelToUse = preferredModel?.trim();
+  const openrouterKey = process.env["OPENROUTER_API_KEY"]?.trim();
   const kimiKey = process.env["KIMI_API_KEY"]?.trim() || process.env["MOONSHOT_API_KEY"]?.trim();
   const nvidiaKey = process.env["NVIDIA_API_KEY"]?.trim();
   const groqKey = process.env["GROQ_API_KEY"]?.trim();
   const geminiKey = process.env["GEMINI_API_KEY"]?.trim();
 
-  // 1. Explicit request for Kimi / Moonshot
+  // Helper to test if model identifier belongs to OpenRouter
+  const isOpenRouterTarget =
+    preferredProvider === "openrouter" ||
+    modelToUse === "openrouter" ||
+    modelToUse === "openrouter/free" ||
+    Boolean(modelToUse?.startsWith("openrouter/")) ||
+    (Boolean(modelToUse?.includes(":free")) &&
+      !modelToUse?.startsWith("gemini") &&
+      !modelToUse?.startsWith("kimi")) ||
+    (Boolean(modelToUse?.includes("/")) &&
+      modelToUse !== "openai/gpt-oss-120b" &&
+      modelToUse !== "nvidia/nemotron-3-super-120b-a12b" &&
+      modelToUse !== "mistralai/mistral-nemotron");
+
+  // 1. Explicit request for OpenRouter
+  if (isOpenRouterTarget) {
+    if (openrouterKey) {
+      const activeOpenRouterModel =
+        modelToUse?.startsWith("openrouter/") && modelToUse !== "openrouter/free"
+          ? modelToUse.replace(/^openrouter\//, "")
+          : modelToUse || DEFAULT_OPENROUTER_MODEL;
+      console.info(
+        `[bravura] Routing AI request directly to OpenRouter API (${activeOpenRouterModel})`,
+      );
+      return new OpenRouterProvider(openrouterKey, activeOpenRouterModel);
+    }
+    console.warn(
+      "[bravura] OpenRouter model requested but OPENROUTER_API_KEY missing, attempting fallback...",
+    );
+  }
+
+  // 2. Explicit request for Kimi / Moonshot
   if (
     modelToUse === "kimi-k2.6" ||
     modelToUse === "kimi-k2.7-code" ||
@@ -920,7 +1639,7 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
     console.warn("[bravura] Kimi model requested but KIMI_API_KEY missing, attempting fallback...");
   }
 
-  // 2. Explicit request for NVIDIA or Nemotron
+  // 3. Explicit request for NVIDIA or Nemotron
   if (
     modelToUse === "nvidia/nemotron-3-super-120b-a12b" ||
     modelToUse === "nemotron" ||
@@ -943,7 +1662,7 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
     );
   }
 
-  // 3. Explicit request for GPT-OSS 120B or Groq provider
+  // 4. Explicit request for GPT-OSS 120B or Groq provider
   if (
     modelToUse === "openai/gpt-oss-120b" ||
     modelToUse === "gpt-oss-120b" ||
@@ -958,7 +1677,7 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
     );
   }
 
-  // 4. Explicit request for Gemini
+  // 5. Explicit request for Gemini
   if (
     modelToUse === "gemini-3.8-flash" ||
     modelToUse === "gemini" ||
@@ -974,7 +1693,13 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
     }
   }
 
-  // 5. Default priority if specific model not explicitly forced:
+  // 6. Default priority if specific model not explicitly forced:
+  // If OpenRouter is requested or configured as primary
+  if (openrouterKey && (modelToUse?.includes("openrouter") || modelToUse?.includes(":free"))) {
+    console.info(`[bravura] Active model: ${DEFAULT_OPENROUTER_MODEL} (OpenRouter Provider)`);
+    return new OpenRouterProvider(openrouterKey, DEFAULT_OPENROUTER_MODEL);
+  }
+
   // If Kimi is configured, use Kimi
   if (kimiKey && (modelToUse?.startsWith("kimi") || !nvidiaKey)) {
     console.info(`[bravura] Active model: ${KIMI_MODEL} (Kimi Provider)`);
@@ -991,6 +1716,14 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
   if (groqKey) {
     console.info(`[bravura] Active model: ${GROQ_MODEL} (Groq Provider)`);
     return new GroqProvider(groqKey, GROQ_MODEL);
+  }
+
+  // If OpenRouter is configured, fallback to OpenRouter Free Router
+  if (openrouterKey) {
+    console.info(
+      `[bravura] Active model: ${DEFAULT_OPENROUTER_MODEL} (OpenRouter Provider fallback)`,
+    );
+    return new OpenRouterProvider(openrouterKey, DEFAULT_OPENROUTER_MODEL);
   }
 
   // Fallback to Kimi if key present

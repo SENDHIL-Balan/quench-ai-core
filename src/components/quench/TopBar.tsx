@@ -1,15 +1,20 @@
 import { useState, useRef, useEffect } from "react";
 import { Menu, Search, X } from "lucide-react";
 import { CosmicThemeButton } from "./CosmicThemeButton";
+import { ModelSelector, type SupportedModelId } from "./ModelSelector";
 
 export function TopBar({
   onToggleSidebar,
   onToggleContext,
   onSearch,
+  selectedModel,
+  onSelectModel,
 }: {
   onToggleSidebar: () => void;
   onToggleContext?: () => void;
   onSearch?: (query: string) => void;
+  selectedModel?: SupportedModelId;
+  onSelectModel?: (model: SupportedModelId) => void;
 }) {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -114,8 +119,17 @@ export function TopBar({
             </button>
           </div>
 
-          {/* Right Top Actions: Cosmic Theme Switcher */}
+          {/* Right Top Actions: Model Selector + Cosmic Theme Switcher */}
           <div className="flex items-center gap-2 shrink-0">
+            {selectedModel && onSelectModel && (
+              <div className="hidden sm:block">
+                <ModelSelector
+                  selectedModel={selectedModel}
+                  onSelectModel={onSelectModel}
+                  direction="down"
+                />
+              </div>
+            )}
             <CosmicThemeButton />
           </div>
         </div>

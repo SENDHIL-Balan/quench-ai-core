@@ -15,8 +15,12 @@
 import type { UIMessage } from "ai";
 import { AGENT_TOOLS, type ToolExecutionResult } from "../tools/agent-tools.server";
 import { chunkDocumentText, type DocumentChunk } from "../rag/rag-engine.server";
-import { resolveProvider, type LLMProvider } from "./provider.server";
+import { resolveProvider, isVisionCapableModel, type LLMProvider } from "./provider.server";
 import { buildSystemPrompt, type ModeId } from "./modes";
+import {
+  extractAndProcessAttachments,
+  buildDocumentContextForPrompt,
+} from "../attachments/document-processor.server";
 
 export interface AgentPlanStep {
   toolName: string;
@@ -177,15 +181,50 @@ export async function orchestrateAgentRun({
   abortSignal,
 }: OrchestratorOptions): Promise<OrchestrationResult> {
   const userText = getLatestUserText(messages);
-  const docChunks = extractAttachedDocumentChunks(messages);
+
+  // 1. Process attachments (PDFs, text documents, images)
+  const attachments = await extractAndProcessAttachments(messages);
+
+  let docChunks: DocumentChunk[] = [];
+  if (attachments.hasDocuments) {
+    for (const doc of attachments.documents) {
+      if (doc.text) {
+        docChunks.push(...chunkDocumentText(doc.text, doc.filename));
+      }
+    }
+  }
+  if (docChunks.length === 0) {
+    docChunks = extractAttachedDocumentChunks(messages);
+  }
+
   const plannedSteps = planToolSteps(userText, mode, Boolean(webSearch), docChunks.length > 0);
 
   const activityStages: string[] = [];
   const sources: Array<{ title: string; url: string }> = [];
   let toolContextAppend = "";
 
+  // Grounded document context injection (for PDFs, CSV, TXT, JSON, Markdown)
+  if (attachments.hasDocuments) {
+    activityStages.push(
+      `Grounded Document Engine (analyzing ${attachments.documents.length} file(s))`,
+    );
+    const docPromptBlock = await buildDocumentContextForPrompt({
+      documents: attachments.documents,
+      userQuery: userText,
+    });
+    if (docPromptBlock) {
+      toolContextAppend += `\n\n${docPromptBlock}`;
+    }
+  }
+
+  if (attachments.hasImages) {
+    activityStages.push(
+      `Vision Analysis Engine (inspecting ${attachments.images.length} image(s))`,
+    );
+  }
+
   console.info(
-    `[bravura-agent] Planned ${plannedSteps.length} tool step(s) for query: "${userText.slice(0, 60)}"`,
+    `[bravura-agent] Planned ${plannedSteps.length} tool step(s) for query: "${userText.slice(0, 60)}" (attachments: ${attachments.documents.length} doc(s), ${attachments.images.length} img(s))`,
   );
 
   // Execute planned tools sequentially with timeout protection
@@ -195,7 +234,7 @@ export async function orchestrateAgentRun({
     const tool = AGENT_TOOLS[step.toolName];
     if (!tool) continue;
 
-    activityStages.push(`Executing ${step.toolName} (${step.reason})`);
+    activityStages.push(`Executing ${tool.name} (${step.reason})`);
 
     try {
       const result: ToolExecutionResult = await tool.execute(step.params, {
@@ -223,6 +262,30 @@ export async function orchestrateAgentRun({
     }
   }
 
+  // Vision model auto-routing if images are attached and selected model does not support vision
+  let modelToUse = model;
+  let providerToUse = requestedProvider;
+  let visionNote = "";
+
+  if (attachments.hasImages) {
+    const isVision = isVisionCapableModel(modelToUse);
+    if (!isVision) {
+      const nvidiaKey = process.env["NVIDIA_API_KEY"]?.trim();
+      const openrouterKey = process.env["OPENROUTER_API_KEY"]?.trim();
+
+      if (nvidiaKey) {
+        modelToUse = "meta/llama-3.2-11b-vision-instruct";
+        providerToUse = "nvidia";
+        visionNote = "\n\n> 👁️ *Vision engine active: Analyzing image using **Llama 3.2 Vision**.*";
+      } else if (openrouterKey) {
+        modelToUse = "openrouter/free";
+        providerToUse = "openrouter";
+        visionNote =
+          "\n\n> 👁️ *Vision engine active: Analyzing image using **OpenRouter Vision Router**.*";
+      }
+    }
+  }
+
   // Build full system prompt
   let systemInstruction = buildSystemPrompt({
     mode,
@@ -234,8 +297,11 @@ export async function orchestrateAgentRun({
   if (toolContextAppend) {
     systemInstruction += toolContextAppend;
   }
+  if (visionNote) {
+    systemInstruction += visionNote;
+  }
 
-  const provider = resolveProvider(model, requestedProvider);
+  const provider = resolveProvider(modelToUse, providerToUse);
 
   return {
     finalPrompt: systemInstruction,

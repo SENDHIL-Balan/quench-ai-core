@@ -40,8 +40,8 @@ import {
 const CHATS_KEY = "quench-ai-chats-v1";
 const ACTIVE_CHAT_KEY = "quench-ai-active-chat";
 const VOICE_SETTING_KEY = "quench-ai-voice-setting";
-const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
-const MAX_ATTACHMENTS = 2;
+const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MAX_ATTACHMENTS = 5;
 
 const DEFAULT_VOICE_SETTING: VoiceSetting = {
   voiceId: "kavya", // Kavya (Sarvam AI Bulbul:v3, crystal-clear natural voice)
@@ -147,23 +147,18 @@ function BravuraApp() {
   const [selectedModel, setSelectedModel] = useState<SupportedModelId>(DEFAULT_MODEL_ID);
 
   const handleSelectModel = useCallback((model: SupportedModelId) => {
-    if (
-      model !== "gemini-3.8-flash" &&
-      model !== "openai/gpt-oss-120b" &&
-      model !== "nvidia/nemotron-3-super-120b-a12b" &&
-      model !== "kimi-k2.6" &&
-      model !== "kimi-k2.7-code"
-    ) {
+    if (!model || typeof model !== "string" || !model.trim()) {
       return;
     }
+    const clean = model.trim();
     setSelectedModel((prev) => {
-      if (prev === model) return prev;
+      if (prev === clean) return prev;
       try {
-        window.localStorage.setItem("bravura_selected_model", model);
+        window.localStorage.setItem("bravura_selected_model", clean);
       } catch {
         // ignore storage errors
       }
-      return model;
+      return clean as SupportedModelId;
     });
   }, []);
   const { isSpeaking, playingId, speak, stop: stopSpeech } = useTextToSpeech();
@@ -297,15 +292,8 @@ function BravuraApp() {
       const savedActiveId = window.localStorage.getItem(ACTIVE_CHAT_KEY);
       const savedModel = window.localStorage.getItem("bravura_selected_model");
 
-      if (
-        savedModel &&
-        (savedModel === "gemini-3.8-flash" ||
-          savedModel === "openai/gpt-oss-120b" ||
-          savedModel === "nvidia/nemotron-3-super-120b-a12b" ||
-          savedModel === "kimi-k2.6" ||
-          savedModel === "kimi-k2.7-code")
-      ) {
-        setSelectedModel(savedModel as SupportedModelId);
+      if (savedModel && typeof savedModel === "string" && savedModel.trim()) {
+        setSelectedModel(savedModel.trim() as SupportedModelId);
       }
 
       if (Array.isArray(savedChats) && savedChats.length > 0) {
@@ -505,7 +493,7 @@ function BravuraApp() {
       return;
     }
     if (files.some((file) => file.size > MAX_ATTACHMENT_BYTES)) {
-      setComposerError("Attachments must be 2 MB or smaller.");
+      setComposerError("Attachments must be 25 MB or smaller.");
       return;
     }
 
@@ -521,46 +509,24 @@ function BravuraApp() {
     const fileParts: FilePart[] = [];
     for (const file of files) {
       const mediaType = attachmentMediaType(file);
-      if (mediaType === "application/octet-stream") {
+      if (mediaType === "application/octet-stream" && !file.name.endsWith(".docx")) {
         setComposerError(
-          "Supported attachments are Images (PNG, JPG), PDF, TXT, Markdown, CSV, and JSON files.",
+          "Supported attachments are Images (PNG, JPG, WEBP, GIF), PDF, TXT, Markdown, CSV, JSON, and DOCX files.",
         );
         return;
       }
 
-      if (mediaType === "application/pdf") {
-        try {
-          const extracted = await extractPdfTextFromFile(file);
-          const encoded = `data:text/plain;charset=utf-8;base64,${btoa(
-            unescape(encodeURIComponent(extracted)),
-          )}`;
-          fileParts.push({
-            type: "file",
-            mediaType: "text/plain",
-            filename: file.name,
-            url: encoded,
-          });
-        } catch (err) {
-          const message =
-            err instanceof PdfExtractError
-              ? err.message
-              : "That PDF could not be read. Try a different file.";
-          setComposerError(message);
-          return;
-        }
-      } else {
-        try {
-          const dataUrl = await readFileAsDataUrl(file);
-          fileParts.push({
-            type: "file",
-            mediaType,
-            filename: file.name,
-            url: dataUrl,
-          });
-        } catch {
-          setComposerError(`Couldn't read ${file.name}.`);
-          return;
-        }
+      try {
+        const dataUrl = await readFileAsDataUrl(file);
+        fileParts.push({
+          type: "file",
+          mediaType,
+          filename: file.name,
+          url: dataUrl,
+        });
+      } catch {
+        setComposerError(`Couldn't read ${file.name}. Please try again.`);
+        return;
       }
     }
 
@@ -721,6 +687,8 @@ function BravuraApp() {
           <TopBar
             onToggleSidebar={() => setSidebarOpen(true)}
             onToggleContext={() => setContextOpen((v) => !v)}
+            selectedModel={selectedModel}
+            onSelectModel={handleSelectModel}
             onSearch={(q) => {
               if (q.trim()) {
                 const found = chats.find(

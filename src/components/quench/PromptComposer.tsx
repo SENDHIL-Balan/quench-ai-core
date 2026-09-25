@@ -17,12 +17,22 @@ import {
   X,
   Sparkles,
   FileText,
+  Upload,
 } from "lucide-react";
 import { AGENT_MODES, VISIBLE_MODES, type ModeId } from "@/lib/agent/modes";
 import { cn } from "@/lib/utils";
 import { MicButton } from "./MicButton";
 import { LiveVoiceAgentButton } from "./LiveVoiceAgentButton";
 import { ModelSelector, type SupportedModelId } from "./ModelSelector";
+import { AttachmentComposer, type AttachmentComposerItem } from "./AttachmentComposer";
+import {
+  formatFileSize,
+  detectMediaType,
+  getFileCategory,
+  validateAttachment,
+} from "@/lib/attachments/attachment-types";
+
+export type ComposerAttachmentItem = AttachmentComposerItem;
 
 const MODE_ICONS: Record<ModeId, typeof MessageSquare> = {
   chat: MessageSquare,
@@ -83,7 +93,8 @@ export function PromptComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-  const [files, setFiles] = useState<File[]>([]);
+  const [attachments, setAttachments] = useState<ComposerAttachmentItem[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -109,26 +120,117 @@ export function PromptComposer({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [menuOpen]);
 
-  const selectFiles = (selected: FileList | null) => {
+  const addFiles = (selected: FileList | File[] | null) => {
     if (!selected) return;
-    setFiles((current) => [...current, ...Array.from(selected)]);
+    const array = Array.from(selected);
+    if (array.length === 0) return;
+
+    const newItems: ComposerAttachmentItem[] = array.map((file) => {
+      const mediaType = detectMediaType(file);
+      const { isImage, isPdf, isTextDoc, badge } = getFileCategory(mediaType, file.name);
+      const isImg = isImage || file.type.startsWith("image/");
+      const previewUrl = isImg ? URL.createObjectURL(file) : "";
+      const validation = validateAttachment(file);
+
+      return {
+        id: `${file.name}-${file.lastModified}-${Math.random().toString(36).substring(2, 9)}`,
+        file,
+        name: file.name,
+        size: file.size,
+        formattedSize: formatFileSize(file.size),
+        mediaType,
+        previewUrl,
+        isImage: isImg,
+        isPdf,
+        isTextDoc,
+        badge,
+        status: validation.valid ? "uploading" : "error",
+        errorMessage: validation.error,
+      };
+    });
+
+    setAttachments((current) => [...current, ...newItems]);
+
+    // Simulated quick async upload/ready transition
+    setTimeout(() => {
+      setAttachments((current) =>
+        current.map((item) => (item.status === "uploading" ? { ...item, status: "ready" } : item)),
+      );
+    }, 350);
   };
 
-  const removeFile = (fileIndex: number) => {
-    setFiles((current) => current.filter((_, index) => index !== fileIndex));
+  const removeAttachment = (id: string) => {
+    setAttachments((current) => {
+      const target = current.find((a) => a.id === id);
+      if (target?.previewUrl && target.previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return current.filter((a) => a.id !== id);
+    });
   };
 
   const submit = () => {
-    onSubmit(files);
-    setFiles([]);
+    const readyFiles = attachments
+      .filter((a) => a.status === "ready" || a.status === "uploading")
+      .map((a) => a.file);
+
+    onSubmit(readyFiles);
+
+    for (const item of attachments) {
+      if (item.previewUrl && item.previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(item.previewUrl);
+      }
+    }
+    setAttachments([]);
+  };
+
+  // Drag and drop handlers
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isDragging) setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      addFiles(e.dataTransfer.files);
+    }
+  };
+
+  // Clipboard paste handler
+  const handlePaste = (e: React.ClipboardEvent) => {
+    if (e.clipboardData?.files && e.clipboardData.files.length > 0) {
+      e.preventDefault();
+      addFiles(e.clipboardData.files);
+    }
   };
 
   const currentMode: ModeId = mode ?? "chat";
   const modesEnabled = typeof onModeChange === "function";
-  const hasContent = value.length > 0 || files.length > 0;
+  const hasContent = value.length > 0 || attachments.length > 0;
 
   return (
     <div
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       className={cn(
         "w-full max-w-full min-w-0 shrink-0 relative",
         menuOpen ? "z-50" : "z-30",
@@ -141,45 +243,51 @@ export function PromptComposer({
           layout: { duration: 0.26, ease: [0.16, 1, 0.3, 1] },
         }}
         animate={{
-          borderColor: hasContent ? "rgba(6, 182, 212, 0.35)" : "rgba(255, 255, 255, 0.1)",
-          boxShadow: hasContent
-            ? "0 10px 35px rgba(6,182,212,0.12), inset 0 0 16px rgba(6,182,212,0.03)"
-            : "0 10px 30px rgba(0,0,0,0.35)",
+          borderColor: isDragging
+            ? "rgba(6, 182, 212, 0.85)"
+            : hasContent
+              ? "rgba(6, 182, 212, 0.35)"
+              : "rgba(255, 255, 255, 0.1)",
+          boxShadow: isDragging
+            ? "0 0 40px rgba(6,182,212,0.35), inset 0 0 25px rgba(6,182,212,0.15)"
+            : hasContent
+              ? "0 10px 35px rgba(6,182,212,0.12), inset 0 0 16px rgba(6,182,212,0.03)"
+              : "0 10px 30px rgba(0,0,0,0.35)",
         }}
         className={cn(
           "glass-panel relative flex flex-col rounded-2xl sm:rounded-3xl border p-2.5 sm:p-3.5 backdrop-blur-2xl w-full max-w-full min-w-0 transition-colors duration-200",
+          isDragging && "ring-2 ring-cyan-400 bg-cyan-950/20",
           busy && "ring-1 ring-cyan-500/50",
           error && "border-destructive/60",
         )}
       >
-        {/* Attached files row */}
-        {files.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1.5 px-1 pt-1">
-            {files.map((file, index) => (
-              <button
-                key={`${file.name}-${file.lastModified}-${index}`}
-                type="button"
-                onClick={() => removeFile(index)}
-                className="border-border bg-card/60 text-muted-foreground hover:text-foreground flex max-w-full items-center gap-1.5 truncate rounded-full border px-2.5 py-1 text-xs transition-colors cursor-pointer"
-                title="Remove attachment"
-              >
-                <Paperclip className="size-3 shrink-0" />
-                <span className="truncate">{file.name}</span>
-                <X className="size-3" />
-              </button>
-            ))}
+        {/* Drag and Drop Active Overlay */}
+        {isDragging && (
+          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center rounded-2xl sm:rounded-3xl bg-black/80 backdrop-blur-md border-2 border-dashed border-cyan-400/80 p-4 pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+            <Upload className="size-10 text-cyan-400 animate-bounce mb-2" />
+            <p className="text-base font-semibold text-white">Drop files to attach</p>
+            <p className="text-xs text-cyan-200/80 mt-1">
+              Images (PNG, JPG, WEBP) & Documents (PDF, TXT, CSV, DOCX)
+            </p>
           </div>
         )}
+
+        {/* AttachmentComposer Component rendering visual previews for images and file cards for PDFs */}
+        <AttachmentComposer
+          attachments={attachments}
+          onRemove={removeAttachment}
+          disabled={busy || disabled}
+        />
 
         {/* Hidden File and Camera inputs */}
         <input
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/*,.pdf,.txt,.md,.csv,.json,application/pdf,text/plain,text/markdown,text/csv,application/json"
+          accept="image/*,.pdf,.txt,.md,.csv,.json,.docx,.xlsx,.pptx,application/pdf,text/plain,text/markdown,text/csv,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           className="hidden"
           onChange={(event) => {
-            selectFiles(event.target.files);
+            addFiles(event.target.files);
             event.target.value = "";
           }}
         />
@@ -190,18 +298,19 @@ export function PromptComposer({
           capture="environment"
           className="hidden"
           onChange={(event) => {
-            selectFiles(event.target.files);
+            addFiles(event.target.files);
             event.target.value = "";
           }}
         />
 
-        {/* Full-width Prompt Input Textarea - Spans all the way to the edge like Google AI Studio */}
+        {/* Full-width Prompt Input Textarea */}
         <div className="w-full min-w-0 px-1 py-1">
           <textarea
             ref={ref}
             rows={1}
             value={value}
             disabled={disabled}
+            onPaste={handlePaste}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
@@ -209,7 +318,11 @@ export function PromptComposer({
                 submit();
               }
             }}
-            placeholder="Ask Bravura AI anything..."
+            placeholder={
+              attachments.length > 0
+                ? "Ask a question about the attached file(s)..."
+                : "Ask Bravura AI anything..."
+            }
             className="placeholder:text-white/40 min-h-[44px] max-h-[180px] w-full resize-none bg-transparent px-1.5 py-1 text-base sm:text-[15px] leading-relaxed outline-none disabled:opacity-60 text-white [scrollbar-width:thin] transition-[height] duration-200 ease-out"
           />
         </div>
@@ -343,6 +456,16 @@ export function PromptComposer({
                 </div>
               )}
             </div>
+
+            {/* Direct Paperclip Attachment Button */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="border-border bg-white/5 text-muted-foreground hover:text-foreground hover:border-white/20 flex size-9 shrink-0 items-center justify-center rounded-full border transition-colors cursor-pointer"
+              title="Attach File or Image"
+            >
+              <Paperclip className="size-4" />
+            </button>
 
             {/* Active Mode Chip (Styled like DeepThink when selected) */}
             {currentMode !== "chat" && (

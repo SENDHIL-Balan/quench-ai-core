@@ -254,6 +254,8 @@ export async function retrieveRelevantChunks(
   return scoredResults.sort((a, b) => b.score - a.score).slice(0, topK);
 }
 
+export const searchSimilarChunks = retrieveRelevantChunks;
+
 /**
  * Builds a clean RAG context block formatted for LLM system prompt injection.
  */

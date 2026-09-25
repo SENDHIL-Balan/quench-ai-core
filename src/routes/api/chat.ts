@@ -6,6 +6,7 @@ import {
   MissingProviderKeyError,
   NvidiaProviderError,
   KimiProviderError,
+  OpenRouterProviderError,
 } from "@/lib/agent/provider.server";
 
 type ChatBody = {
@@ -65,9 +66,13 @@ export const Route = createFileRoute("/api/chat")({
         } catch (error) {
           if (error instanceof MissingProviderKeyError) {
             return errorResponse(
-              "Bravura AI isn't connected to a model yet. Add your AI provider key (e.g. KIMI_API_KEY, NVIDIA_API_KEY, GROQ_API_KEY, or GEMINI_API_KEY) to continue.",
+              "Bravura AI isn't connected to a model yet. Add your AI provider key (e.g. OPENROUTER_API_KEY, NVIDIA_API_KEY, KIMI_API_KEY, GROQ_API_KEY, or GEMINI_API_KEY) to continue.",
               503,
             );
+          }
+          if (error instanceof OpenRouterProviderError) {
+            const status = error.statusCode || 500;
+            return errorResponse(error.message, status);
           }
           if (error instanceof KimiProviderError) {
             const status = error.statusCode || 500;
