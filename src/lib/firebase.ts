@@ -16,6 +16,7 @@ import {
   collection,
   query,
   where,
+  getDocs,
   onSnapshot,
   deleteDoc,
   type Unsubscribe,
@@ -113,6 +114,21 @@ export type AuthUserProfile = {
   photoURL: string | null;
 };
 
+export class UnauthorizedDomainError extends Error {
+  code = "auth/unauthorized-domain";
+  domain: string;
+  projectId: string;
+  settingsUrl: string;
+
+  constructor(domain: string, projectId: string) {
+    super(`This domain (${domain}) is not authorized in your Firebase Authentication settings.`);
+    this.name = "UnauthorizedDomainError";
+    this.domain = domain;
+    this.projectId = projectId;
+    this.settingsUrl = `https://console.firebase.google.com/project/${projectId}/authentication/settings`;
+  }
+}
+
 /**
  * Sign in with Google using Firebase Auth popup.
  * Handles popup blockers and stores basic profile information in Firestore.
@@ -149,6 +165,13 @@ export async function signInWithGoogle(): Promise<AuthUserProfile> {
     return profile;
   } catch (error: unknown) {
     const err = error as { code?: string; message?: string };
+    if (
+      err.code === "auth/unauthorized-domain" ||
+      String(err.message).includes("auth/unauthorized-domain")
+    ) {
+      const domain = typeof window !== "undefined" ? window.location.hostname : "";
+      throw new UnauthorizedDomainError(domain, firebaseConfig.projectId);
+    }
     if (err.code === "auth/popup-blocked") {
       throw new Error("Popup blocked by browser. Please allow popups for this site and try again.");
     }
@@ -254,14 +277,51 @@ export async function deleteChatFromFirestore(chatId: string): Promise<void> {
   }
 }
 
+export type FirestoreChatSession = {
+  id: string;
+  title: string;
+  messages: unknown[];
+  updatedAt: string;
+};
+
+/**
+ * Fetch the authenticated user's chats from Firestore once
+ */
+export async function getUserChatsFromFirestore(userId: string): Promise<FirestoreChatSession[]> {
+  if (!userId) return [];
+  const chatsCol = collection(db, "chats");
+  const q = query(chatsCol, where("userId", "==", userId));
+
+  try {
+    const snapshot = await getDocs(q);
+    const list: FirestoreChatSession[] = snapshot.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        title: (data["title"] as string) || "New Chat",
+        messages: (data["messages"] as unknown[]) || [],
+        updatedAt: (data["updatedAt"] as string) || new Date().toISOString(),
+      };
+    });
+    list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return list;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes("unavailable") || msg.includes("offline")) {
+      console.warn("[bravura-firestore] Firestore is running in offline mode:", msg);
+      return [];
+    }
+    handleFirestoreError(err, OperationType.LIST, "chats");
+    return [];
+  }
+}
+
 /**
  * Subscribe to the authenticated user's chats in Firestore
  */
 export function subscribeUserChats(
   userId: string,
-  onUpdate: (
-    chats: { id: string; title: string; messages: unknown[]; updatedAt: string }[],
-  ) => void,
+  onUpdate: (chats: FirestoreChatSession[]) => void,
 ): Unsubscribe {
   const chatsCol = collection(db, "chats");
   const q = query(chatsCol, where("userId", "==", userId));

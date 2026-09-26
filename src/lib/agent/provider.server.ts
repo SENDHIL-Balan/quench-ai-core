@@ -873,6 +873,161 @@ export class NvidiaProvider implements LLMProvider {
       throw new NvidiaProviderError(`NVIDIA request failed: ${msg}`, 500, err);
     }
   }
+
+  async streamText({
+    systemPrompt,
+    messages,
+    deepThink,
+    abortSignal,
+    maxOutputTokens,
+    temperature,
+    onDelta,
+  }: {
+    systemPrompt: string;
+    messages: UIMessage[];
+    deepThink: boolean;
+    abortSignal?: AbortSignal;
+    maxOutputTokens?: number;
+    temperature?: number;
+    onDelta: (delta: string) => void | Promise<void>;
+  }): Promise<string> {
+    const startTime = Date.now();
+    try {
+      console.info("[bravura] Dispatching NVIDIA streaming API request", {
+        provider: "NVIDIA",
+        model: this.modelName,
+        deepThink,
+      });
+
+      const hasImages = messages.some((m) =>
+        m.parts?.some(
+          (p) =>
+            p.type === "file" &&
+            (p.mediaType?.startsWith("image/") ||
+              (typeof p.url === "string" && p.url.startsWith("data:image/"))),
+        ),
+      );
+
+      const activeModel =
+        hasImages && !this.modelName.includes("vision") && !this.modelName.includes("vl")
+          ? "meta/llama-3.2-11b-vision-instruct"
+          : this.modelName;
+
+      let apiMessages: Array<{ role: string; content: unknown }>;
+      if (hasImages) {
+        apiMessages = [
+          { role: "system", content: systemPrompt },
+          ...mapUiMessagesToOpenRouter(messages),
+        ];
+      } else {
+        const textMessages = await mapUiMessagesToGroq(messages);
+        apiMessages = [
+          { role: "system", content: systemPrompt },
+          ...textMessages.map((m) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          })),
+        ];
+      }
+
+      const defaultMaxTokens = deepThink
+        ? AGENT_LIMITS.maxDeepThinkOutputTokens
+        : AGENT_LIMITS.maxOutputTokens;
+
+      const res = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({
+          model: activeModel,
+          messages: apiMessages,
+          stream: true,
+          max_tokens: maxOutputTokens ?? defaultMaxTokens,
+          temperature: temperature ?? (deepThink ? 0.3 : 0.6),
+          top_p: 0.95,
+        }),
+        ...(abortSignal ? { signal: abortSignal } : {}),
+      });
+
+      if (!res.ok) {
+        let errBody: Record<string, unknown> = {};
+        try {
+          errBody = (await res.json()) as Record<string, unknown>;
+        } catch {
+          // non-json
+        }
+        const errorDetail =
+          (errBody.detail as string) ||
+          (errBody.title as string) ||
+          ((errBody.error as { message?: string })?.message as string) ||
+          `HTTP ${res.status}`;
+
+        throw new NvidiaProviderError(`NVIDIA API error: ${errorDetail}`, res.status);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) {
+        throw new NvidiaProviderError("No response stream returned by NVIDIA API.", 500);
+      }
+
+      const decoder = new TextDecoder();
+      let fullText = "";
+      let buffer = "";
+
+      while (true) {
+        if (abortSignal?.aborted) {
+          reader.cancel().catch(() => {});
+          break;
+        }
+
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data:")) continue;
+          const dataStr = trimmed.slice(5).trim();
+          if (dataStr === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(dataStr);
+            const delta = parsed.choices?.[0]?.delta?.content || "";
+            if (delta) {
+              fullText += delta;
+              await onDelta(delta);
+            }
+          } catch {
+            // ignore malformed SSE line
+          }
+        }
+      }
+
+      if (!fullText.trim()) {
+        return await this.generateText({
+          systemPrompt,
+          messages,
+          deepThink,
+          abortSignal,
+          maxOutputTokens,
+          temperature,
+        });
+      }
+
+      return fullText;
+    } catch (err) {
+      if (err instanceof NvidiaProviderError) throw err;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[bravura] NVIDIA stream failed:", msg);
+      throw new NvidiaProviderError(`NVIDIA streaming failed: ${msg}`, 500, err);
+    }
+  }
 }
 
 export class KimiProvider implements LLMProvider {
@@ -1083,9 +1238,10 @@ export function mapUiMessagesToOpenRouter(messages: UIMessage[]) {
         { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
       > = [];
 
-      if (textParts) {
-        contentParts.push({ type: "text", text: textParts });
-      }
+      contentParts.push({
+        type: "text",
+        text: textParts || "Please analyze and describe this attached image in detail.",
+      });
 
       for (const f of fileParts) {
         if (f.mediaType?.startsWith("image/") || f.url?.startsWith("data:image/")) {
@@ -1585,17 +1741,22 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
 
   // Helper to test if model identifier belongs to OpenRouter
   const isOpenRouterTarget =
-    preferredProvider === "openrouter" ||
-    modelToUse === "openrouter" ||
-    modelToUse === "openrouter/free" ||
-    Boolean(modelToUse?.startsWith("openrouter/")) ||
-    (Boolean(modelToUse?.includes(":free")) &&
-      !modelToUse?.startsWith("gemini") &&
-      !modelToUse?.startsWith("kimi")) ||
-    (Boolean(modelToUse?.includes("/")) &&
-      modelToUse !== "openai/gpt-oss-120b" &&
-      modelToUse !== "nvidia/nemotron-3-super-120b-a12b" &&
-      modelToUse !== "mistralai/mistral-nemotron");
+    preferredProvider !== "nvidia" &&
+    preferredProvider !== "kimi" &&
+    preferredProvider !== "moonshot" &&
+    preferredProvider !== "groq" &&
+    (preferredProvider === "openrouter" ||
+      modelToUse === "openrouter" ||
+      modelToUse === "openrouter/free" ||
+      Boolean(modelToUse?.startsWith("openrouter/")) ||
+      (Boolean(modelToUse?.includes(":free")) &&
+        !modelToUse?.startsWith("gemini") &&
+        !modelToUse?.startsWith("kimi")) ||
+      (Boolean(modelToUse?.includes("/")) &&
+        modelToUse !== "openai/gpt-oss-120b" &&
+        modelToUse !== "nvidia/nemotron-3-super-120b-a12b" &&
+        modelToUse !== "meta/llama-3.2-11b-vision-instruct" &&
+        modelToUse !== "mistralai/mistral-nemotron"));
 
   // 1. Explicit request for OpenRouter
   if (isOpenRouterTarget) {
@@ -1644,12 +1805,16 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
     modelToUse === "nvidia/nemotron-3-super-120b-a12b" ||
     modelToUse === "nemotron" ||
     modelToUse === "mistralai/mistral-nemotron" ||
+    modelToUse === "meta/llama-3.2-11b-vision-instruct" ||
     modelToUse?.startsWith("nvidia/") ||
     preferredProvider === "nvidia"
   ) {
     if (nvidiaKey) {
       const activeNvidiaModel =
-        modelToUse && (modelToUse.startsWith("nvidia/") || modelToUse.startsWith("mistralai/"))
+        modelToUse &&
+        (modelToUse.startsWith("nvidia/") ||
+          modelToUse.startsWith("mistralai/") ||
+          modelToUse.startsWith("meta/"))
           ? modelToUse
           : NVIDIA_MODEL;
       console.info(

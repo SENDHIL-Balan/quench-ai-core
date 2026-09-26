@@ -104,13 +104,14 @@ function UserMessage({ message }: { message: UIMessage }) {
   }, [message]);
 
   const pureText = useMemo(() => {
-    if (!Array.isArray(message.parts) || message.parts.length === 0) {
-      return messageText(message);
+    if (Array.isArray(message.parts) && message.parts.length > 0) {
+      const textParts = message.parts
+        .filter((p) => p.type === "text" && typeof p.text === "string")
+        .map((p) => p.text);
+      const joined = textParts.join("\n\n").trim();
+      if (joined) return joined;
     }
-    const textParts = message.parts
-      .filter((p) => p.type === "text" && typeof p.text === "string")
-      .map((p) => p.text);
-    return textParts.join("\n\n").trim();
+    return messageText(message);
   }, [message]);
 
   return (

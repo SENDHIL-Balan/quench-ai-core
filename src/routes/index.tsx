@@ -34,6 +34,7 @@ import {
   saveChatToFirestore,
   deleteChatFromFirestore,
   subscribeUserChats,
+  getUserChatsFromFirestore,
   type AuthUserProfile,
 } from "@/lib/firebase";
 
@@ -283,13 +284,13 @@ function BravuraApp() {
   }, []);
 
   // Hydrate chats & model from localStorage on client mount (avoids SSR hydration mismatch)
+  // When the user swipes the app away, force quits, or reopens, it will ALWAYS load on a fresh new page
   useEffect(() => {
     if (hasLoadedStorageRef.current) return;
     hasLoadedStorageRef.current = true;
     try {
       const savedChatsRaw = window.localStorage.getItem(CHATS_KEY);
       const savedChats = savedChatsRaw ? (JSON.parse(savedChatsRaw) as StoredChat[]) : [];
-      const savedActiveId = window.localStorage.getItem(ACTIVE_CHAT_KEY);
       const savedModel = window.localStorage.getItem("bravura_selected_model");
 
       if (savedModel && typeof savedModel === "string" && savedModel.trim()) {
@@ -299,16 +300,14 @@ function BravuraApp() {
       if (Array.isArray(savedChats) && savedChats.length > 0) {
         setChats(savedChats);
         chatsRef.current = savedChats;
-        if (savedActiveId && savedChats.some((c) => c.id === savedActiveId)) {
-          setActiveChatId(savedActiveId);
-          activeChatIdRef.current = savedActiveId;
-          const activeChat = savedChats.find((c) => c.id === savedActiveId);
-          if (activeChat && Array.isArray(activeChat.messages) && activeChat.messages.length > 0) {
-            setMessagesRef.current(activeChat.messages);
-            lastLoadedChatIdRef.current = savedActiveId;
-          }
-        }
       }
+
+      // Explicitly clear any active chat ID so that forcequit / app swipe / fresh open always starts on a new page
+      window.localStorage.removeItem(ACTIVE_CHAT_KEY);
+      setActiveChatId(null);
+      activeChatIdRef.current = null;
+      lastLoadedChatIdRef.current = null;
+      setMessagesRef.current([]);
     } catch {
       // ignore storage errors
     }
@@ -322,19 +321,6 @@ function BravuraApp() {
       // storage unavailable
     }
   }, [chats]);
-
-  useEffect(() => {
-    if (!hasLoadedStorageRef.current) return;
-    try {
-      if (activeChatId) {
-        window.localStorage.setItem(ACTIVE_CHAT_KEY, activeChatId);
-      } else {
-        window.localStorage.removeItem(ACTIVE_CHAT_KEY);
-      }
-    } catch {
-      // storage unavailable
-    }
-  }, [activeChatId]);
 
   // Hydrate messages only when activeChatId changes to a different chat
   useEffect(() => {
@@ -350,7 +336,8 @@ function BravuraApp() {
 
     lastLoadedChatIdRef.current = activeChatId;
     const chat = chatsRef.current.find((c) => c.id === activeChatId);
-    if (chat && Array.isArray(chat.messages)) {
+    // Never wipe out active messages if chat has no messages
+    if (chat && Array.isArray(chat.messages) && chat.messages.length > 0) {
       setMessagesRef.current(chat.messages);
     }
   }, [activeChatId]);
@@ -545,12 +532,22 @@ function BravuraApp() {
         messages: [],
       };
       chatId = newChat.id;
+      lastLoadedChatIdRef.current = chatId;
+      activeChatIdRef.current = chatId;
       setChats((current) => [newChat, ...current]);
       setActiveChatId(chatId);
     }
 
+    const textToSend =
+      value ||
+      (fileParts.length > 0
+        ? fileParts.some((f) => f.mediaType.startsWith("image/"))
+          ? "Please analyze this image."
+          : "Please review this document."
+        : "");
+
     void sendMessage(
-      { text: value, files: fileParts },
+      { text: textToSend, files: fileParts },
       { body: { mode, deepThink, webSearch, model: selectedModel } },
     );
   };
@@ -571,14 +568,29 @@ function BravuraApp() {
       stop();
       stopSpeech();
       hasActiveTurnRef.current = false;
-      const chat = chatsRef.current.find((c) => c.id === id);
-      if (!chat) return;
-      lastLoadedChatIdRef.current = id;
-      setMessages(chat.messages);
-      setActiveChatId(id);
+      const chat = chatsRef.current.find((c) => c.id === id) || chats.find((c) => c.id === id);
+      if (chat) {
+        lastLoadedChatIdRef.current = id;
+        setMessages(chat.messages);
+        setActiveChatId(id);
+      } else if (authUser?.uid) {
+        void getUserChatsFromFirestore(authUser.uid).then((remoteChats) => {
+          const found = remoteChats.find((rc) => rc.id === id);
+          if (found) {
+            lastLoadedChatIdRef.current = id;
+            setMessages(found.messages as UIMessage[]);
+            setActiveChatId(id);
+            setChats((prev) => {
+              if (prev.some((p) => p.id === id)) return prev;
+              return [found as StoredChat, ...prev];
+            });
+          }
+        });
+      }
       setHistoryOpen(false);
+      setSidebarOpen(false);
     },
-    [stop, stopSpeech, setMessages],
+    [stop, stopSpeech, setMessages, chats, authUser?.uid],
   );
 
   const deleteChat = useCallback(
@@ -629,6 +641,10 @@ function BravuraApp() {
           <div className="sticky top-4 h-[calc(100vh-2rem)]">
             <Sidebar
               onNewChat={newChat}
+              onSelectChat={openChat}
+              onDeleteChat={deleteChat}
+              activeChatId={activeChatId}
+              chats={chats}
               onHistory={() => setHistoryOpen(true)}
               onOpenVoiceSettings={() => setVoiceModalOpen(true)}
               onOpenTools={() => {}}
@@ -646,9 +662,16 @@ function BravuraApp() {
               onClick={() => setSidebarOpen(false)}
               aria-label="Close menu"
             />
-            <div className="absolute inset-y-3 left-3 max-h-[calc(100vh-1.5rem)] w-[min(300px,85vw)] overflow-y-auto overscroll-contain">
+            <div className="absolute inset-y-3 left-3 max-h-[calc(100vh-1.5rem)] w-[min(320px,88vw)] overflow-y-auto overscroll-contain">
               <Sidebar
                 onNewChat={newChat}
+                onSelectChat={(id) => {
+                  openChat(id);
+                  setSidebarOpen(false);
+                }}
+                onDeleteChat={deleteChat}
+                activeChatId={activeChatId}
+                chats={chats}
                 onHistory={() => {
                   setHistoryOpen(true);
                   setSidebarOpen(false);
