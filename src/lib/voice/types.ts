@@ -1,6 +1,6 @@
 export type VoiceProvider = "sarvam" | "deepgram" | "elevenlabs" | "auto";
 
-export type VoiceLanguage = "auto" | "ta" | "ml" | "kn" | "en";
+export type VoiceLanguage = "auto" | "ta" | "ml" | "kn" | "hi" | "te" | "en";
 
 export interface VoiceLanguageOption {
   code: VoiceLanguage;
@@ -18,7 +18,8 @@ export const VOICE_LANGUAGES: VoiceLanguageOption[] = [
     nativeName: "தானியங்கி / Auto",
     badge: "Smart",
     shortLabel: "Auto",
-    description: "Automatically detects Tamil, Malayalam, Kannada, or English speech",
+    description:
+      "Automatically detects Indian languages (Tamil, Malayalam, Kannada, Hindi, Telugu) or English",
   },
   {
     code: "ta",
@@ -45,12 +46,28 @@ export const VOICE_LANGUAGES: VoiceLanguageOption[] = [
     description: "Natural conversational Kannada (ನೈಸರ್ಗಿಕ ಕನ್ನಡ & Kanglish)",
   },
   {
+    code: "hi",
+    name: "Hindi",
+    nativeName: "हिंदी",
+    badge: "प्राकृतिक हिंदी",
+    shortLabel: "हिंदी",
+    description: "Natural conversational spoken Hindi (बोलचाल की हिंदी & Hinglish)",
+  },
+  {
+    code: "te",
+    name: "Telugu",
+    nativeName: "తెలుగు",
+    badge: "సహజ తెలుగు",
+    shortLabel: "తెలుగు",
+    description: "Natural conversational Telugu (సహజ సంభాషణ తెలుగు)",
+  },
+  {
     code: "en",
     name: "English",
     nativeName: "English",
     badge: "Global",
     shortLabel: "EN",
-    description: "Natural conversational & articulate modern English",
+    description: "Natural conversational & articulate Indian and Global English",
   },
 ];
 

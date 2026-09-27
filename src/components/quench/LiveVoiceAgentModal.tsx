@@ -25,6 +25,8 @@ import {
   type AudioPlaybackController,
 } from "@/lib/voice/player";
 import { VoiceAgentModal, VOICES, type VoiceSetting } from "./VoiceAgentModal";
+import { VoiceLanguageSelector } from "./VoiceLanguageSelector";
+import type { VoiceLanguage } from "@/lib/voice/types";
 import { FluidVoiceOrb } from "./FluidVoiceOrb";
 import { RealtimeAudioVisualizer } from "./RealtimeAudioVisualizer";
 
@@ -240,6 +242,7 @@ export function LiveVoiceAgentModal({
           voiceId: voiceSetting.voiceId,
           provider: voiceSetting.provider,
           playbackSpeed: voiceSetting.playbackSpeed ?? 1.0,
+          language: voiceSetting.language,
           onStart: () => {
             if (isComponentMounted.current && activeSessionRef.current) {
               setLiveState("speaking");
@@ -307,6 +310,7 @@ export function LiveVoiceAgentModal({
         const formData = new FormData();
         const ext = result.mimeType.includes("mp4") ? "mp4" : "webm";
         formData.append("audio", result.blob, `recording.${ext}`);
+        formData.append("language", voiceSetting.language || "auto");
 
         const res = await fetch("/api/transcribe", {
           method: "POST",
@@ -556,19 +560,30 @@ export function LiveVoiceAgentModal({
           </span>
         </div>
 
-        {/* Center: Current Voice Persona Pill (click to configure) */}
-        <button
-          type="button"
-          onClick={() => setConfigOverlayOpen(true)}
-          className="flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3.5 py-1 text-xs text-cyan-200 hover:bg-cyan-500/20 hover:border-cyan-500/50 transition-all cursor-pointer shadow-sm shadow-cyan-500/10"
-          title="Open Voice Configuration"
-        >
-          <Sparkles className="size-3 text-cyan-400" />
-          <span className="font-medium truncate max-w-[120px] sm:max-w-none">
-            {currentVoiceObj.name}
-          </span>
-          <Sliders className="size-3 text-cyan-400/80" />
-        </button>
+        {/* Center: Language & Voice Persona */}
+        <div className="flex items-center gap-2">
+          {onVoiceSettingChange && (
+            <VoiceLanguageSelector
+              value={voiceSetting.language || "auto"}
+              onChange={(lang) => {
+                onVoiceSettingChange({ ...voiceSetting, language: lang });
+              }}
+            />
+          )}
+
+          <button
+            type="button"
+            onClick={() => setConfigOverlayOpen(true)}
+            className="flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3.5 py-1 text-xs text-cyan-200 hover:bg-cyan-500/20 hover:border-cyan-500/50 transition-all cursor-pointer shadow-sm shadow-cyan-500/10"
+            title="Open Voice Configuration"
+          >
+            <Sparkles className="size-3 text-cyan-400" />
+            <span className="font-medium truncate max-w-[120px] sm:max-w-none">
+              {currentVoiceObj.name}
+            </span>
+            <Sliders className="size-3 text-cyan-400/80" />
+          </button>
+        </div>
 
         {/* Right: Close & End Call */}
         <div className="flex items-center gap-2">

@@ -107,7 +107,10 @@ export function VoiceLanguageSelector({
         <Languages className="size-3.5 text-cyan-400 shrink-0" />
         <span className="font-medium">{selected.shortLabel}</span>
         <ChevronDown
-          className={cn("size-3 text-zinc-400 transition-transform duration-200", open && "rotate-180")}
+          className={cn(
+            "size-3 text-zinc-400 transition-transform duration-200",
+            open && "rotate-180",
+          )}
         />
       </button>
 

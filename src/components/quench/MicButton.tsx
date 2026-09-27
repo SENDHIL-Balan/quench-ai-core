@@ -13,7 +13,12 @@ type MicButtonProps = {
 
 type Status = "idle" | "recording" | "transcribing" | "error";
 
-export function MicButton({ onTranscribed, onCancel, disabled, language = "auto" }: MicButtonProps) {
+export function MicButton({
+  onTranscribed,
+  onCancel,
+  disabled,
+  language = "auto",
+}: MicButtonProps) {
   const [status, setStatus] = useState<Status>("idle");
   const [level, setLevel] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);

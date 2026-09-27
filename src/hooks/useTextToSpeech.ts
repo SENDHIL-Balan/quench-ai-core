@@ -16,6 +16,7 @@ export interface SpeakOptions {
   playbackSpeed?: number;
   forceReplay?: boolean;
   newStream?: boolean;
+  language?: string;
 }
 
 interface UseTextToSpeechResult {
@@ -83,6 +84,7 @@ export function useTextToSpeech(): UseTextToSpeechResult {
         playbackSpeed: options.playbackSpeed,
         forceReplay: options.forceReplay,
         newStream: options.newStream !== false,
+        language: options.language,
         onStart: () => {
           setState("speaking");
           setPlayingId(options.id ?? null);

@@ -5,7 +5,7 @@ import { resolveVoiceForProvider, getVoiceGender } from "./voices";
  * Handles voice provider health, quota cooldowns, and cross-provider voice mapping.
  */
 
-export const SARVAM_KEY_FALLBACK = "sk_2b008r0k_dwBZgLAmycOiz1tparvbS7e8";
+export const SARVAM_KEY_FALLBACK = "sk_fpdst1zg_AvTypWxSogRu7Fh7uF5XmdmK";
 export const DEEPGRAM_KEY_FALLBACK = "f864cbf8ef4e61b5cc5f2c7aac27326b24f4ae43";
 export const ELEVENLABS_KEY_FALLBACK = "sk_f42cb47fc1c14c2ce644d8c09f75a215578319c977b6baab";
 
@@ -16,7 +16,8 @@ export function getSarvamApiKey(): string {
     envKey.startsWith("http://") ||
     envKey.startsWith("https://") ||
     envKey.includes("youtube.com") ||
-    envKey.length < 10
+    !envKey.startsWith("sk_") ||
+    envKey.length < 15
   ) {
     return SARVAM_KEY_FALLBACK;
   }

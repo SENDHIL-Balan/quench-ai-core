@@ -438,6 +438,7 @@ function BravuraApp() {
           voice: voiceSetting.voiceId,
           provider: voiceSetting.provider,
           playbackSpeed: voiceSetting.playbackSpeed ?? 1.0,
+          language: voiceSetting.language,
           forceReplay: false,
         });
       }
@@ -484,6 +485,7 @@ function BravuraApp() {
         voice: voiceSetting?.voiceId || "kavya",
         provider: voiceSetting?.provider || "sarvam",
         playbackSpeed: voiceSetting?.playbackSpeed || 1.0,
+        language: voiceSetting?.language,
         forceReplay: true,
       });
     },
@@ -883,6 +885,18 @@ function BravuraApp() {
                 onModeChange={setMode}
                 selectedModel={selectedModel}
                 onSelectModel={handleSelectModel}
+                voiceLanguage={voiceSetting.language || "auto"}
+                onChangeVoiceLanguage={(lang) => {
+                  setVoiceSetting((prev) => {
+                    const next = { ...prev, language: lang };
+                    try {
+                      window.localStorage.setItem(VOICE_SETTING_KEY, JSON.stringify(next));
+                    } catch {
+                      // ignore
+                    }
+                    return next;
+                  });
+                }}
                 deepThink={deepThink}
                 onToggleDeepThink={() => setDeepThink((enabled) => !enabled)}
                 webSearch={webSearch}

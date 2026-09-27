@@ -213,7 +213,9 @@ export function VoiceAgentModal({
 }) {
   const [selectedVoice, setSelectedVoice] = useState(voiceSetting.voiceId);
   const [selectedProvider, setSelectedProvider] = useState<VoiceProvider>(voiceSetting.provider);
-  const [selectedLanguage, setSelectedLanguage] = useState<VoiceLanguage>(voiceSetting.language || "auto");
+  const [selectedLanguage, setSelectedLanguage] = useState<VoiceLanguage>(
+    voiceSetting.language || "auto",
+  );
   const [autoSpeak, setAutoSpeak] = useState(voiceSetting.autoSpeak);
   const [handsFreeListen, setHandsFreeListen] = useState(voiceSetting.handsFreeListen ?? true);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(voiceSetting.playbackSpeed ?? 1.0);
@@ -614,7 +616,8 @@ export function VoiceAgentModal({
                     </span>
                   </div>
                   <p className="text-muted-foreground text-xs mt-0.5">
-                    Select your preferred spoken language for live microphone transcription and AI voice responses
+                    Select your preferred spoken language for live microphone transcription and AI
+                    voice responses
                   </p>
                 </div>
               </div>

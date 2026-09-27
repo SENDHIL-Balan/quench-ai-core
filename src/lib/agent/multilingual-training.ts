@@ -72,4 +72,3 @@ When the user speaks or writes in Kannada (script or Kanglish), respond in court
   • When generating voice responses (Voice Mode / Spoken Text): Keep statements concise, lively, and conversational (1 to 2 spoken sentences per turn).
   • NEVER include markdown stars (*), hashes (#), bullet dashes (-), or raw URLs in voice mode, as these hinder smooth text-to-speech pronunciation.
 `;
-

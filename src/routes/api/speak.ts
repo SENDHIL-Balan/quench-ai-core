@@ -49,6 +49,8 @@ export function resolveTargetLanguageCode(text: string, requestedLanguage?: stri
   if (norm === "ta" || norm === "tamil" || norm === "ta-in") return "ta-IN";
   if (norm === "ml" || norm === "malayalam" || norm === "ml-in") return "ml-IN";
   if (norm === "kn" || norm === "kannada" || norm === "kn-in") return "kn-IN";
+  if (norm === "hi" || norm === "hindi" || norm === "hi-in") return "hi-IN";
+  if (norm === "te" || norm === "telugu" || norm === "te-in") return "te-IN";
   if (norm === "en" || norm === "english" || norm === "en-in") return "en-IN";
 
   // Unicode Script Detection:
@@ -58,6 +60,10 @@ export function resolveTargetLanguageCode(text: string, requestedLanguage?: stri
   if (/[\u0D00-\u0D7F]/.test(text)) return "ml-IN";
   // Kannada Unicode block: U+0C80 to U+0CFF
   if (/[\u0C80-\u0CFF]/.test(text)) return "kn-IN";
+  // Devanagari (Hindi) Unicode block: U+0900 to U+097F
+  if (/[\u0900-\u097F]/.test(text)) return "hi-IN";
+  // Telugu Unicode block: U+0C00 to U+0C7F
+  if (/[\u0C00-\u0C7F]/.test(text)) return "te-IN";
 
   // Tanglish / Manglish / Kanglish heuristic markers:
   const lower = text.toLowerCase();
