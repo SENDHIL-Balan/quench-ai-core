@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from "react";
 import { Menu, Search, X } from "lucide-react";
-import { CosmicThemeButton } from "./CosmicThemeButton";
 import { ModelSelector, type SupportedModelId } from "./ModelSelector";
 
 export function TopBar({
@@ -119,7 +118,7 @@ export function TopBar({
             </button>
           </div>
 
-          {/* Right Top Actions: Model Selector + Cosmic Theme Switcher */}
+          {/* Right Top Actions: Model Selector */}
           <div className="flex items-center gap-2 shrink-0">
             {selectedModel && onSelectModel && (
               <div className="hidden sm:block">
@@ -130,7 +129,6 @@ export function TopBar({
                 />
               </div>
             )}
-            <CosmicThemeButton />
           </div>
         </div>
       )}

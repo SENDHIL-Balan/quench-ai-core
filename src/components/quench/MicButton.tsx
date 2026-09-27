@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic, Loader2, X } from "lucide-react";
 import { VoiceRecorder, type RecorderResult } from "@/lib/voice/recorder";
+import type { VoiceLanguage } from "@/lib/voice/types";
 import { cn } from "@/lib/utils";
 
 type MicButtonProps = {
   onTranscribed: (text: string) => void;
   onCancel?: () => void;
   disabled?: boolean;
+  language?: VoiceLanguage;
 };
 
 type Status = "idle" | "recording" | "transcribing" | "error";
 
-export function MicButton({ onTranscribed, onCancel, disabled }: MicButtonProps) {
+export function MicButton({ onTranscribed, onCancel, disabled, language = "auto" }: MicButtonProps) {
   const [status, setStatus] = useState<Status>("idle");
   const [level, setLevel] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -87,6 +89,7 @@ export function MicButton({ onTranscribed, onCancel, disabled }: MicButtonProps)
       const formData = new FormData();
       const ext = result.mimeType.includes("mp4") ? "mp4" : "webm";
       formData.append("audio", result.blob, `recording.${ext}`);
+      formData.append("language", language || "auto");
 
       const res = await fetch("/api/transcribe", {
         method: "POST",
@@ -117,7 +120,7 @@ export function MicButton({ onTranscribed, onCancel, disabled }: MicButtonProps)
     } catch {
       showError("Network issue — check your connection and try again.");
     }
-  }, [onTranscribed, showError]);
+  }, [language, onTranscribed, showError]);
 
   const cancelRecording = useCallback(() => {
     recorderRef.current?.cancel();
@@ -136,12 +139,23 @@ export function MicButton({ onTranscribed, onCancel, disabled }: MicButtonProps)
     }
   }, [disabled, status, startRecording, stopAndTranscribe]);
 
+  const langLabel =
+    language === "ta"
+      ? "Tamil (தமிழ்)"
+      : language === "ml"
+        ? "Malayalam (മലയാളം)"
+        : language === "kn"
+          ? "Kannada (ಕನ್ನಡ)"
+          : language === "en"
+            ? "English"
+            : "Auto Detect";
+
   const label =
     status === "recording"
-      ? "Stop recording"
+      ? `Stop recording (${langLabel})`
       : status === "transcribing"
-        ? "Transcribing"
-        : "Start voice input";
+        ? `Transcribing ${langLabel}...`
+        : `Start voice input (${langLabel})`;
 
   return (
     <div className="relative shrink-0">

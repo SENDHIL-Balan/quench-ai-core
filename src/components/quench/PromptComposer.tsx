@@ -22,6 +22,8 @@ import {
 import { AGENT_MODES, VISIBLE_MODES, type ModeId } from "@/lib/agent/modes";
 import { cn } from "@/lib/utils";
 import { MicButton } from "./MicButton";
+import { VoiceLanguageSelector } from "./VoiceLanguageSelector";
+import type { VoiceLanguage } from "@/lib/voice/types";
 import { LiveVoiceAgentButton } from "./LiveVoiceAgentButton";
 import { ModelSelector, type SupportedModelId } from "./ModelSelector";
 import { AttachmentComposer, type AttachmentComposerItem } from "./AttachmentComposer";
@@ -62,6 +64,8 @@ export function PromptComposer({
   onModeChange,
   selectedModel,
   onSelectModel,
+  voiceLanguage = "auto",
+  onChangeVoiceLanguage,
   busy,
   disabled,
   error,
@@ -84,6 +88,8 @@ export function PromptComposer({
   onModeChange?: (mode: ModeId) => void;
   selectedModel?: SupportedModelId;
   onSelectModel?: (model: SupportedModelId) => void;
+  voiceLanguage?: VoiceLanguage;
+  onChangeVoiceLanguage?: (language: VoiceLanguage) => void;
   busy: boolean;
   disabled?: boolean;
   error?: string | null;
@@ -550,8 +556,21 @@ export function PromptComposer({
                   transition={{ duration: 0.18, ease: "easeOut" }}
                   className="flex items-center gap-1.5 sm:gap-2"
                 >
+                  {/* Voice Language Selector (English, Tamil, Malayalam, Kannada, Auto) */}
+                  {onChangeVoiceLanguage && (
+                    <VoiceLanguageSelector
+                      value={voiceLanguage}
+                      onChange={onChangeVoiceLanguage}
+                      disabled={disabled || busy}
+                    />
+                  )}
+
                   {/* Voice to Text (MicButton) */}
-                  <MicButton onTranscribed={onTranscribed} disabled={disabled || busy} />
+                  <MicButton
+                    onTranscribed={onTranscribed}
+                    disabled={disabled || busy}
+                    language={voiceLanguage}
+                  />
 
                   {/* Live Voice Agent button to talk in live */}
                   {onOpenLiveVoice && (

@@ -30,6 +30,7 @@ type SpeakBody = {
   voice?: unknown;
   provider?: "sarvam" | "elevenlabs" | "deepgram" | "auto";
   playbackSpeed?: unknown;
+  language?: unknown;
 };
 
 function errorResponse(message: string, status: number) {
@@ -40,19 +41,66 @@ function errorResponse(message: string, status: number) {
 }
 
 /**
+ * Resolves the Sarvam AI target language code based on user preference or script detection.
+ * Native support for Tamil (ta-IN), Malayalam (ml-IN), Kannada (kn-IN), and Indian English (en-IN).
+ */
+export function resolveTargetLanguageCode(text: string, requestedLanguage?: string): string {
+  const norm = (requestedLanguage || "").toLowerCase().trim();
+  if (norm === "ta" || norm === "tamil" || norm === "ta-in") return "ta-IN";
+  if (norm === "ml" || norm === "malayalam" || norm === "ml-in") return "ml-IN";
+  if (norm === "kn" || norm === "kannada" || norm === "kn-in") return "kn-IN";
+  if (norm === "en" || norm === "english" || norm === "en-in") return "en-IN";
+
+  // Unicode Script Detection:
+  // Tamil Unicode block: U+0B80 to U+0BFF
+  if (/[\u0B80-\u0BFF]/.test(text)) return "ta-IN";
+  // Malayalam Unicode block: U+0D00 to U+0D7F
+  if (/[\u0D00-\u0D7F]/.test(text)) return "ml-IN";
+  // Kannada Unicode block: U+0C80 to U+0CFF
+  if (/[\u0C80-\u0CFF]/.test(text)) return "kn-IN";
+
+  // Tanglish / Manglish / Kanglish heuristic markers:
+  const lower = text.toLowerCase();
+  if (
+    /\b(vanakkam|eppadi|irukkeenga|solleenga|nanba|thambi|anna|romba|nalla|illai|seri|aama|ennaku|ungakitta|theriyuma|paarkalam)\b/i.test(
+      lower,
+    )
+  ) {
+    return "ta-IN";
+  }
+  if (
+    /\b(namaskaram|enthundu|vishesham|sukhamano|chechi|chettan|nanni|shari|illa|athe|entha|nokkam)\b/i.test(
+      lower,
+    )
+  ) {
+    return "ml-IN";
+  }
+  if (
+    /\b(namaskara|hegiddira|channagidira|enu|samachara|kandita|houdu|illa|dhanyavada|banni|madona)\b/i.test(
+      lower,
+    )
+  ) {
+    return "kn-IN";
+  }
+
+  return "en-IN";
+}
+
+/**
  * Sarvam AI Bulbul:v3 Text-To-Speech
- * High-clarity Indian English & multilingual synthesis
+ * High-clarity Indian English & Native Multilingual synthesis (Tamil, Malayalam, Kannada, English)
  */
 async function fetchSarvamAudio(
   apiKey: string,
   text: string,
   speaker: string,
   playbackSpeed = 1.0,
+  languageCode = "en-IN",
 ): Promise<Response> {
   const pace = Math.max(0.7, Math.min(1.8, playbackSpeed || 1.0));
 
   // Sarvam Bulbul:v3 limits each input chunk to 500 characters.
-  // Split into natural sentence chunks of <= 400 characters so multi-sentence responses synthesize flawlessly.
+  // Split into natural sentence chunks of <= 420 characters so multi-sentence responses synthesize flawlessly.
   const chunks: string[] = [];
   let remaining = text.trim();
   while (remaining.length > 0) {
@@ -84,7 +132,7 @@ async function fetchSarvamAudio(
       },
       body: JSON.stringify({
         inputs,
-        target_language_code: "en-IN",
+        target_language_code: languageCode || "en-IN",
         speaker: speaker || "kavya",
         pace,
         loudness: 1.5,
@@ -210,23 +258,36 @@ export const Route = createFileRoute("/api/speak")({
             ? body.playbackSpeed
             : 1.0;
 
+        const requestedLanguage = typeof body.language === "string" ? body.language : undefined;
+        const targetLanguageCode = resolveTargetLanguageCode(textToSpeak, requestedLanguage);
+        const isIndicLanguage = targetLanguageCode !== "en-IN";
+
         const targetGender = getVoiceGender(requestedVoice);
         console.log(
-          `[VOICE] API /api/speak received: voice=${requestedVoice} (${targetGender}), provider=${requestedProvider}, length=${textToSpeak.length}`,
+          `[VOICE] API /api/speak received: voice=${requestedVoice} (${targetGender}), provider=${requestedProvider}, lang=${targetLanguageCode}, length=${textToSpeak.length}`,
         );
 
-        const isExplicitSarvam = requestedProvider === "sarvam" || isSarvamVoice(requestedVoice);
+        const isExplicitSarvam =
+          isIndicLanguage || requestedProvider === "sarvam" || isSarvamVoice(requestedVoice);
         const isDeepgramVoice = requestedVoice.startsWith("aura-");
         const isElevenLabsVoice = Boolean(
           requestedVoice && !isDeepgramVoice && !isSarvamVoice(requestedVoice),
         );
 
-        // 1. Try Sarvam AI first if explicitly requested or matching a Sarvam voice
+        // 1. Try Sarvam AI first if Indic language (Tamil, Malayalam, Kannada), explicitly requested, or matching a Sarvam voice
         if (isExplicitSarvam && sarvamKey) {
           const speaker = getEffectiveSarvamVoice(requestedVoice);
           try {
-            console.log(`[VOICE] Attempting Sarvam AI with speaker=${speaker} (${targetGender})`);
-            const res = await fetchSarvamAudio(sarvamKey, textToSpeak, speaker, playbackSpeed);
+            console.log(
+              `[VOICE] Attempting Sarvam AI with speaker=${speaker} (${targetGender}) lang=${targetLanguageCode}`,
+            );
+            const res = await fetchSarvamAudio(
+              sarvamKey,
+              textToSpeak,
+              speaker,
+              playbackSpeed,
+              targetLanguageCode,
+            );
             console.log(`[VOICE] Sarvam AI synthesis succeeded for speaker=${speaker}`);
             return res;
           } catch (err) {
@@ -303,7 +364,13 @@ export const Route = createFileRoute("/api/speak")({
           const speaker = getEffectiveSarvamVoice(requestedVoice);
           try {
             console.log(`[VOICE] Fallback to Sarvam AI with speaker=${speaker} (${targetGender})`);
-            const res = await fetchSarvamAudio(sarvamKey, textToSpeak, speaker, playbackSpeed);
+            const res = await fetchSarvamAudio(
+              sarvamKey,
+              textToSpeak,
+              speaker,
+              playbackSpeed,
+              targetLanguageCode,
+            );
             console.log(`[VOICE] Sarvam AI fallback succeeded for speaker=${speaker}`);
             return res;
           } catch (err) {

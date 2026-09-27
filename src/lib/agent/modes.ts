@@ -1,4 +1,5 @@
 import { SLANG_TRAINING_DIRECTIVE } from "./slang-dictionary";
+import { MULTILINGUAL_TRAINING_DIRECTIVE } from "./multilingual-training";
 
 export type ModeId = "chat" | "research" | "create" | "analyze" | "code" | "plan" | "image";
 
@@ -125,5 +126,5 @@ Follow these spoken conversation principles strictly:
 6. ACTIVELY USE SLANG IN VOICE: Naturally weave in slangs from the dictionary when speaking (e.g. "What's good bro?", "Bet, I got you fam", "Sound, all sorted mate!", "That's proper fire, innit?", "No worries at all, piece of cake!", "Let's crack on!").`
     : "";
 
-  return `${BASE_IDENTITY}\n\n${m.instruction}${deepThinkInstruction}${webSearchInstruction}\n\n${SLANG_TRAINING_DIRECTIVE}${voiceModeInstruction}`;
+  return `${BASE_IDENTITY}\n\n${m.instruction}${deepThinkInstruction}${webSearchInstruction}\n\n${MULTILINGUAL_TRAINING_DIRECTIVE}\n\n${SLANG_TRAINING_DIRECTIVE}${voiceModeInstruction}`;
 }

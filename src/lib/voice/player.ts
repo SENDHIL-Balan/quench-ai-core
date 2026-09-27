@@ -20,6 +20,7 @@ export type PlayVoiceOptions = {
   voiceId?: string;
   provider?: VoiceProvider;
   playbackSpeed?: number;
+  language?: string;
   forceReplay?: boolean;
   allowBrowserFallback?: boolean;
   /**
@@ -46,6 +47,7 @@ export interface AudioQueueItem {
   voiceId: string;
   provider: VoiceProvider;
   playbackSpeed: number;
+  language?: string;
   forceReplay: boolean;
   allowBrowserFallback: boolean;
   streamId?: string;
@@ -532,6 +534,7 @@ class VoiceQueueManager {
       voiceId: options.voiceId || "kavya",
       provider: options.provider || "auto",
       playbackSpeed: options.playbackSpeed ?? 1.0,
+      language: options.language,
       forceReplay: Boolean(options.forceReplay),
       allowBrowserFallback: options.allowBrowserFallback !== false,
       streamId: options.streamId,
@@ -623,6 +626,7 @@ class VoiceQueueManager {
           voice: item.voiceId,
           provider: item.provider,
           playbackSpeed: item.playbackSpeed,
+          language: item.language,
         }),
       });
 

@@ -1,6 +1,5 @@
 import {
   Plus,
-  Crown,
   ChevronRight,
   ChevronDown,
   ChevronUp,
@@ -36,6 +35,7 @@ import { CosmicThemeGalleryModal } from "./CosmicThemeGalleryModal";
 import { UnauthorizedDomainModal } from "./UnauthorizedDomainModal";
 
 const MAX_INITIAL_CHATS = 6;
+const EMPTY_CHATS: SidebarChat[] = [];
 
 function formatRelativeTime(dateString?: string): string {
   if (!dateString) return "";
@@ -86,7 +86,7 @@ export function Sidebar({
   onSelectChat,
   onDeleteChat,
   activeChatId,
-  chats: parentChats = [],
+  chats: parentChats = EMPTY_CHATS,
   onOpenVoiceSettings,
   onOpenTools,
   className,
@@ -126,7 +126,14 @@ export function Sidebar({
   useEffect(() => {
     const uid = user?.uid;
     if (!uid) {
-      setFirestoreChats([]);
+      setFirestoreChats((prev) => (prev.length === 0 ? prev : []));
+      setIsFetchingFirestore(false);
+      return;
+    }
+
+    // If parent already supplies chats, avoid duplicate simultaneous subscription
+    if (parentChats.length > 0) {
+      setIsFetchingFirestore(false);
       return;
     }
 
@@ -135,7 +142,15 @@ export function Sidebar({
     // Initial fetch from Firestore
     void getUserChatsFromFirestore(uid)
       .then((chats) => {
-        setFirestoreChats(chats);
+        setFirestoreChats((prev) => {
+          if (
+            prev.length === chats.length &&
+            prev.every((c, i) => c.id === chats[i]?.id && c.updatedAt === chats[i]?.updatedAt)
+          ) {
+            return prev;
+          }
+          return chats;
+        });
       })
       .finally(() => {
         setIsFetchingFirestore(false);
@@ -143,12 +158,22 @@ export function Sidebar({
 
     // Real-time synchronization listener with Firestore
     const unsubscribe = subscribeUserChats(uid, (remoteChats) => {
-      setFirestoreChats(remoteChats);
+      setFirestoreChats((prev) => {
+        if (
+          prev.length === remoteChats.length &&
+          prev.every(
+            (c, i) => c.id === remoteChats[i]?.id && c.updatedAt === remoteChats[i]?.updatedAt,
+          )
+        ) {
+          return prev;
+        }
+        return remoteChats;
+      });
       setIsFetchingFirestore(false);
     });
 
     return () => unsubscribe();
-  }, [user?.uid]);
+  }, [user?.uid, parentChats.length]);
 
   // Merge parent chats (local state) with Firestore chats (remote state)
   const mergedChats = useMemo(() => {
@@ -541,19 +566,8 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Bottom Profile / Pro Upgrade */}
+      {/* Bottom Profile Section */}
       <div className="flex flex-col gap-2 pt-2 border-t border-border/40">
-        <button className="border-border/70 bg-accent/30 hover:bg-accent/60 flex items-center gap-2.5 rounded-2xl border px-3 py-2 text-left transition-colors cursor-pointer">
-          <Crown className="text-quench-green size-4 shrink-0" />
-          <span className="flex-1 min-w-0">
-            <span className="block text-xs font-medium">Upgrade to Pro</span>
-            <span className="text-muted-foreground block text-[10px] truncate">
-              Unlock unlimited reasoning & voice
-            </span>
-          </span>
-          <ChevronRight className="text-muted-foreground size-3.5 shrink-0" />
-        </button>
-
         {!authInitialized ? (
           <div className="px-1 py-1">
             <div className="flex items-center gap-2.5 rounded-xl bg-white/5 border border-white/5 px-2.5 py-1.5 animate-pulse">

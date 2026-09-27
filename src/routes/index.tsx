@@ -12,7 +12,6 @@ import { ModeSelector } from "@/components/quench/ModeSelector";
 import { PromptComposer } from "@/components/quench/PromptComposer";
 import { QuickActions } from "@/components/quench/QuickActions";
 import { ChatView } from "@/components/quench/ChatView";
-import { RightPanel } from "@/components/quench/RightPanel";
 import type { AgentState } from "@/components/quench/AgentStatus";
 import { AGENT_MODES, type ModeId } from "@/lib/agent/modes";
 import { extractPdfTextFromFile, PdfExtractError } from "@/lib/attachments/pdf-client";
@@ -131,7 +130,6 @@ function BravuraApp() {
   const [mode, setMode] = useState<ModeId>("chat");
   const [input, setInput] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [contextOpen, setContextOpen] = useState(false);
   const [deepThink, setDeepThink] = useState(false);
   const [webSearch, setWebSearch] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -227,16 +225,40 @@ function BravuraApp() {
       if (remoteChats.length > 0) {
         setChats((current) => {
           const activeId = activeChatIdRef.current;
-          if (!activeId) return remoteChats as StoredChat[];
-          return (remoteChats as StoredChat[]).map((rc) => {
+          if (!activeId) {
+            if (
+              current.length === remoteChats.length &&
+              current.every(
+                (c, i) =>
+                  c.id === remoteChats[i]?.id &&
+                  c.updatedAt === remoteChats[i]?.updatedAt &&
+                  c.title === remoteChats[i]?.title,
+              )
+            ) {
+              return current;
+            }
+            return remoteChats as StoredChat[];
+          }
+          let hasDiff = current.length !== remoteChats.length;
+          const updated = (remoteChats as StoredChat[]).map((rc, idx) => {
             if (rc.id === activeId) {
               const localActive = current.find((c) => c.id === activeId);
               if (localActive && localActive.messages.length >= rc.messages.length) {
                 return { ...rc, messages: localActive.messages };
               }
             }
+            if (
+              !hasDiff &&
+              (!current[idx] ||
+                current[idx].id !== rc.id ||
+                current[idx].updatedAt !== rc.updatedAt ||
+                current[idx].title !== rc.title)
+            ) {
+              hasDiff = true;
+            }
             return rc;
           });
+          return hasDiff ? updated : current;
         });
       }
     });
@@ -709,7 +731,6 @@ function BravuraApp() {
         >
           <TopBar
             onToggleSidebar={() => setSidebarOpen(true)}
-            onToggleContext={() => setContextOpen((v) => !v)}
             selectedModel={selectedModel}
             onSelectModel={handleSelectModel}
             onSearch={(q) => {
@@ -873,55 +894,7 @@ function BravuraApp() {
             </div>
           </div>
         </motion.main>
-
-        {/* Right context panel */}
-        <motion.div
-          initial={{ opacity: 0, x: 16 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          className="hidden xl:block"
-        >
-          <div className="sticky top-4">
-            <RightPanel
-              state={state}
-              mode={mode}
-              errorMessage={errorMessage}
-              model={selectedModel}
-              onSendTranscript={(text) => {
-                setInput(text);
-              }}
-              onOpenVoiceSettings={() => setVoiceModalOpen(true)}
-            />
-          </div>
-        </motion.div>
       </div>
-
-      {/* Mobile context drawer */}
-      {contextOpen && (
-        <div className="fixed inset-0 z-50 xl:hidden">
-          <button
-            className="bg-background/70 absolute inset-0 backdrop-blur-sm cursor-pointer"
-            onClick={() => setContextOpen(false)}
-            aria-label="Close panel"
-          />
-          <div className="absolute inset-x-3 bottom-3 max-h-[80vh] overflow-y-auto">
-            <RightPanel
-              state={state}
-              mode={mode}
-              errorMessage={errorMessage}
-              model={selectedModel}
-              onSendTranscript={(text) => {
-                setInput(text);
-                setContextOpen(false);
-              }}
-              onOpenVoiceSettings={() => {
-                setContextOpen(false);
-                setVoiceModalOpen(true);
-              }}
-            />
-          </div>
-        </div>
-      )}
 
       {/* History modal */}
       {historyOpen && (

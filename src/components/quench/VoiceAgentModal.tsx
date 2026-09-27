@@ -15,9 +15,11 @@ import {
   UserCheck,
   Headphones,
   Loader2,
+  Languages,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { VoiceProvider } from "@/lib/voice/types";
+import type { VoiceProvider, VoiceLanguage } from "@/lib/voice/types";
+import { VoiceLanguageSelector } from "./VoiceLanguageSelector";
 import {
   playVoiceAudio,
   stopAnyVoicePlayback,
@@ -33,6 +35,7 @@ export type VoiceSetting = {
   autoSpeak: boolean;
   playbackSpeed?: number;
   handsFreeListen?: boolean;
+  language?: VoiceLanguage;
 };
 
 export interface VoiceModelOption {
@@ -210,6 +213,7 @@ export function VoiceAgentModal({
 }) {
   const [selectedVoice, setSelectedVoice] = useState(voiceSetting.voiceId);
   const [selectedProvider, setSelectedProvider] = useState<VoiceProvider>(voiceSetting.provider);
+  const [selectedLanguage, setSelectedLanguage] = useState<VoiceLanguage>(voiceSetting.language || "auto");
   const [autoSpeak, setAutoSpeak] = useState(voiceSetting.autoSpeak);
   const [handsFreeListen, setHandsFreeListen] = useState(voiceSetting.handsFreeListen ?? true);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(voiceSetting.playbackSpeed ?? 1.0);
@@ -260,7 +264,14 @@ export function VoiceAgentModal({
     unlockAudio();
     setPreviewingId(voiceId);
 
-    const greeting = `Hey there! I'm ${name}. I'm tuned and ready to chat. What's on your mind today?`;
+    const greeting =
+      selectedLanguage === "ta"
+        ? `வணக்கம்! நான் ${name}. உங்களுடன் தமிழில் இயல்பாக உரையாட தயாராக இருக்கிறேன். சொல்லுங்க, என்ன விஷயம்?`
+        : selectedLanguage === "ml"
+          ? `നമസ്കാരം! ഞാൻ ${name}. നിങ്ങളോട് മലയാളത്തിൽ സംസാരിക്കാൻ തയ്യാറാണ്. എന്താണ് വിശേഷം?`
+          : selectedLanguage === "kn"
+            ? `ನಮಸ್ಕಾರ! ನಾನು ${name}. ನಿಮ್ಮೊಂದಿಗೆ ಕನ್ನಡದಲ್ಲಿ ಮಾತನಾಡಲು ಸಿದ್ಧವಾಗಿದ್ದೇನೆ. ಏನು ಸಮಾಚಾರ?`
+            : `Hey there! I'm ${name}. I'm tuned and ready to chat. What's on your mind today?`;
 
     try {
       const controller = playVoiceAudio({
@@ -270,6 +281,7 @@ export function VoiceAgentModal({
         playbackSpeed,
         forceReplay: true,
         allowBrowserFallback: true,
+        language: selectedLanguage,
         onStart: () => {
           setPreviewingId(voiceId);
         },
@@ -292,6 +304,18 @@ export function VoiceAgentModal({
     }
   };
 
+  const handleLanguageChange = (lang: VoiceLanguage) => {
+    setSelectedLanguage(lang);
+    onSaveSetting({
+      voiceId: selectedVoice,
+      provider: selectedProvider,
+      autoSpeak,
+      playbackSpeed,
+      handsFreeListen,
+      language: lang,
+    });
+  };
+
   const handleSelectVoice = (voiceId: string, provider: VoiceProvider) => {
     // Only stop playback if another voice was playing
     if (previewingId && previewingId !== voiceId) {
@@ -307,6 +331,7 @@ export function VoiceAgentModal({
       autoSpeak,
       playbackSpeed,
       handsFreeListen,
+      language: selectedLanguage,
     });
   };
 
@@ -319,6 +344,7 @@ export function VoiceAgentModal({
       autoSpeak: next,
       playbackSpeed,
       handsFreeListen,
+      language: selectedLanguage,
     });
   };
 
@@ -331,6 +357,7 @@ export function VoiceAgentModal({
       autoSpeak,
       playbackSpeed,
       handsFreeListen: next,
+      language: selectedLanguage,
     });
   };
 
@@ -343,6 +370,7 @@ export function VoiceAgentModal({
       autoSpeak,
       playbackSpeed: clamped,
       handsFreeListen,
+      language: selectedLanguage,
     });
   };
 
@@ -571,7 +599,35 @@ export function VoiceAgentModal({
             </div>
           </div>
 
-          {/* Section 3: AI Voice Model Selection */}
+          {/* Section 3: Voice & Transcription Language (English, Tamil, Malayalam, Kannada, Auto) */}
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5 space-y-3.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex size-8 items-center justify-center rounded-xl bg-cyan-500/15 text-cyan-300 ring-1 ring-cyan-500/30">
+                  <Languages className="size-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-white">Voice & Speech Language</h3>
+                    <span className="rounded-full bg-cyan-500/20 border border-cyan-500/40 px-2 py-0.5 text-[10px] font-medium text-cyan-300">
+                      Multi-lingual AI
+                    </span>
+                  </div>
+                  <p className="text-muted-foreground text-xs mt-0.5">
+                    Select your preferred spoken language for live microphone transcription and AI voice responses
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <VoiceLanguageSelector
+              variant="full"
+              value={selectedLanguage}
+              onChange={handleLanguageChange}
+            />
+          </div>
+
+          {/* Section 4: AI Voice Model Selection */}
           <div className="space-y-3.5">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
