@@ -560,17 +560,8 @@ export function LiveVoiceAgentModal({
           </span>
         </div>
 
-        {/* Center: Language & Voice Persona */}
+        {/* Right: Voice Persona Pill & Close */}
         <div className="flex items-center gap-2">
-          {onVoiceSettingChange && (
-            <VoiceLanguageSelector
-              value={voiceSetting.language || "auto"}
-              onChange={(lang) => {
-                onVoiceSettingChange({ ...voiceSetting, language: lang });
-              }}
-            />
-          )}
-
           <button
             type="button"
             onClick={() => setConfigOverlayOpen(true)}
@@ -583,10 +574,7 @@ export function LiveVoiceAgentModal({
             </span>
             <Sliders className="size-3 text-cyan-400/80" />
           </button>
-        </div>
 
-        {/* Right: Close & End Call */}
-        <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onClose}
@@ -732,7 +720,7 @@ export function LiveVoiceAgentModal({
       </main>
 
       {/* Bottom Area: Realtime Frequency Visualizer, Fluid Plasma Orb & Controls */}
-      <footer className="relative z-20 flex flex-col items-center justify-center pb-6 pt-2">
+      <footer className="relative z-20 flex flex-col items-center justify-center pb-8 pt-1 px-4 w-full shrink-0">
         {/* Real-time Frequency Spectrum Visualizer */}
         <div className="w-full max-w-sm px-4 mb-2.5">
           <RealtimeAudioVisualizer
@@ -777,8 +765,23 @@ export function LiveVoiceAgentModal({
           {liveState === "error" && "Microphone issue"}
         </p>
 
+        {/* Voice Language Selector (Downside Controls, cleanly centered above action bar) */}
+        {onVoiceSettingChange && (
+          <div className="mt-3 flex items-center justify-center">
+            <VoiceLanguageSelector
+              value={voiceSetting.language || "auto"}
+              onChange={(lang) => {
+                onVoiceSettingChange({ ...voiceSetting, language: lang });
+              }}
+              direction="up"
+              align="center"
+              buttonClassName="h-8 px-3.5 rounded-full border border-white/15 bg-white/10 text-white/90 hover:bg-white/20 hover:border-white/30 text-xs shadow-md backdrop-blur-md transition-all cursor-pointer"
+            />
+          </div>
+        )}
+
         {/* Floating Controls Bar */}
-        <div className="mt-4 flex items-center gap-2.5 sm:gap-3 rounded-full border border-white/10 bg-white/[0.05] p-2 backdrop-blur-xl shadow-2xl">
+        <div className="mt-3 flex items-center gap-2 sm:gap-3 rounded-full border border-white/10 bg-white/[0.05] p-2 backdrop-blur-xl shadow-2xl">
           {/* Mute / Unmute Button */}
           <button
             type="button"
@@ -806,7 +809,7 @@ export function LiveVoiceAgentModal({
                   });
                 }
               }}
-              className="flex h-11 items-center gap-2 px-4 rounded-full bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/30 transition-all cursor-pointer font-medium text-xs shadow-sm shadow-cyan-500/10 shrink-0"
+              className="flex h-11 items-center gap-2 px-3.5 sm:px-4 rounded-full bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-500/30 transition-all cursor-pointer font-medium text-xs shadow-sm shadow-cyan-500/10 shrink-0"
               title="I'm done speaking — send now"
             >
               <Check className="size-4 text-cyan-300" />
@@ -819,7 +822,7 @@ export function LiveVoiceAgentModal({
             <button
               type="button"
               onClick={handleInterrupt}
-              className="flex h-11 items-center gap-2 px-4 rounded-full bg-white/15 text-white hover:bg-white/25 border border-white/20 transition-all cursor-pointer font-medium text-xs shadow-sm shrink-0 animate-in zoom-in-75 duration-200"
+              className="flex h-11 items-center gap-2 px-3.5 sm:px-4 rounded-full bg-white/15 text-white hover:bg-white/25 border border-white/20 transition-all cursor-pointer font-medium text-xs shadow-sm shrink-0 animate-in zoom-in-75 duration-200"
               title="Interrupt AI"
               aria-label="Interrupt AI"
             >
@@ -843,7 +846,7 @@ export function LiveVoiceAgentModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex size-11 items-center justify-center rounded-full bg-red-600/80 text-white hover:bg-red-600 transition-all cursor-pointer shadow-lg shadow-red-600/30 shrink-0"
+            className="flex size-11 items-center justify-center rounded-full bg-red-600 text-white hover:bg-red-500 transition-all cursor-pointer shadow-lg shadow-red-600/40 shrink-0"
             title="End Call"
             aria-label="End Call"
           >

@@ -1,0 +1,39 @@
+{
+  "id": "/",
+  "name": "Bravura AI – Intelligent Agent Workspace",
+  "short_name": "Bravura AI",
+  "description": "Bravura AI is a modern AI agent workspace featuring real-time live voice intelligence, deep reasoning, research, and multimodal tools.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0a0c14",
+  "background_color": "#0a0c14",
+  "categories": ["productivity", "utilities", "business"],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

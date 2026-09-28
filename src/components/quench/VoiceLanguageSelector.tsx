@@ -7,6 +7,9 @@ interface VoiceLanguageSelectorProps {
   value: VoiceLanguage;
   onChange: (language: VoiceLanguage) => void;
   variant?: "compact" | "full" | "dropdown";
+  direction?: "up" | "down";
+  align?: "center" | "left" | "right";
+  buttonClassName?: string;
   disabled?: boolean;
   className?: string;
 }
@@ -15,6 +18,9 @@ export function VoiceLanguageSelector({
   value,
   onChange,
   variant = "compact",
+  direction = "up",
+  align = "right",
+  buttonClassName,
   disabled = false,
   className,
 }: VoiceLanguageSelectorProps) {
@@ -94,7 +100,6 @@ export function VoiceLanguageSelector({
         disabled={disabled}
         onClick={() => setOpen((prev) => !prev)}
         aria-label={`Voice language: ${selected.name}`}
-        title={`Voice Language: ${selected.name} (${selected.nativeName}). Click to switch.`}
         className={cn(
           "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-all cursor-pointer select-none",
           value === "auto"
@@ -102,10 +107,15 @@ export function VoiceLanguageSelector({
             : "border-cyan-500/60 bg-cyan-500/20 text-cyan-200 font-medium shadow-[0_0_12px_rgba(6,182,212,0.25)] hover:bg-cyan-500/30",
           open && "ring-1 ring-cyan-500/50",
           disabled && "opacity-40 cursor-not-allowed",
+          buttonClassName,
         )}
       >
         <Languages className="size-3.5 text-cyan-400 shrink-0" />
-        <span className="font-medium">{selected.shortLabel}</span>
+        <span className="font-medium text-xs">
+          {selected.code === "auto"
+            ? "Language: Auto"
+            : `${selected.name} (${selected.shortLabel})`}
+        </span>
         <ChevronDown
           className={cn(
             "size-3 text-zinc-400 transition-transform duration-200",
@@ -117,7 +127,15 @@ export function VoiceLanguageSelector({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 bottom-full mb-2 z-50 w-56 overflow-hidden rounded-2xl border border-white/15 bg-zinc-950/95 p-1.5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
+          className={cn(
+            "absolute z-50 w-56 overflow-hidden rounded-2xl border border-white/15 bg-zinc-950/95 p-1.5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
+            direction === "up" ? "bottom-full mb-2" : "top-full mt-2",
+            align === "center"
+              ? "left-1/2 -translate-x-1/2"
+              : align === "left"
+                ? "left-0"
+                : "right-0",
+          )}
         >
           <div className="px-2.5 py-1.5 border-b border-white/10 mb-1 flex items-center justify-between">
             <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">

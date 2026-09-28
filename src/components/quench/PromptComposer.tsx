@@ -22,7 +22,6 @@ import {
 import { AGENT_MODES, VISIBLE_MODES, type ModeId } from "@/lib/agent/modes";
 import { cn } from "@/lib/utils";
 import { MicButton } from "./MicButton";
-import { VoiceLanguageSelector } from "./VoiceLanguageSelector";
 import type { VoiceLanguage } from "@/lib/voice/types";
 import { LiveVoiceAgentButton } from "./LiveVoiceAgentButton";
 import { ModelSelector, type SupportedModelId } from "./ModelSelector";
@@ -335,8 +334,8 @@ export function PromptComposer({
 
         {/* Bottom Actions Row matching Google AI Studio */}
         <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/5 w-full min-w-0">
-          {/* Left Action Controls (+ menu, mode chip, search, think) */}
-          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-wrap">
+          {/* Left Action Controls (+ menu, LLM model selector, mode chip) */}
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
             {/* + Button & Dropdown Menu */}
             <div className="relative shrink-0" ref={menuRef}>
               <button
@@ -463,15 +462,14 @@ export function PromptComposer({
               )}
             </div>
 
-            {/* Direct Paperclip Attachment Button */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="border-border bg-white/5 text-muted-foreground hover:text-foreground hover:border-white/20 flex size-9 shrink-0 items-center justify-center rounded-full border transition-colors cursor-pointer"
-              title="Attach File or Image"
-            >
-              <Paperclip className="size-4" />
-            </button>
+            {/* LLM Model Option Chip (Placed right next to + button) */}
+            {selectedModel && onSelectModel && (
+              <ModelSelector
+                selectedModel={selectedModel}
+                onSelectModel={onSelectModel}
+                direction="up"
+              />
+            )}
 
             {/* Active Mode Chip (Styled like DeepThink when selected) */}
             {currentMode !== "chat" && (
@@ -503,15 +501,6 @@ export function PromptComposer({
                   <X className="size-3" />
                 </button>
               </div>
-            )}
-
-            {/* LLM Model Option Chip (Replacing search & think toggles right in the chat action bar) */}
-            {selectedModel && onSelectModel && (
-              <ModelSelector
-                selectedModel={selectedModel}
-                onSelectModel={onSelectModel}
-                direction="up"
-              />
             )}
           </div>
 
@@ -556,15 +545,6 @@ export function PromptComposer({
                   transition={{ duration: 0.18, ease: "easeOut" }}
                   className="flex items-center gap-1.5 sm:gap-2"
                 >
-                  {/* Voice Language Selector (English, Tamil, Malayalam, Kannada, Auto) */}
-                  {onChangeVoiceLanguage && (
-                    <VoiceLanguageSelector
-                      value={voiceLanguage}
-                      onChange={onChangeVoiceLanguage}
-                      disabled={disabled || busy}
-                    />
-                  )}
-
                   {/* Voice to Text (MicButton) */}
                   <MicButton
                     onTranscribed={onTranscribed}

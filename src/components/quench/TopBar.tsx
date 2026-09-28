@@ -119,7 +119,7 @@ export function TopBar({
           </div>
 
           {/* Right Top Actions: Model Selector */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {selectedModel && onSelectModel && (
               <div className="hidden sm:block">
                 <ModelSelector
