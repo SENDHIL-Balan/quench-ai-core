@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { OPENROUTER_BASE_URL } from "@/lib/agent/provider.server";
+import { OPENROUTER_BASE_URL, normalizeOpenRouterBaseUrl } from "@/lib/agent/provider.server";
 
 export interface OpenRouterModelItem {
   id: string;
@@ -104,7 +104,7 @@ export async function fetchOpenRouterModelsServer(): Promise<OpenRouterModelItem
   }
 
   const apiKey = process.env["OPENROUTER_API_KEY"]?.trim();
-  const endpoint = `${OPENROUTER_BASE_URL.replace(/\/+$/, "")}/models`;
+  const endpoint = `${normalizeOpenRouterBaseUrl(OPENROUTER_BASE_URL)}/models`;
 
   try {
     const headers: Record<string, string> = {

@@ -17,6 +17,8 @@ type ChatBody = {
   voiceMode?: unknown;
   model?: unknown;
   provider?: unknown;
+  userLocation?: { latitude: number; longitude: number };
+  userLocationDenied?: boolean;
 };
 
 function errorResponse(message: string, status: number) {
@@ -37,7 +39,17 @@ export const Route = createFileRoute("/api/chat")({
           return errorResponse("We couldn't read that request. Please try again.", 400);
         }
 
-        const { messages, mode, deepThink, webSearch, voiceMode, model, provider } = body;
+        const {
+          messages,
+          mode,
+          deepThink,
+          webSearch,
+          voiceMode,
+          model,
+          provider,
+          userLocation,
+          userLocationDenied,
+        } = body;
         if (!Array.isArray(messages) || messages.length === 0) {
           return errorResponse("Please type a message first.", 400);
         }
@@ -61,6 +73,14 @@ export const Route = createFileRoute("/api/chat")({
             voiceMode: voiceMode === true,
             model: typeof model === "string" ? model : undefined,
             provider: typeof provider === "string" ? provider : undefined,
+            userLocation:
+              userLocation &&
+              typeof userLocation === "object" &&
+              typeof userLocation.latitude === "number" &&
+              typeof userLocation.longitude === "number"
+                ? userLocation
+                : undefined,
+            userLocationDenied: userLocationDenied === true,
             abortSignal: request.signal,
           });
         } catch (error) {

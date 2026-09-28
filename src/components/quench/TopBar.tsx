@@ -1,13 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { Menu, Search, X } from "lucide-react";
-import { ModelSelector, type SupportedModelId } from "./ModelSelector";
+import type { SupportedModelId } from "./ModelSelector";
 
 export function TopBar({
   onToggleSidebar,
   onToggleContext,
   onSearch,
-  selectedModel,
-  onSelectModel,
 }: {
   onToggleSidebar: () => void;
   onToggleContext?: () => void;
@@ -116,19 +114,6 @@ export function TopBar({
             >
               <Search className="size-5" />
             </button>
-          </div>
-
-          {/* Right Top Actions: Model Selector */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {selectedModel && onSelectModel && (
-              <div className="hidden sm:block">
-                <ModelSelector
-                  selectedModel={selectedModel}
-                  onSelectModel={onSelectModel}
-                  direction="down"
-                />
-              </div>
-            )}
           </div>
         </div>
       )}

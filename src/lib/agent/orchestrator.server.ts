@@ -21,6 +21,7 @@ import {
   extractAndProcessAttachments,
   buildDocumentContextForPrompt,
 } from "../attachments/document-processor.server";
+import type { GoogleMapsResult } from "../tools/google-maps.server";
 
 export interface AgentPlanStep {
   toolName: string;
@@ -36,6 +37,8 @@ export interface OrchestratorOptions {
   voiceMode?: boolean;
   model?: string;
   provider?: string;
+  userLocation?: { latitude: number; longitude: number };
+  userLocationDenied?: boolean;
   abortSignal?: AbortSignal;
 }
 
@@ -44,6 +47,7 @@ export interface OrchestrationResult {
   provider: LLMProvider;
   sources: Array<{ title: string; url: string }>;
   activityStages: string[];
+  mapsData?: GoogleMapsResult | null;
 }
 
 const MAX_STEPS = 3;
@@ -100,6 +104,240 @@ function extractAttachedDocumentChunks(messages: UIMessage[]): DocumentChunk[] {
 }
 
 /**
+ * Extracts referenced place from previous assistant messages containing Google Maps observation.
+ */
+function extractReferencedPlaceFromMessages(
+  messages: UIMessage[],
+  queryText: string,
+): { placeId: string; name: string } | null {
+  const lowerQuery = queryText.toLowerCase();
+
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m || m.role !== "assistant") continue;
+
+    for (const p of m.parts) {
+      if (p.type === "text" && p.text) {
+        const match = p.text.match(/```json:google_maps\s*([\s\S]*?)\s*```/);
+        if (match && match[1]) {
+          try {
+            const data = JSON.parse(match[1]);
+            const places = data.places;
+            if (Array.isArray(places) && places.length > 0) {
+              // 1. Direct name match in query
+              for (const pl of places) {
+                if (pl.name && lowerQuery.includes(pl.name.toLowerCase())) {
+                  return { placeId: pl.placeId, name: pl.name };
+                }
+              }
+
+              // 2. Positional and relative references
+              let targetIndex = 0;
+              if (/\b(?:first|1st)\b/i.test(queryText)) targetIndex = 0;
+              else if (/\b(?:second|2nd)\b/i.test(queryText)) targetIndex = 1;
+              else if (/\b(?:third|3rd)\b/i.test(queryText)) targetIndex = 2;
+              else if (/\b(?:fourth|4th)\b/i.test(queryText)) targetIndex = 3;
+              else if (/\b(?:fifth|5th)\b/i.test(queryText)) targetIndex = 4;
+              else if (/\b(?:last|final)\b/i.test(queryText)) targetIndex = places.length - 1;
+              else if (/\b(?:highest[- ]rated|best|top[- ]rated)\b/i.test(queryText)) {
+                const sorted = [...places].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+                return { placeId: sorted[0].placeId, name: sorted[0].name };
+              } else if (/\b(?:closest|nearest)\b/i.test(queryText)) {
+                const sorted = [...places].sort(
+                  (a, b) => (a.distanceMeters || Infinity) - (b.distanceMeters || Infinity),
+                );
+                return { placeId: sorted[0].placeId, name: sorted[0].name };
+              }
+
+              const selected = places[targetIndex] || places[0];
+              return { placeId: selected.placeId, name: selected.name };
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Detects whether the query requires Google Maps Platform.
+ */
+function detectGoogleMapsIntent(
+  userText: string,
+  messages: UIMessage[],
+  userLocation?: { latitude: number; longitude: number },
+): AgentPlanStep | null {
+  const text = userText.trim().toLowerCase();
+
+  // Negative filters: purely technical or conceptual queries
+  if (
+    /^(?:what is (?:rag|ai|ml|machine learning|python|coding|a component|docker)|explain (?:ai|ml|machine learning|python|rag)|write (?:python|code|a react|a script)|create a workout (?:plan|routine)|help me (?:code|write|debug))\b/i.test(
+      text,
+    )
+  ) {
+    return null;
+  }
+
+  // 1. Directions / Routes / Navigation
+  const routeBetweenMatch = text.match(
+    /(?:directions?|how far is|distance between|distance from|travel time between|travel time from|drive from)\s+(?:from\s+)?(.+?)\s+(?:to|and|from)\s+(.+)/i,
+  );
+  if (routeBetweenMatch && routeBetweenMatch[1] && routeBetweenMatch[2]) {
+    let rawOrigin = routeBetweenMatch[1].replace(/^from\s+/i, "").trim();
+    let rawDest = routeBetweenMatch[2].replace(/[?.!]+$/, "").trim();
+
+    // Handle "how far is Chennai airport from me" or "how far is Chennai airport from T Nagar"
+    const isSeparatedByFrom = /\bfrom\b/i.test(
+      routeBetweenMatch[0].slice(routeBetweenMatch[1].length),
+    );
+    if (isSeparatedByFrom && !routeBetweenMatch[0].toLowerCase().startsWith("drive from")) {
+      // Swapping so origin is starting point and dest is destination
+      const temp = rawOrigin;
+      rawOrigin = rawDest;
+      rawDest = temp;
+    }
+
+    const isOriginMe = /\b(me|here|my location|current location)\b/i.test(rawOrigin);
+    const isDestMe = /\b(me|here|my location|current location)\b/i.test(rawDest);
+
+    const origin =
+      isOriginMe && userLocation ? `${userLocation.latitude},${userLocation.longitude}` : rawOrigin;
+    const dest =
+      isDestMe && userLocation ? `${userLocation.latitude},${userLocation.longitude}` : rawDest;
+
+    let travelMode: "DRIVE" | "WALK" | "BICYCLE" | "TRANSIT" = "DRIVE";
+    if (/\b(?:walk|walking|on foot)\b/i.test(text)) travelMode = "WALK";
+    else if (/\b(?:bike|biking|cycle|cycling)\b/i.test(text)) travelMode = "BICYCLE";
+    else if (/\b(?:transit|metro|bus|train|subway)\b/i.test(text)) travelMode = "TRANSIT";
+
+    return {
+      toolName: "google_maps",
+      params: {
+        operation: "routes",
+        origin,
+        destination: dest,
+        travelMode,
+      },
+      reason: `Route navigation between ${rawOrigin} and ${rawDest}`,
+    };
+  }
+
+  const routeToMatch = text.match(
+    /(?:how (?:do I|to) get to|give me directions? to|directions? to|navigate to|how far is|how long does it take to get to)\s+(.+)/i,
+  );
+  if (routeToMatch && routeToMatch[1]) {
+    const rawDest = routeToMatch[1].replace(/[?.!]+$/, "").trim();
+    let travelMode: "DRIVE" | "WALK" | "BICYCLE" | "TRANSIT" = "DRIVE";
+    if (/\b(?:walk|walking|on foot)\b/i.test(text)) travelMode = "WALK";
+    else if (/\b(?:bike|biking|cycle|cycling)\b/i.test(text)) travelMode = "BICYCLE";
+    else if (/\b(?:transit|metro|bus|train|subway)\b/i.test(text)) travelMode = "TRANSIT";
+
+    return {
+      toolName: "google_maps",
+      params: {
+        operation: "routes",
+        origin: userLocation
+          ? `${userLocation.latitude},${userLocation.longitude}`
+          : "current location",
+        destination: rawDest,
+        travelMode,
+      },
+      reason: `Route navigation to ${rawDest}`,
+    };
+  }
+
+  // 2. Follow-up inquiries on previous places
+  const isFollowUp =
+    /\b(?:the (?:first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|nearest|closest|highest[- ]rated|best|last|final)|that (?:one|place|gym|restaurant|hotel|cafe)|this (?:one|place))\b/i.test(
+      text,
+    );
+  if (isFollowUp) {
+    const prevPlace = extractReferencedPlaceFromMessages(messages, text);
+    if (prevPlace) {
+      if (/\b(?:direction|how to get|navigate|route)\b/i.test(text)) {
+        return {
+          toolName: "google_maps",
+          params: {
+            operation: "routes",
+            origin: userLocation
+              ? `${userLocation.latitude},${userLocation.longitude}`
+              : "current location",
+            destination: prevPlace.name,
+            placeId: prevPlace.placeId,
+          },
+          reason: `Directions to previously discussed place "${prevPlace.name}"`,
+        };
+      }
+      return {
+        toolName: "google_maps",
+        params: {
+          operation: "place_details",
+          placeId: prevPlace.placeId,
+          query: prevPlace.name,
+        },
+        reason: `Detailed inquiry for previously discussed place "${prevPlace.name}"`,
+      };
+    }
+  }
+
+  // 3. Location / Places / Nearby queries
+  const placeCategories =
+    "gyms?|fitness(?: centers?)?|restaurants?|cafes?|coffee(?: shops?)?|hotels?|motels?|hospitals?|clinics?|pharmacies|pharmacy|supermarkets?|grocery(?: stores?)?|bars?|pubs?|parks?|beaches|beach|malls?|stores?|shops?|airports?|stations?|bakeries|bakery|atms?|banks?|gas stations?|petrol bunks?|theaters?|cinemas?|dentists?|doctors?|salons?|spas?|museums?|temples?|churches|mosques?";
+
+  const isPlacesQuery =
+    new RegExp(
+      `(?:find|search|show|locate|where (?:is|are)|nearest|nearby|good|best|top|recommend|list)\\s+(?:some\\s+|the\\s+)?(?:${placeCategories})`,
+      "i",
+    ).test(text) ||
+    new RegExp(
+      `(?:${placeCategories})\\s+(?:near me|around me|nearby|close by|around here|near here|near this location)`,
+      "i",
+    ).test(text) ||
+    new RegExp(`(?:${placeCategories})\\s+(?:in|near|at|around)\\s+([a-zA-Z0-9\\s,]+)`, "i").test(
+      text,
+    ) ||
+    /^(?:where is|how to find|locate)\s+([a-zA-Z0-9\s,'-]+(?:beach|airport|station|mall|hospital|temple|park|tower|museum))/i.test(
+      text,
+    );
+
+  if (isPlacesQuery) {
+    const hasNearMe =
+      /\b(near me|around me|nearby|around here|near here|closest to me|near this location)\b/i.test(
+        text,
+      );
+    if (hasNearMe && userLocation) {
+      return {
+        toolName: "google_maps",
+        params: {
+          operation: "nearby_search",
+          query: userText,
+          latitude: userLocation.latitude,
+          longitude: userLocation.longitude,
+          radiusMeters: 5000,
+        },
+        reason: "Search places around user's GPS coordinates",
+      };
+    }
+
+    return {
+      toolName: "google_maps",
+      params: {
+        operation: "search_places",
+        query: userText,
+        latitude: userLocation?.latitude,
+        longitude: userLocation?.longitude,
+      },
+      reason: `Search places matching "${userText}"`,
+    };
+  }
+
+  return null;
+}
+
+/**
  * Detects whether the user query calls for specific tools.
  */
 function planToolSteps(
@@ -107,11 +345,19 @@ function planToolSteps(
   mode: ModeId,
   webSearchEnabled: boolean,
   hasDocChunks: boolean,
+  messages: UIMessage[],
+  userLocation?: { latitude: number; longitude: number },
 ): AgentPlanStep[] {
   const steps: AgentPlanStep[] = [];
   const text = userText.trim().toLowerCase();
 
-  // 1. Math / Calculation detection (e.g. "calculate 25 * 40", "what is 15% of 850")
+  // 1. Google Maps Platform detection (Places, Near me, Directions, Distances)
+  const mapsStep = detectGoogleMapsIntent(userText, messages, userLocation);
+  if (mapsStep) {
+    steps.push(mapsStep);
+  }
+
+  // 2. Math / Calculation detection (e.g. "calculate 25 * 40", "what is 15% of 850")
   const mathMatch = text.match(
     /(?:calculate|evaluate|what is|compute)\s+([0-9\s+\-*/().%^×÷]+[0-9])/i,
   );
@@ -123,7 +369,7 @@ function planToolSteps(
     });
   }
 
-  // 2. Date / Time query detection
+  // 3. Date / Time query detection
   if (
     /\b(what time is it|current time|today's date|what date is it|what day is today|what day is it)\b/i.test(
       text,
@@ -136,7 +382,7 @@ function planToolSteps(
     });
   }
 
-  // 3. Document RAG detection
+  // 4. Document RAG detection
   if (
     hasDocChunks ||
     /\b(in the document|according to the file|in the pdf|from the attachment|in the uploaded)\b/i.test(
@@ -150,13 +396,16 @@ function planToolSteps(
     });
   }
 
-  // 4. Web Search detection (if explicitly toggled or Research mode or live query)
+  // 5. Web Search detection (if explicitly toggled or Research mode or live query, and not handled by maps)
   const isTimeSensitive =
     /\b(today|tonight|now|current|latest|news|weather|stock|price|score|yesterday|tomorrow|2026|who won)\b/i.test(
       text,
     );
 
-  if (webSearchEnabled || mode === "research" || (isTimeSensitive && mode !== "code")) {
+  if (
+    (webSearchEnabled || mode === "research" || (isTimeSensitive && mode !== "code")) &&
+    !mapsStep
+  ) {
     steps.push({
       toolName: "web_search",
       params: { query: userText },
@@ -178,6 +427,8 @@ export async function orchestrateAgentRun({
   voiceMode = false,
   model,
   provider: requestedProvider,
+  userLocation,
+  userLocationDenied,
   abortSignal,
 }: OrchestratorOptions): Promise<OrchestrationResult> {
   const userText = getLatestUserText(messages);
@@ -197,11 +448,33 @@ export async function orchestrateAgentRun({
     docChunks = extractAttachedDocumentChunks(messages);
   }
 
-  const plannedSteps = planToolSteps(userText, mode, Boolean(webSearch), docChunks.length > 0);
+  const plannedSteps = planToolSteps(
+    userText,
+    mode,
+    Boolean(webSearch),
+    docChunks.length > 0,
+    messages,
+    userLocation,
+  );
 
   const activityStages: string[] = [];
   const sources: Array<{ title: string; url: string }> = [];
   let toolContextAppend = "";
+  let mapsData: GoogleMapsResult | null = null;
+
+  const hasNearMe =
+    /\b(near me|around me|nearby|around here|near here|closest to me|near this location)\b/i.test(
+      userText,
+    );
+  if (hasNearMe && userLocationDenied) {
+    toolContextAppend += `\n\n[LOCATION PERMISSION NOTICE]: The user asked for places "near me", but location permission was denied. You must respond politely: "I can't access your current location. You can give me a city, area, or address (for example: 'restaurants in T Nagar' or 'gyms in Anna Nagar') and I'll search there right away!" Do not invent fictional places or guess their location.`;
+  } else if (
+    hasNearMe &&
+    !userLocation &&
+    !plannedSteps.some((s) => s.toolName === "google_maps")
+  ) {
+    toolContextAppend += `\n\n[LOCATION PERMISSION REQUIRED]: The user asked for places "near me", but location access has not been granted yet. You must explain: "To find places near you, Bravura needs your location. Allow location access or tell me a city, area, or address to search."`;
+  }
 
   // Grounded document context injection (for PDFs, CSV, TXT, JSON, Markdown)
   if (attachments.hasDocuments) {
@@ -241,10 +514,20 @@ export async function orchestrateAgentRun({
         abortSignal,
         documentChunks: docChunks,
         userQuery: userText,
+        userLocation,
       });
 
       if (result.success) {
-        if (result.toolName === "web_search" && result.data?.sources) {
+        if (result.toolName === "google_maps" && result.data) {
+          const mapPayload = result.data as {
+            mapsResult: GoogleMapsResult;
+            promptBlock?: string;
+          };
+          mapsData = mapPayload.mapsResult;
+          if (mapPayload.promptBlock) {
+            toolContextAppend += `\n\n${mapPayload.promptBlock}`;
+          }
+        } else if (result.toolName === "web_search" && result.data?.sources) {
           sources.push(...result.data.sources);
           if (result.data.promptBlock) {
             toolContextAppend += `\n\n${result.data.promptBlock}`;
@@ -308,5 +591,6 @@ export async function orchestrateAgentRun({
     provider,
     sources,
     activityStages,
+    mapsData,
   };
 }

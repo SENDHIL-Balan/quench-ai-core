@@ -144,6 +144,39 @@ function BravuraApp() {
   const [authUser, setAuthUser] = useState<AuthUserProfile | null>(null);
   const [authInitialized, setAuthInitialized] = useState(false);
   const [selectedModel, setSelectedModel] = useState<SupportedModelId>(DEFAULT_MODEL_ID);
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(
+    null,
+  );
+  const [locationPermissionState, setLocationPermissionState] = useState<
+    "prompt" | "granted" | "denied"
+  >("prompt");
+
+  const requestUserLocation = useCallback(async (): Promise<{
+    latitude: number;
+    longitude: number;
+  } | null> => {
+    if (typeof navigator === "undefined" || !("geolocation" in navigator)) {
+      setLocationPermissionState("denied");
+      return null;
+    }
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          timeout: 8000,
+          enableHighAccuracy: true,
+          maximumAge: 60000,
+        });
+      });
+      const loc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      setUserLocation(loc);
+      setLocationPermissionState("granted");
+      return loc;
+    } catch (err) {
+      console.warn("[bravura-geo] Geolocation request rejected or unavailable:", err);
+      setLocationPermissionState("denied");
+      return null;
+    }
+  }, []);
 
   const handleSelectModel = useCallback((model: SupportedModelId) => {
     if (!model || typeof model !== "string" || !model.trim()) {
@@ -570,9 +603,39 @@ function BravuraApp() {
           : "Please review this document."
         : "");
 
+    let locToSend = userLocation;
+    let locDenied = false;
+
+    const hasNearMe =
+      /\b(near me|around me|nearby|around here|near here|closest to me|near this location)\b/i.test(
+        value,
+      );
+
+    if (hasNearMe) {
+      if (userLocation) {
+        locToSend = userLocation;
+      } else {
+        const acquired = await requestUserLocation();
+        if (acquired) {
+          locToSend = acquired;
+        } else {
+          locDenied = true;
+        }
+      }
+    }
+
     void sendMessage(
       { text: textToSend, files: fileParts },
-      { body: { mode, deepThink, webSearch, model: selectedModel } },
+      {
+        body: {
+          mode,
+          deepThink,
+          webSearch,
+          model: selectedModel,
+          userLocation: locToSend || undefined,
+          userLocationDenied: locDenied,
+        },
+      },
     );
   };
 

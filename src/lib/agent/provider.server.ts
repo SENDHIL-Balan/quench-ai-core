@@ -25,6 +25,34 @@ function sanitizeModelName(envVal: string | undefined, defaultModel: string): st
   return trimmed || defaultModel;
 }
 
+export function normalizeOpenRouterBaseUrl(raw?: string): string {
+  if (!raw) return "https://openrouter.ai/api/v1";
+  let url = raw.trim().replace(/\/+$/, "");
+  if (url.endsWith("/chat/completions")) {
+    url = url.slice(0, -"/chat/completions".length).replace(/\/+$/, "");
+  }
+  if (url.endsWith("/models")) {
+    url = url.slice(0, -"/models".length).replace(/\/+$/, "");
+  }
+  if (!url.endsWith("/v1")) {
+    if (url.endsWith("/api")) {
+      url = `${url}/v1`;
+    } else if (url === "https://openrouter.ai") {
+      url = "https://openrouter.ai/api/v1";
+    }
+  }
+  return url || "https://openrouter.ai/api/v1";
+}
+
+export function normalizeKimiBaseUrl(raw?: string): string {
+  if (!raw) return "https://api.moonshot.ai/v1";
+  let url = raw.trim().replace(/\/+$/, "");
+  if (url.endsWith("/chat/completions")) {
+    url = url.slice(0, -"/chat/completions".length).replace(/\/+$/, "");
+  }
+  return url || "https://api.moonshot.ai/v1";
+}
+
 export const GROQ_MODEL = sanitizeModelName(process.env["GROQ_MODEL"], "openai/gpt-oss-120b");
 export const GEMINI_MODEL = sanitizeModelName(process.env["GEMINI_MODEL"], "gemini-3.8-flash");
 export const NVIDIA_MODEL = sanitizeModelName(
@@ -32,9 +60,8 @@ export const NVIDIA_MODEL = sanitizeModelName(
   "nvidia/nemotron-3-super-120b-a12b",
 );
 export const KIMI_MODEL = sanitizeModelName(process.env["KIMI_MODEL"], "kimi-k2.6");
-export const KIMI_BASE_URL = process.env["KIMI_BASE_URL"]?.trim() || "https://api.moonshot.ai/v1";
-export const OPENROUTER_BASE_URL =
-  process.env["OPENROUTER_BASE_URL"]?.trim() || "https://openrouter.ai/api/v1";
+export const KIMI_BASE_URL = normalizeKimiBaseUrl(process.env["KIMI_BASE_URL"]);
+export const OPENROUTER_BASE_URL = normalizeOpenRouterBaseUrl(process.env["OPENROUTER_BASE_URL"]);
 export const DEFAULT_OPENROUTER_MODEL = "openrouter/free";
 
 export function isVisionCapableModel(modelId?: string): boolean {
@@ -792,6 +819,30 @@ export class NvidiaProvider implements LLMProvider {
           errorDetail,
         });
 
+        const isOverloaded =
+          res.status === 503 ||
+          res.status === 504 ||
+          res.status === 429 ||
+          /overloaded|temporarily unavailable|busy|timed out/i.test(errorDetail);
+
+        if (isOverloaded && activeModel === "nvidia/nemotron-3-super-120b-a12b") {
+          console.warn(
+            `[bravura] NVIDIA model (${activeModel}) overloaded (${errorDetail}). Failing over to nemotron-3-nano-omni-30b-a3b-reasoning...`,
+          );
+          const fallbackProvider = new NvidiaProvider(
+            this.apiKey,
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+          );
+          return await fallbackProvider.generateText({
+            systemPrompt,
+            messages,
+            deepThink,
+            abortSignal,
+            maxOutputTokens,
+            temperature,
+          });
+        }
+
         if (res.status === 401 || res.status === 403) {
           throw new NvidiaProviderError(
             "The NVIDIA API key is invalid, forbidden, or expired. Please verify your NVIDIA_API_KEY environment variable.",
@@ -964,6 +1015,39 @@ export class NvidiaProvider implements LLMProvider {
           (errBody.title as string) ||
           ((errBody.error as { message?: string })?.message as string) ||
           `HTTP ${res.status}`;
+
+        console.error("[bravura] NVIDIA streaming API error response", {
+          provider: "NVIDIA",
+          model: this.modelName,
+          status: res.status,
+          latencyMs: Date.now() - startTime,
+          errorDetail,
+        });
+
+        const isOverloaded =
+          res.status === 503 ||
+          res.status === 504 ||
+          res.status === 429 ||
+          /overloaded|temporarily unavailable|busy|timed out/i.test(errorDetail);
+
+        if (isOverloaded && activeModel === "nvidia/nemotron-3-super-120b-a12b") {
+          console.warn(
+            `[bravura] NVIDIA stream model (${activeModel}) overloaded (${errorDetail}). Failing over to nemotron-3-nano-omni-30b-a3b-reasoning...`,
+          );
+          const fallbackProvider = new NvidiaProvider(
+            this.apiKey,
+            "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+          );
+          return await fallbackProvider.streamText({
+            systemPrompt,
+            messages,
+            deepThink,
+            abortSignal,
+            maxOutputTokens,
+            temperature,
+            onDelta,
+          });
+        }
 
         throw new NvidiaProviderError(`NVIDIA API error: ${errorDetail}`, res.status);
       }
@@ -1332,7 +1416,7 @@ export class OpenRouterProvider implements LLMProvider {
         ? AGENT_LIMITS.maxDeepThinkOutputTokens
         : AGENT_LIMITS.maxOutputTokens;
 
-      const endpoint = `${this.baseURL.replace(/\/+$/, "")}/chat/completions`;
+      const endpoint = `${normalizeOpenRouterBaseUrl(this.baseURL)}/chat/completions`;
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -1404,7 +1488,7 @@ export class OpenRouterProvider implements LLMProvider {
           const fallbackModel =
             this.modelName !== DEFAULT_OPENROUTER_MODEL
               ? DEFAULT_OPENROUTER_MODEL
-              : "nvidia/nemotron-3.5-lightning:free";
+              : "openrouter/auto";
 
           if (this.modelName !== fallbackModel) {
             console.warn(
@@ -1549,7 +1633,7 @@ export class OpenRouterProvider implements LLMProvider {
         ? AGENT_LIMITS.maxDeepThinkOutputTokens
         : AGENT_LIMITS.maxOutputTokens;
 
-      const endpoint = `${this.baseURL.replace(/\/+$/, "")}/chat/completions`;
+      const endpoint = `${normalizeOpenRouterBaseUrl(this.baseURL)}/chat/completions`;
 
       const res = await fetch(endpoint, {
         method: "POST",
@@ -1606,7 +1690,7 @@ export class OpenRouterProvider implements LLMProvider {
           const fallbackModel =
             this.modelName !== DEFAULT_OPENROUTER_MODEL
               ? DEFAULT_OPENROUTER_MODEL
-              : "nvidia/nemotron-3.5-lightning:free";
+              : "openrouter/auto";
 
           if (this.modelName !== fallbackModel) {
             console.warn(
@@ -1748,6 +1832,7 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
     (preferredProvider === "openrouter" ||
       modelToUse === "openrouter" ||
       modelToUse === "openrouter/free" ||
+      modelToUse === "openrouter/auto" ||
       Boolean(modelToUse?.startsWith("openrouter/")) ||
       (Boolean(modelToUse?.includes(":free")) &&
         !modelToUse?.startsWith("gemini") &&
@@ -1755,6 +1840,7 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
       (Boolean(modelToUse?.includes("/")) &&
         modelToUse !== "openai/gpt-oss-120b" &&
         modelToUse !== "nvidia/nemotron-3-super-120b-a12b" &&
+        modelToUse !== "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" &&
         modelToUse !== "meta/llama-3.2-11b-vision-instruct" &&
         modelToUse !== "mistralai/mistral-nemotron"));
 
@@ -1803,6 +1889,7 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
   // 3. Explicit request for NVIDIA or Nemotron
   if (
     modelToUse === "nvidia/nemotron-3-super-120b-a12b" ||
+    modelToUse === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" ||
     modelToUse === "nemotron" ||
     modelToUse === "mistralai/mistral-nemotron" ||
     modelToUse === "meta/llama-3.2-11b-vision-instruct" ||

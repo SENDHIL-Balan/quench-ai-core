@@ -2,10 +2,26 @@ import { useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy, Download, Maximize2, X } from "lucide-react";
+import { GoogleMapsCards } from "./GoogleMapsCards";
 
 function CodeBlock({ children }: { children: ReactNode }) {
   const [copied, setCopied] = useState(false);
   const text = extractText(children);
+
+  const childElement = children as { props?: { className?: string } } | undefined;
+  const langClass = childElement?.props?.className || "";
+  const isMapsBlock = /language-json:google_maps|language-google_maps/.test(langClass);
+
+  if (isMapsBlock) {
+    try {
+      const parsed = JSON.parse(text.trim());
+      if (parsed && (Array.isArray(parsed.places) || parsed.route)) {
+        return <GoogleMapsCards data={parsed} />;
+      }
+    } catch {
+      // Fallback to normal code block
+    }
+  }
 
   return (
     <div className="group relative my-3 overflow-hidden rounded-2xl border border-white/10 bg-[#16171d] shadow-lg">

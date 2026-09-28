@@ -32,6 +32,8 @@ export interface AgentRunInput {
   voiceMode?: boolean;
   model?: string;
   provider?: string;
+  userLocation?: { latitude: number; longitude: number };
+  userLocationDenied?: boolean;
   abortSignal?: AbortSignal;
 }
 
@@ -344,6 +346,8 @@ export async function runBaseAgent({
   voiceMode = false,
   model,
   provider,
+  userLocation,
+  userLocationDenied,
   abortSignal,
 }: AgentRunInput): Promise<Response> {
   // If in Image mode, route directly to image generation
@@ -362,8 +366,16 @@ export async function runBaseAgent({
     voiceMode,
     model,
     provider,
+    userLocation,
+    userLocationDenied,
     abortSignal,
   });
+
+  const mapsPayload =
+    orchestration.mapsData &&
+    (orchestration.mapsData.places.length > 0 || orchestration.mapsData.route)
+      ? `\n\n\`\`\`json:google_maps\n${JSON.stringify(orchestration.mapsData, null, 2)}\n\`\`\``
+      : "";
 
   try {
     // If the provider supports direct streaming (e.g. OpenRouter SSE), stream tokens progressively
@@ -397,6 +409,10 @@ export async function runBaseAgent({
               ].join("\n");
               writer.write({ type: "text-delta", id: "bravura-response", delta: sourcesBlock });
             }
+
+            if (mapsPayload) {
+              writer.write({ type: "text-delta", id: "bravura-response", delta: mapsPayload });
+            }
           } catch (streamErr) {
             console.warn(
               "[bravura] Stream failed on primary provider, executing graceful fallback:",
@@ -409,43 +425,82 @@ export async function runBaseAgent({
 
             let fallbackText = "";
             let fallbackName = "";
-            if (openrouterKey) {
-              fallbackName = "OpenRouter Free Models Router";
-              const fallback = resolveProvider(DEFAULT_OPENROUTER_MODEL);
-              fallbackText = await fallback.generateText({
-                systemPrompt: orchestration.finalPrompt,
-                messages,
-                deepThink,
-                ...(abortSignal ? { abortSignal } : {}),
+
+            // Build prioritized fallback candidate list (excluding failed primary model)
+            const isPrimaryNvidia =
+              model?.includes("nemotron") || model?.includes("nvidia") || provider === "nvidia";
+            const isPrimaryGroq =
+              model?.includes("gpt-oss") || model?.includes("groq") || provider === "groq";
+            const isPrimaryGemini =
+              model?.includes("gemini") || provider === "gemini";
+            const isPrimaryOpenRouter =
+              model?.includes("openrouter") || provider === "openrouter";
+
+            const hasImages = messages.some((m) =>
+              m.parts?.some(
+                (p) =>
+                  p.type === "file" &&
+                  (p.mediaType?.startsWith("image/") ||
+                    (typeof p.url === "string" && p.url.startsWith("data:image/"))),
+              ),
+            );
+
+            const candidates: Array<{ name: string; modelId: string }> = [];
+
+            // 1. Groq (Ultra-fast, lowest latency) - text only
+            if (groqKey && !isPrimaryGroq && !hasImages) {
+              candidates.push({ name: "GPT-OSS 120B (Groq)", modelId: "openai/gpt-oss-120b" });
+            }
+
+            // 2. OpenRouter smart routers (handles text & vision)
+            if (openrouterKey && !isPrimaryOpenRouter) {
+              candidates.push({ name: "OpenRouter Free Router", modelId: "openrouter/free" });
+              candidates.push({ name: "OpenRouter Auto Router", modelId: "openrouter/auto" });
+            }
+
+            // 3. NVIDIA alternate models
+            if (nvidiaKey && !isPrimaryNvidia) {
+              candidates.push({
+                name: "NVIDIA Nemotron 3 Super 120B",
+                modelId: "nvidia/nemotron-3-super-120b-a12b",
               });
-            } else if (nvidiaKey) {
-              fallbackName = "NVIDIA Nemotron 3 Super 120B";
-              const fallback = resolveProvider("nvidia/nemotron-3-super-120b-a12b");
-              fallbackText = await fallback.generateText({
-                systemPrompt: orchestration.finalPrompt,
-                messages,
-                deepThink,
-                ...(abortSignal ? { abortSignal } : {}),
+            } else if (nvidiaKey && isPrimaryNvidia) {
+              candidates.push({
+                name: "NVIDIA Nemotron 3 Nano Reasoning",
+                modelId: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
               });
-            } else if (groqKey) {
-              fallbackName = "GPT-OSS 120B";
-              const fallback = resolveProvider("openai/gpt-oss-120b");
-              fallbackText = await fallback.generateText({
-                systemPrompt: orchestration.finalPrompt,
-                messages,
-                deepThink,
-                ...(abortSignal ? { abortSignal } : {}),
-              });
-            } else if (geminiKey) {
-              fallbackName = "Gemini 3.8 Flash";
-              const fallback = resolveProvider("gemini-3.8-flash");
-              fallbackText = await fallback.generateText({
-                systemPrompt: orchestration.finalPrompt,
-                messages,
-                deepThink,
-                ...(abortSignal ? { abortSignal } : {}),
-              });
-            } else {
+            }
+
+            // 4. Gemini (only if valid AIzaSy key)
+            if (geminiKey && geminiKey.startsWith("AIzaSy") && !isPrimaryGemini) {
+              candidates.push({ name: "Gemini 3.8 Flash", modelId: "gemini-3.8-flash" });
+            }
+
+            // Try each candidate in sequence until one succeeds
+            for (const candidate of candidates) {
+              try {
+                console.info(`[bravura] Attempting fallback with ${candidate.name}...`);
+                const fallbackProvider = resolveProvider(candidate.modelId);
+                const res = await fallbackProvider.generateText({
+                  systemPrompt: orchestration.finalPrompt,
+                  messages,
+                  deepThink,
+                  ...(abortSignal ? { abortSignal } : {}),
+                });
+                if (res && res.trim()) {
+                  fallbackText = res.trim();
+                  fallbackName = candidate.name;
+                  break;
+                }
+              } catch (candidateErr) {
+                console.warn(
+                  `[bravura] Fallback candidate ${candidate.name} failed:`,
+                  candidateErr instanceof Error ? candidateErr.message : candidateErr,
+                );
+              }
+            }
+
+            if (!fallbackText) {
               throw streamErr;
             }
 
@@ -454,7 +509,7 @@ export async function runBaseAgent({
               writer.write({
                 type: "text-delta",
                 id: "bravura-response",
-                delta: fallbackText + note,
+                delta: fallbackText + mapsPayload + note,
               });
             }
           } finally {
@@ -472,7 +527,7 @@ export async function runBaseAgent({
       return createUIMessageStreamResponse({ stream });
     }
 
-    let text: string;
+    let text = "";
     try {
       text = await orchestration.provider.generateText({
         systemPrompt: orchestration.finalPrompt,
@@ -481,150 +536,96 @@ export async function runBaseAgent({
         ...(abortSignal ? { abortSignal } : {}),
       });
     } catch (primaryError) {
-      // Graceful fallback: If primary provider failed (e.g. rate limit, temporary outage) and alternative provider exists
+      console.warn(
+        "[bravura] Primary provider generateText failed, executing resilient fallback cascade:",
+        primaryError instanceof Error ? primaryError.message : primaryError,
+      );
+
       const kimiKey =
         process.env["KIMI_API_KEY"]?.trim() || process.env["MOONSHOT_API_KEY"]?.trim();
       const geminiKey = process.env["GEMINI_API_KEY"]?.trim();
       const groqKey = process.env["GROQ_API_KEY"]?.trim();
       const nvidiaKey = process.env["NVIDIA_API_KEY"]?.trim();
+      const openrouterKey = process.env["OPENROUTER_API_KEY"]?.trim();
 
       const isKimiPrimary =
         model?.includes("kimi") || model?.includes("moonshot") || provider === "kimi";
       const isNvidiaPrimary =
-        !isKimiPrimary &&
-        (model?.includes("nemotron") || model?.includes("nvidia") || provider === "nvidia");
+        model?.includes("nemotron") || model?.includes("nvidia") || provider === "nvidia";
       const isGroqPrimary =
-        !isKimiPrimary &&
-        !isNvidiaPrimary &&
-        (!model || model.includes("gpt-oss") || model.includes("groq") || provider === "groq");
+        model?.includes("gpt-oss") || model?.includes("groq") || provider === "groq";
+      const isGeminiPrimary =
+        model?.includes("gemini") || provider === "gemini";
+      const isOpenRouterPrimary =
+        model?.includes("openrouter") || provider === "openrouter";
 
-      if (isKimiPrimary) {
-        if (nvidiaKey) {
-          console.info(
-            "[bravura] Kimi key has insufficient balance/quota; gracefully routing request to NVIDIA Nemotron 3 Super 120B",
-          );
-          const fallbackProvider = resolveProvider("nvidia/nemotron-3-super-120b-a12b");
-          text = await fallbackProvider.generateText({
+      const hasImages = messages.some((m) =>
+        m.parts?.some(
+          (p) =>
+            p.type === "file" &&
+            (p.mediaType?.startsWith("image/") ||
+              (typeof p.url === "string" && p.url.startsWith("data:image/"))),
+        ),
+      );
+
+      const candidates: Array<{ name: string; modelId: string }> = [];
+
+      // 1. Groq (Ultra-fast, lowest latency) - text only
+      if (groqKey && !isGroqPrimary && !hasImages) {
+        candidates.push({ name: "GPT-OSS 120B (Groq)", modelId: "openai/gpt-oss-120b" });
+      }
+
+      // 2. OpenRouter smart routers (handles text & vision)
+      if (openrouterKey && !isOpenRouterPrimary) {
+        candidates.push({ name: "OpenRouter Free Router", modelId: "openrouter/free" });
+        candidates.push({ name: "OpenRouter Auto Router", modelId: "openrouter/auto" });
+      }
+
+      // 3. NVIDIA alternate models
+      if (nvidiaKey && !isPrimaryNvidia) {
+        candidates.push({
+          name: "NVIDIA Nemotron 3 Super 120B",
+          modelId: "nvidia/nemotron-3-super-120b-a12b",
+        });
+      } else if (nvidiaKey && isPrimaryNvidia) {
+        candidates.push({
+          name: "NVIDIA Nemotron 3 Nano Reasoning",
+          modelId: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+        });
+      }
+
+      // 4. Gemini (only if valid AIzaSy key)
+      if (geminiKey && geminiKey.startsWith("AIzaSy") && !isPrimaryGemini) {
+        candidates.push({ name: "Gemini 3.8 Flash", modelId: "gemini-3.8-flash" });
+      }
+
+      let fallbackSucceeded = false;
+      for (const cand of candidates) {
+        try {
+          console.info(`[bravura] Attempting fallback with ${cand.name}...`);
+          const fallbackProvider = resolveProvider(cand.modelId);
+          const res = await fallbackProvider.generateText({
             systemPrompt: orchestration.finalPrompt,
             messages,
             deepThink,
             ...(abortSignal ? { abortSignal } : {}),
           });
-          text +=
-            "\n\n> ℹ️ *Fulfilled by **NVIDIA Nemotron 3 Super 120B** because the Kimi (Moonshot AI) key has 0 remaining credits. Recharge your Moonshot AI balance to enable Kimi responses directly.*";
-        } else if (groqKey) {
-          console.info(
-            "[bravura] Kimi key has insufficient balance/quota; gracefully routing request to GPT-OSS 120B on Groq",
+          if (res && res.trim()) {
+            text = res.trim();
+            text += `\n\n> ℹ️ *Fulfilled by **${cand.name}** because the requested model was temporarily unavailable.*`;
+            fallbackSucceeded = true;
+            break;
+          }
+        } catch (candErr) {
+          console.warn(
+            `[bravura] Fallback candidate ${cand.name} failed:`,
+            candErr instanceof Error ? candErr.message : candErr,
           );
-          const fallbackProvider = resolveProvider("openai/gpt-oss-120b");
-          text = await fallbackProvider.generateText({
-            systemPrompt: orchestration.finalPrompt,
-            messages,
-            deepThink,
-            ...(abortSignal ? { abortSignal } : {}),
-          });
-          text +=
-            "\n\n> ℹ️ *Fulfilled by **GPT-OSS 120B** because the Kimi (Moonshot AI) key has 0 remaining credits. Recharge your Moonshot AI balance to enable Kimi responses directly.*";
-        } else if (geminiKey) {
-          console.info(
-            "[bravura] Kimi key has insufficient balance/quota; gracefully routing request to Gemini 3.8 Flash",
-          );
-          const fallbackProvider = resolveProvider("gemini-3.8-flash");
-          text = await fallbackProvider.generateText({
-            systemPrompt: orchestration.finalPrompt,
-            messages,
-            deepThink,
-            ...(abortSignal ? { abortSignal } : {}),
-          });
-          text +=
-            "\n\n> ℹ️ *Fulfilled by **Gemini 3.8 Flash** because the Kimi (Moonshot AI) key has 0 remaining credits. Recharge your Moonshot AI balance to enable Kimi responses directly.*";
-        } else {
-          throw primaryError;
         }
-      } else if (isNvidiaPrimary) {
-        if (groqKey) {
-          console.warn(
-            "[bravura] NVIDIA model request failed, executing graceful fallback to GPT-OSS 120B on Groq...",
-            primaryError instanceof Error ? primaryError.message : primaryError,
-          );
-          const fallbackProvider = resolveProvider("openai/gpt-oss-120b");
-          text = await fallbackProvider.generateText({
-            systemPrompt: orchestration.finalPrompt,
-            messages,
-            deepThink,
-            ...(abortSignal ? { abortSignal } : {}),
-          });
-        } else if (geminiKey) {
-          console.warn(
-            "[bravura] NVIDIA model request failed, executing graceful fallback to Gemini 3.8 Flash...",
-            primaryError instanceof Error ? primaryError.message : primaryError,
-          );
-          const fallbackProvider = resolveProvider("gemini-3.8-flash");
-          text = await fallbackProvider.generateText({
-            systemPrompt: orchestration.finalPrompt,
-            messages,
-            deepThink,
-            ...(abortSignal ? { abortSignal } : {}),
-          });
-        } else {
-          throw primaryError;
-        }
-      } else if (isGroqPrimary) {
-        if (nvidiaKey) {
-          console.warn(
-            "[bravura] Primary Groq request failed, executing graceful fallback to Nemotron on NVIDIA...",
-            primaryError instanceof Error ? primaryError.message : primaryError,
-          );
-          const fallbackProvider = resolveProvider("nvidia/nemotron-3-super-120b-a12b");
-          text = await fallbackProvider.generateText({
-            systemPrompt: orchestration.finalPrompt,
-            messages,
-            deepThink,
-            ...(abortSignal ? { abortSignal } : {}),
-          });
-        } else if (geminiKey) {
-          console.warn(
-            "[bravura] Primary Groq request failed, executing graceful fallback to Gemini 3.8 Flash...",
-            primaryError instanceof Error ? primaryError.message : primaryError,
-          );
-          const fallbackProvider = resolveProvider("gemini-3.8-flash");
-          text = await fallbackProvider.generateText({
-            systemPrompt: orchestration.finalPrompt,
-            messages,
-            deepThink,
-            ...(abortSignal ? { abortSignal } : {}),
-          });
-        } else {
-          throw primaryError;
-        }
-      } else {
-        if (groqKey) {
-          console.warn(
-            "[bravura] Gemini request failed, executing graceful fallback to GPT-OSS 120B on Groq...",
-            primaryError instanceof Error ? primaryError.message : primaryError,
-          );
-          const fallbackProvider = resolveProvider("openai/gpt-oss-120b");
-          text = await fallbackProvider.generateText({
-            systemPrompt: orchestration.finalPrompt,
-            messages,
-            deepThink,
-            ...(abortSignal ? { abortSignal } : {}),
-          });
-        } else if (nvidiaKey) {
-          console.warn(
-            "[bravura] Gemini request failed, executing graceful fallback to Nemotron on NVIDIA...",
-            primaryError instanceof Error ? primaryError.message : primaryError,
-          );
-          const fallbackProvider = resolveProvider("nvidia/nemotron-3-super-120b-a12b");
-          text = await fallbackProvider.generateText({
-            systemPrompt: orchestration.finalPrompt,
-            messages,
-            deepThink,
-            ...(abortSignal ? { abortSignal } : {}),
-          });
-        } else {
-          throw primaryError;
-        }
+      }
+
+      if (!fallbackSucceeded) {
+        throw primaryError;
       }
     }
 
@@ -635,6 +636,10 @@ export async function runBaseAgent({
         ...orchestration.sources.slice(0, 5).map((s, idx) => `${idx + 1}. [${s.title}](${s.url})`),
       ].join("\n");
       text += sourcesBlock;
+    }
+
+    if (mapsPayload) {
+      text += mapsPayload;
     }
 
     const stream = createUIMessageStream({
