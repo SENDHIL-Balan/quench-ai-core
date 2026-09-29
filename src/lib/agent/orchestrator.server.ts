@@ -181,6 +181,25 @@ function detectGoogleMapsIntent(
     return null;
   }
 
+  // 0. Current Location / Where Am I / My Location
+  const isWhereAmIQuery =
+    /\b(where am i|where i am|where.*(?:right now|located|spot)|where.*riht|where im|my location|my current location|current location|what is my location|what's my location|show my location|locate me|pin my location|my coordinates|where am i now|where am i standing|what city am i in|what country am i in|what address am i at|show where i am)\b/i.test(
+      text,
+    );
+
+  if (isWhereAmIQuery) {
+    return {
+      toolName: "google_maps",
+      params: {
+        operation: "reverse_geocode",
+        ...(userLocation
+          ? { latitude: userLocation.latitude, longitude: userLocation.longitude }
+          : {}),
+      },
+      reason: "Determine user's exact current address and location via Google Maps Platform",
+    };
+  }
+
   // 1. Directions / Routes / Navigation
   const routeBetweenMatch = text.match(
     /(?:directions?|how far is|distance between|distance from|travel time between|travel time from|drive from)\s+(?:from\s+)?(.+?)\s+(?:to|and|from)\s+(.+)/i,
@@ -402,9 +421,15 @@ function planToolSteps(
       text,
     );
 
+  const isPersonalLocationQuery =
+    /\b(where am i|where i am|where.*(?:right now|located|spot)|where.*riht|where im|my location|my current location|current location|what is my location|what's my location|show my location|locate me|pin my location|my coordinates|where am i now|where am i standing|what city am i in|what country am i in|what address am i at|show where i am)\b/i.test(
+      text,
+    );
+
   if (
     (webSearchEnabled || mode === "research" || (isTimeSensitive && mode !== "code")) &&
-    !mapsStep
+    !mapsStep &&
+    !isPersonalLocationQuery
   ) {
     steps.push({
       toolName: "web_search",
@@ -462,18 +487,12 @@ export async function orchestrateAgentRun({
   let toolContextAppend = "";
   let mapsData: GoogleMapsResult | null = null;
 
-  const hasNearMe =
-    /\b(near me|around me|nearby|around here|near here|closest to me|near this location)\b/i.test(
+  const isLocationQuery =
+    /\b(near me|around me|nearby|around here|near here|closest to me|near this location|where am i|where i am|where.*(?:right now|located|spot)|where.*riht|where im|my location|my current location|current location|show my location|locate me|what is my location|what's my location|my coordinates|where am i standing)\b/i.test(
       userText,
     );
-  if (hasNearMe && userLocationDenied) {
-    toolContextAppend += `\n\n[LOCATION PERMISSION NOTICE]: The user asked for places "near me", but location permission was denied. You must respond politely: "I can't access your current location. You can give me a city, area, or address (for example: 'restaurants in T Nagar' or 'gyms in Anna Nagar') and I'll search there right away!" Do not invent fictional places or guess their location.`;
-  } else if (
-    hasNearMe &&
-    !userLocation &&
-    !plannedSteps.some((s) => s.toolName === "google_maps")
-  ) {
-    toolContextAppend += `\n\n[LOCATION PERMISSION REQUIRED]: The user asked for places "near me", but location access has not been granted yet. You must explain: "To find places near you, Bravura needs your location. Allow location access or tell me a city, area, or address to search."`;
+  if (isLocationQuery && !userLocation) {
+    toolContextAppend += `\n\n[MOBILE LIVE GPS ACCESS NOTICE]: The user is asking where they are, but their mobile device's live GPS coordinates have not reached the app yet. Respond politely: "To detect and show your exact real-time spot, please tap the **Share Live Location** button below so your phone can read your live GPS coordinates. As soon as you allow it, Bravura will pinpoint your exact location on Google Maps!" You must include the token [ACTION:REQUEST_LOCATION] at the end of your response so the interactive button appears. Do NOT guess Singapore or any other fictional location.`;
   }
 
   // Grounded document context injection (for PDFs, CSV, TXT, JSON, Markdown)

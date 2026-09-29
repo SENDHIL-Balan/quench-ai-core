@@ -151,6 +151,16 @@ function BravuraApp() {
     "prompt" | "granted" | "denied"
   >("prompt");
 
+  // Purge any legacy cached location so we always track authentic live mobile GPS
+  useEffect(() => {
+    try {
+      window.sessionStorage.removeItem("bravura_user_location");
+      window.localStorage.removeItem("bravura_user_location");
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const requestUserLocation = useCallback(async (): Promise<{
     latitude: number;
     longitude: number;
@@ -159,24 +169,68 @@ function BravuraApp() {
       setLocationPermissionState("denied");
       return null;
     }
+
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
-          timeout: 8000,
-          enableHighAccuracy: true,
-          maximumAge: 60000,
+          timeout: 20000,
+          enableHighAccuracy: true, // Use mobile GPS chip
+          maximumAge: 0, // Zero cache: always live hardware coordinates
         });
       });
       const loc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
       setUserLocation(loc);
       setLocationPermissionState("granted");
+      console.info("[bravura-mobile-gps] Acquired live device GPS:", loc);
       return loc;
     } catch (err) {
-      console.warn("[bravura-geo] Geolocation request rejected or unavailable:", err);
+      console.warn("[bravura-mobile-gps] Location request rejected or timed out:", err);
       setLocationPermissionState("denied");
       return null;
     }
   }, []);
+
+  // Continuous live GPS tracking from mobile device (only activates once permission is granted by user)
+  useEffect(() => {
+    if (
+      locationPermissionState !== "granted" ||
+      typeof navigator === "undefined" ||
+      !("geolocation" in navigator)
+    ) {
+      return;
+    }
+
+    let watchId: number | null = null;
+    try {
+      watchId = navigator.geolocation.watchPosition(
+        (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+          setUserLocation({ latitude, longitude });
+          console.info(
+            `[bravura-mobile-gps] Live mobile GPS update: ${latitude}, ${longitude} (acc: ${accuracy}m)`,
+          );
+        },
+        (err) => {
+          if (err.code === err.PERMISSION_DENIED) {
+            setLocationPermissionState("denied");
+          }
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 0,
+          timeout: 25000,
+        },
+      );
+    } catch (err) {
+      console.warn("[bravura-mobile-gps] watchPosition error:", err);
+    }
+
+    return () => {
+      if (watchId !== null && typeof navigator !== "undefined" && "geolocation" in navigator) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
+  }, [locationPermissionState]);
 
   const handleSelectModel = useCallback((model: SupportedModelId) => {
     if (!model || typeof model !== "string" || !model.trim()) {
@@ -606,12 +660,12 @@ function BravuraApp() {
     let locToSend = userLocation;
     let locDenied = false;
 
-    const hasNearMe =
-      /\b(near me|around me|nearby|around here|near here|closest to me|near this location)\b/i.test(
+    const isLocationQuery =
+      /\b(near me|around me|nearby|around here|near here|closest to me|near this location|where am i|where i am|where.*(?:right now|located|spot)|where.*riht|where im|my location|my current location|current location|show my location|locate me|what is my location|what's my location|my coordinates|where am i standing|pin my location|what city am i in|what country am i in|what address am i at)\b/i.test(
         value,
       );
 
-    if (hasNearMe) {
+    if (isLocationQuery || mode === "maps") {
       if (userLocation) {
         locToSend = userLocation;
       } else {
@@ -638,6 +692,25 @@ function BravuraApp() {
       },
     );
   };
+
+  const handleAllowLocation = useCallback(async () => {
+    const loc = await requestUserLocation();
+    if (loc) {
+      void sendMessage(
+        { text: "Where am I right now?" },
+        {
+          body: {
+            mode,
+            deepThink,
+            webSearch,
+            model: selectedModel,
+            userLocation: loc,
+            userLocationDenied: false,
+          },
+        },
+      );
+    }
+  }, [requestUserLocation, sendMessage, mode, deepThink, webSearch, selectedModel]);
 
   const newChat = useCallback(() => {
     stop();
@@ -833,6 +906,7 @@ function BravuraApp() {
                   isSpeaking={isSpeaking}
                   onSpeak={handleSpeak}
                   onStopSpeak={stopSpeech}
+                  onAllowLocation={handleAllowLocation}
                 />
               </div>
             ) : (

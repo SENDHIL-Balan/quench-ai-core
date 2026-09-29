@@ -1049,6 +1049,31 @@ export class NvidiaProvider implements LLMProvider {
           });
         }
 
+        if (res.status === 401 || res.status === 403) {
+          throw new NvidiaProviderError(
+            "The NVIDIA API key is invalid, forbidden, or expired. Please verify your NVIDIA_API_KEY environment variable.",
+            res.status,
+          );
+        }
+        if (res.status === 404) {
+          throw new NvidiaProviderError(
+            `The requested NVIDIA model (${this.modelName}) is not available on this endpoint.`,
+            404,
+          );
+        }
+        if (res.status === 429) {
+          throw new NvidiaProviderError(
+            "NVIDIA API rate limit exceeded. Please try again in a moment.",
+            429,
+          );
+        }
+        if (res.status === 504 || res.status === 503) {
+          throw new NvidiaProviderError(
+            "NVIDIA API service timed out or is temporarily unavailable.",
+            res.status,
+          );
+        }
+
         throw new NvidiaProviderError(`NVIDIA API error: ${errorDetail}`, res.status);
       }
 
@@ -1841,8 +1866,7 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
         modelToUse !== "openai/gpt-oss-120b" &&
         modelToUse !== "nvidia/nemotron-3-super-120b-a12b" &&
         modelToUse !== "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" &&
-        modelToUse !== "meta/llama-3.2-11b-vision-instruct" &&
-        modelToUse !== "mistralai/mistral-nemotron"));
+        modelToUse !== "meta/llama-3.2-11b-vision-instruct"));
 
   // 1. Explicit request for OpenRouter
   if (isOpenRouterTarget) {
@@ -1891,17 +1915,13 @@ export function resolveProvider(preferredModel?: string, preferredProvider?: str
     modelToUse === "nvidia/nemotron-3-super-120b-a12b" ||
     modelToUse === "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning" ||
     modelToUse === "nemotron" ||
-    modelToUse === "mistralai/mistral-nemotron" ||
     modelToUse === "meta/llama-3.2-11b-vision-instruct" ||
     modelToUse?.startsWith("nvidia/") ||
     preferredProvider === "nvidia"
   ) {
     if (nvidiaKey) {
       const activeNvidiaModel =
-        modelToUse &&
-        (modelToUse.startsWith("nvidia/") ||
-          modelToUse.startsWith("mistralai/") ||
-          modelToUse.startsWith("meta/"))
+        modelToUse && (modelToUse.startsWith("nvidia/") || modelToUse.startsWith("meta/"))
           ? modelToUse
           : NVIDIA_MODEL;
       console.info(

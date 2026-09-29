@@ -468,69 +468,106 @@ export async function reverseGeocodeLocation(params: {
   longitude: number;
 }): Promise<GoogleMapsResult> {
   const apiKey = getGoogleMapsApiKey();
+  let name = "";
+  let address = "";
+  let placeId = "";
+  let primaryType: string | undefined;
 
-  const response = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Goog-Api-Key": apiKey,
-      "X-Goog-Maps-Solution-ID": "gmp_git_agentskills_v1",
-      "X-Goog-FieldMask":
-        "places.id,places.displayName,places.formattedAddress,places.location,places.googleMapsUri,places.primaryType",
-    },
-    body: JSON.stringify({
-      locationRestriction: {
-        circle: {
-          center: { latitude: params.latitude, longitude: params.longitude },
-          radius: 500,
-        },
+  // 1. First attempt: Google Maps Places API (New) searchNearby
+  try {
+    const response = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-Maps-Solution-ID": "gmp_git_agentskills_v1",
+        "X-Goog-FieldMask":
+          "places.id,places.displayName,places.formattedAddress,places.location,places.googleMapsUri,places.primaryType",
       },
-      maxResultCount: 1,
-    }),
-  });
+      body: JSON.stringify({
+        locationRestriction: {
+          circle: {
+            center: { latitude: params.latitude, longitude: params.longitude },
+            radius: 1500,
+          },
+        },
+        maxResultCount: 3,
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("[bravura-maps] Reverse Geocode failed:", response.status, errorText);
-    throw new Error(
-      `Google Maps reverse geocoding failed (${response.status}): ${errorText.slice(0, 150)}`,
+    if (response.ok) {
+      const json = (await response.json()) as { places?: Array<Record<string, unknown>> };
+      const rawPlaces = json.places || [];
+      if (rawPlaces.length > 0) {
+        const p = rawPlaces[0];
+        const displayNameObj = p.displayName as { text?: string } | undefined;
+        name = displayNameObj?.text || (p.formattedAddress as string) || "Current Location";
+        address = (p.formattedAddress as string) || "";
+        placeId = (p.id as string) || "";
+        primaryType = (p.primaryType as string) || undefined;
+      }
+    }
+  } catch (err) {
+    console.warn(
+      "[bravura-maps] Places searchNearby reverse geocode failed, trying fallback:",
+      err,
     );
   }
 
-  const json = (await response.json()) as { places?: Array<Record<string, unknown>> };
-  const rawPlaces = json.places || [];
-  const p = rawPlaces[0];
-
-  if (!p) {
-    return {
-      type: "reverse_geocode",
-      query: `${params.latitude.toFixed(4)}, ${params.longitude.toFixed(4)}`,
-      places: [],
-      summary: `No specific place returned for coordinates (${params.latitude.toFixed(4)}, ${params.longitude.toFixed(4)}).`,
-    };
+  // 2. Second attempt: OpenStreetMap Nominatim reverse geocode (globally available, exact address)
+  if (!address || !name) {
+    try {
+      const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${params.latitude}&lon=${params.longitude}&zoom=18&addressdetails=1`;
+      const nomRes = await fetch(nominatimUrl, {
+        headers: { "User-Agent": "BravuraAI/1.0" },
+        signal: AbortSignal.timeout(4000),
+      });
+      if (nomRes.ok) {
+        const nomData = (await nomRes.json()) as {
+          display_name?: string;
+          name?: string;
+          address?: Record<string, string>;
+        };
+        if (nomData?.display_name) {
+          address = nomData.display_name;
+          name =
+            nomData.name ||
+            nomData.address?.road ||
+            nomData.address?.suburb ||
+            nomData.address?.neighbourhood ||
+            nomData.address?.city ||
+            "Current Location";
+        }
+      }
+    } catch (nomErr) {
+      console.warn("[bravura-maps] Nominatim reverse geocode failed:", nomErr);
+    }
   }
 
-  const displayNameObj = p.displayName as { text?: string } | undefined;
-  const name = displayNameObj?.text || (p.formattedAddress as string) || "Location";
+  if (!name && !address) {
+    name = "Current Location";
+    address = `Coordinates: ${params.latitude.toFixed(5)}, ${params.longitude.toFixed(5)}`;
+  }
+
+  const googleMapsUri = `https://www.google.com/maps/search/?api=1&query=${params.latitude},${params.longitude}`;
 
   const place: NormalizedPlace = {
-    placeId: (p.id as string) || "",
+    placeId: placeId || `loc-${params.latitude.toFixed(4)}-${params.longitude.toFixed(4)}`,
     name,
-    address: (p.formattedAddress as string) || "",
+    address,
     latitude: params.latitude,
     longitude: params.longitude,
-    primaryType: (p.primaryType as string) || undefined,
-    googleMapsUri:
-      (p.googleMapsUri as string) ||
-      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`,
+    primaryType,
+    googleMapsUri,
   };
 
   return {
     type: "reverse_geocode",
-    query: `${params.latitude.toFixed(4)}, ${params.longitude.toFixed(4)}`,
+    query: `${params.latitude.toFixed(5)}, ${params.longitude.toFixed(5)}`,
     center: { latitude: params.latitude, longitude: params.longitude },
     places: [place],
-    summary: `Coordinates (${params.latitude.toFixed(4)}, ${params.longitude.toFixed(4)}) correspond to "${name}" at ${place.address}.`,
+    summary: `Current user position is at "${name}" (${address}), coordinates: ${params.latitude.toFixed(5)}, ${params.longitude.toFixed(5)}.`,
   };
 }
 
@@ -678,7 +715,26 @@ export function formatMapsObservationForPrompt(result: GoogleMapsResult): string
   lines.push("### 🗺️ Real-World Google Maps & Places Intelligence");
   lines.push(`*Operation*: \`${result.type}\` | *Search Context*: **"${result.query}"**`);
 
-  if (result.type === "routes" && result.route) {
+  if (result.type === "reverse_geocode") {
+    const p = result.places[0];
+    lines.push(`\n**CONFIRMED LIVE LOCATION FOR USER (Google Maps Platform)**:`);
+    if (result.center) {
+      lines.push(
+        `- **Coordinates**: Latitude ${result.center.latitude.toFixed(5)}, Longitude ${result.center.longitude.toFixed(5)}`,
+      );
+    }
+    if (p) {
+      lines.push(`- **Location / Neighborhood**: ${p.name}`);
+      lines.push(`- **Full Address**: ${p.address}`);
+      if (p.googleMapsUri) {
+        lines.push(`- **Google Maps Link**: ${p.googleMapsUri}`);
+      }
+    }
+    lines.push(`- **Summary**: ${result.summary}`);
+    lines.push(
+      `\n*CRITICAL INSTRUCTION*: The user asked where they are right now. Directly and immediately inform them of their confirmed current spot, place/landmark, full address, and coordinates using the verified Google Maps data above. Do NOT claim you cannot access their location or need permission!`,
+    );
+  } else if (result.type === "routes" && result.route) {
     const r = result.route;
     lines.push(`\n**Verified Navigation Route Details**:`);
     lines.push(`- **Origin**: ${r.origin}`);

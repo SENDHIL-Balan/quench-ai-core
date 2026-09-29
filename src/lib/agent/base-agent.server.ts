@@ -431,10 +431,8 @@ export async function runBaseAgent({
               model?.includes("nemotron") || model?.includes("nvidia") || provider === "nvidia";
             const isPrimaryGroq =
               model?.includes("gpt-oss") || model?.includes("groq") || provider === "groq";
-            const isPrimaryGemini =
-              model?.includes("gemini") || provider === "gemini";
-            const isPrimaryOpenRouter =
-              model?.includes("openrouter") || provider === "openrouter";
+            const isPrimaryGemini = model?.includes("gemini") || provider === "gemini";
+            const isPrimaryOpenRouter = model?.includes("openrouter") || provider === "openrouter";
 
             const hasImages = messages.some((m) =>
               m.parts?.some(
@@ -554,10 +552,8 @@ export async function runBaseAgent({
         model?.includes("nemotron") || model?.includes("nvidia") || provider === "nvidia";
       const isGroqPrimary =
         model?.includes("gpt-oss") || model?.includes("groq") || provider === "groq";
-      const isGeminiPrimary =
-        model?.includes("gemini") || provider === "gemini";
-      const isOpenRouterPrimary =
-        model?.includes("openrouter") || provider === "openrouter";
+      const isGeminiPrimary = model?.includes("gemini") || provider === "gemini";
+      const isOpenRouterPrimary = model?.includes("openrouter") || provider === "openrouter";
 
       const hasImages = messages.some((m) =>
         m.parts?.some(

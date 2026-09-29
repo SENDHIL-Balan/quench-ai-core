@@ -1,6 +1,17 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { UIMessage } from "ai";
-import { Check, Copy, Volume2, VolumeX, FileText, Image as ImageIcon, X } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Volume2,
+  VolumeX,
+  FileText,
+  Image as ImageIcon,
+  X,
+  MapPin,
+  Crosshair,
+  Loader2,
+} from "lucide-react";
 import { QuenchOrb } from "./QuenchOrb";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import type { AgentState } from "./AgentStatus";
@@ -50,6 +61,7 @@ export function ChatView({
   isSpeaking,
   onSpeak,
   onStopSpeak,
+  onAllowLocation,
 }: {
   messages: UIMessage[];
   state: AgentState;
@@ -57,6 +69,7 @@ export function ChatView({
   isSpeaking?: boolean;
   onSpeak?: (id: string, text: string) => void;
   onStopSpeak?: () => void;
+  onAllowLocation?: () => Promise<void> | void;
 }) {
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -80,6 +93,7 @@ export function ChatView({
             isPlaying={playingId === message.id && Boolean(isSpeaking)}
             onSpeak={onSpeak}
             onStopSpeak={onStopSpeak}
+            onAllowLocation={onAllowLocation}
           />
         ),
       )}
@@ -217,23 +231,47 @@ const AssistantMessage = memo(function AssistantMessage({
   isPlaying,
   onSpeak,
   onStopSpeak,
+  onAllowLocation,
 }: {
   message: UIMessage;
   isPlaying?: boolean;
   onSpeak?: (id: string, text: string) => void;
   onStopSpeak?: () => void;
+  onAllowLocation?: () => Promise<void> | void;
 }) {
   const text = useMemo(() => messageText(message), [message]);
   const [copied, setCopied] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => () => clearTimeout(copyTimeout.current), []);
 
+  const isLocationRequest = useMemo(() => {
+    return (
+      text.includes("[ACTION:REQUEST_LOCATION]") ||
+      (text.toLowerCase().includes("share live location") && text.toLowerCase().includes("gps"))
+    );
+  }, [text]);
+
+  const cleanText = useMemo(() => {
+    return text.replace(/\[ACTION:REQUEST_LOCATION\]/g, "").trim();
+  }, [text]);
+
   const handleCopy = () => {
-    void navigator.clipboard.writeText(text);
+    void navigator.clipboard.writeText(cleanText);
     setCopied(true);
     clearTimeout(copyTimeout.current);
     copyTimeout.current = setTimeout(() => setCopied(false), 1600);
+  };
+
+  const handleAllowLocationClick = async () => {
+    if (!onAllowLocation || isLocating) return;
+    setIsLocating(true);
+    try {
+      await onAllowLocation();
+    } finally {
+      setIsLocating(false);
+    }
   };
 
   const handleToggleSpeak = () => {
@@ -242,18 +280,56 @@ const AssistantMessage = memo(function AssistantMessage({
     if (isPlaying) {
       onStopSpeak?.();
     } else if (onSpeak) {
-      onSpeak(message.id, text);
+      onSpeak(message.id, cleanText);
     }
   };
 
   return (
     <div className="group relative w-full my-1.5 text-left">
-      {text ? (
+      {cleanText ? (
         <div className="max-w-none text-[15px] sm:text-[15.5px] leading-[1.65] text-[#ececf1]">
-          <MarkdownRenderer content={text} />
+          <MarkdownRenderer content={cleanText} />
         </div>
       ) : (
         <span className="text-zinc-400 text-sm">Generating…</span>
+      )}
+
+      {/* Interactive Mobile Location Permission Card */}
+      {isLocationRequest && onAllowLocation && (
+        <div className="my-3 overflow-hidden rounded-2xl border border-cyan-500/35 bg-gradient-to-r from-cyan-950/40 via-blue-950/20 to-purple-950/20 p-4 shadow-xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
+          <div className="flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row">
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 shrink-0 shadow-[0_0_12px_rgba(6,182,212,0.25)]">
+                <MapPin className="size-5 animate-bounce" />
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-white">Enable Mobile GPS Location</h4>
+                <p className="text-xs text-zinc-300">
+                  Tap below to allow your mobile browser to share your exact live GPS spot with
+                  Bravura.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleAllowLocationClick}
+              disabled={isLocating}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-emerald-400 px-4 py-2.5 text-xs font-bold text-black shadow-md shadow-cyan-500/20 hover:scale-105 active:scale-95 transition-all cursor-pointer shrink-0 disabled:opacity-70 disabled:scale-100"
+            >
+              {isLocating ? (
+                <>
+                  <Loader2 className="size-4 animate-spin text-black" />
+                  <span>Reading Mobile GPS…</span>
+                </>
+              ) : (
+                <>
+                  <Crosshair className="size-4 text-black" />
+                  <span>Share Live Location</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       )}
       {isPlaying && (
         <div className="mt-3 mb-1 max-w-sm animate-in fade-in zoom-in-95 duration-200">

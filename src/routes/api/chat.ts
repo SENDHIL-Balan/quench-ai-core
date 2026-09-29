@@ -64,6 +64,14 @@ export const Route = createFileRoute("/api/chat")({
           );
         }
 
+        const validLocation =
+          userLocation &&
+          typeof userLocation === "object" &&
+          typeof userLocation.latitude === "number" &&
+          typeof userLocation.longitude === "number"
+            ? userLocation
+            : undefined;
+
         try {
           return await runBaseAgent({
             messages: messages as UIMessage[],
@@ -73,14 +81,8 @@ export const Route = createFileRoute("/api/chat")({
             voiceMode: voiceMode === true,
             model: typeof model === "string" ? model : undefined,
             provider: typeof provider === "string" ? provider : undefined,
-            userLocation:
-              userLocation &&
-              typeof userLocation === "object" &&
-              typeof userLocation.latitude === "number" &&
-              typeof userLocation.longitude === "number"
-                ? userLocation
-                : undefined,
-            userLocationDenied: userLocationDenied === true,
+            userLocation: validLocation,
+            userLocationDenied: userLocationDenied === true && !validLocation,
             abortSignal: request.signal,
           });
         } catch (error) {

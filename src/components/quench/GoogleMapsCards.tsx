@@ -13,6 +13,10 @@ import {
   Train,
   ChevronDown,
   ChevronUp,
+  Crosshair,
+  Copy,
+  Check,
+  Compass,
 } from "lucide-react";
 import type {
   GoogleMapsResult,
@@ -28,11 +32,110 @@ export function GoogleMapsCards({ data }: { data: GoogleMapsResult }) {
     return <RouteCard route={data.route} query={data.query} />;
   }
 
+  if (data.type === "reverse_geocode" || data.type === "geocode") {
+    return <CurrentLocationCard data={data} />;
+  }
+
   if (Array.isArray(data.places) && data.places.length > 0) {
     return <PlaceList places={data.places} query={data.query} />;
   }
 
   return null;
+}
+
+function CurrentLocationCard({ data }: { data: GoogleMapsResult }) {
+  const [copied, setCopied] = useState(false);
+  const place = data.places[0];
+  const center =
+    data.center || (place ? { latitude: place.latitude, longitude: place.longitude } : null);
+
+  const lat = center?.latitude ?? 0;
+  const lng = center?.longitude ?? 0;
+  const coordsString = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  const googleMapsUrl =
+    place?.googleMapsUri || `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+
+  const handleCopyCoords = () => {
+    void navigator.clipboard.writeText(coordsString);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="my-4 overflow-hidden rounded-2xl border border-cyan-500/30 bg-[#161824]/95 shadow-2xl backdrop-blur-xl transition-all">
+      {/* Top Banner with pulsating Live Location Radar */}
+      <div className="flex items-center justify-between border-b border-cyan-500/20 bg-gradient-to-r from-cyan-950/40 via-blue-950/20 to-purple-950/20 px-4 py-3">
+        <div className="flex items-center gap-2.5">
+          <div className="relative flex size-8 items-center justify-center rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-400">
+            <Crosshair className="size-4 animate-spin-slow" />
+            <span className="absolute -top-0.5 -right-0.5 flex size-2.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex size-2.5 rounded-full bg-emerald-500" />
+            </span>
+          </div>
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-cyan-300">
+                Your Current Location
+              </span>
+              <span className="rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.2 text-[10px] font-semibold text-emerald-300">
+                Live GPS Pin
+              </span>
+            </div>
+            <p className="text-[11px] text-zinc-400">Verified via Google Maps Platform</p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleCopyCoords}
+          className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-2.5 py-1 text-xs text-zinc-300 hover:bg-white/10 hover:text-white transition-all cursor-pointer"
+          title="Copy GPS Coordinates"
+        >
+          {copied ? <Check className="size-3.5 text-emerald-400" /> : <Copy className="size-3.5" />}
+          <span className="text-[11px] font-medium">{copied ? "Copied!" : "Copy Coords"}</span>
+        </button>
+      </div>
+
+      {/* Main Location Content */}
+      <div className="p-4 sm:p-5 space-y-4">
+        <div>
+          {place?.name && place.name !== "Current Location" && (
+            <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
+              <span>{place.name}</span>
+            </h3>
+          )}
+          {place?.address && (
+            <p className="mt-1 flex items-start gap-2 text-sm text-zinc-300">
+              <MapPin className="size-4 shrink-0 mt-0.5 text-cyan-400" />
+              <span>{place.address}</span>
+            </p>
+          )}
+        </div>
+
+        {/* Coordinates Details Badge */}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-zinc-300 font-mono">
+            <Compass className="size-3.5 text-cyan-400" />
+            <span>Lat: {lat.toFixed(5)}°</span>
+            <span className="text-zinc-500">|</span>
+            <span>Lng: {lng.toFixed(5)}°</span>
+          </div>
+
+          <a
+            href={googleMapsUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/40 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 px-3.5 py-1.5 text-xs font-semibold text-cyan-200 transition-all hover:bg-cyan-500/30 hover:border-cyan-400 shadow-sm"
+          >
+            <Navigation className="size-3.5" />
+            <span>View on Google Maps</span>
+            <ExternalLink className="size-3 opacity-70" />
+          </a>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function RouteCard({ route, query }: { route: NormalizedRoute; query: string }) {

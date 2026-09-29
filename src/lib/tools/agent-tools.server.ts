@@ -402,7 +402,21 @@ export const googleMapsTool: ToolDefinition<{
           };
         }
         mapsResult = await geocodePlace({ address });
-      } else if (op === "reverse_geocode" && userLoc) {
+      } else if (op === "reverse_geocode") {
+        if (
+          !userLoc ||
+          typeof userLoc.latitude !== "number" ||
+          typeof userLoc.longitude !== "number"
+        ) {
+          return {
+            success: false,
+            toolName: "google_maps",
+            summary:
+              "Mobile GPS coordinates not received. Please allow location access on your mobile device to track your real-time spot.",
+            data: null,
+            error: "No GPS coordinates provided by device.",
+          };
+        }
         mapsResult = await reverseGeocodeLocation({
           latitude: userLoc.latitude,
           longitude: userLoc.longitude,
