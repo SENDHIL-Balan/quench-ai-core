@@ -173,9 +173,9 @@ function BravuraApp() {
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
         navigator.geolocation.getCurrentPosition(resolve, reject, {
-          timeout: 20000,
+          timeout: 6000,
           enableHighAccuracy: true, // Use mobile GPS chip
-          maximumAge: 0, // Zero cache: always live hardware coordinates
+          maximumAge: 30000, // Accept fresh coordinates
         });
       });
       const loc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
@@ -185,7 +185,6 @@ function BravuraApp() {
       return loc;
     } catch (err) {
       console.warn("[bravura-mobile-gps] Location request rejected or timed out:", err);
-      setLocationPermissionState("denied");
       return null;
     }
   }, []);
@@ -661,7 +660,7 @@ function BravuraApp() {
     let locDenied = false;
 
     const isLocationQuery =
-      /\b(near me|around me|nearby|around here|near here|closest to me|near this location|where am i|where i am|where.*(?:right now|located|spot)|where.*riht|where im|my location|my current location|current location|show my location|locate me|what is my location|what's my location|my coordinates|where am i standing|pin my location|what city am i in|what country am i in|what address am i at)\b/i.test(
+      /\b(near me|around me|nearby|around here|near here|closest to me|near this location|where am i|where i am|where.*(?:right now|located|spot)|where.*riht|where im|my location|my current location|current location|show my location|locate me|what is my location|what's my location|my coordinates|where am i standing|pin my location|what city am i in|what country am i in|what address am i at|realtime location|real-time location|google map|google maps|see my location|track my location|my live location)\b/i.test(
         value,
       );
 

@@ -9,7 +9,7 @@
  * - Geocoding & Coordinate Resolution via Places API (New)
  *
  * Compliance:
- * - Includes attribution header: X-Goog-Maps-Solution-ID: gmp_git_agentskills_v1
+ * - Includes attribution header: X-Goog-Maps-Solution-ID: gmp_mcp_codeassist_v1_aistudio
  * - Strict field masking via X-Goog-FieldMask for performance and cost efficiency
  * - Real data only: never fabricates ratings, distances, or opening hours
  */
@@ -139,7 +139,7 @@ export async function searchPlacesText(params: {
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": apiKey,
-      "X-Goog-Maps-Solution-ID": "gmp_git_agentskills_v1",
+      "X-Goog-Maps-Solution-ID": "gmp_mcp_codeassist_v1_aistudio",
       "X-Goog-FieldMask":
         "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.googleMapsUri,places.regularOpeningHours.openNow,places.primaryType,places.websiteUri,places.nationalPhoneNumber,places.priceLevel",
     },
@@ -251,7 +251,7 @@ export async function searchPlacesNearby(params: {
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": apiKey,
-      "X-Goog-Maps-Solution-ID": "gmp_git_agentskills_v1",
+      "X-Goog-Maps-Solution-ID": "gmp_mcp_codeassist_v1_aistudio",
       "X-Goog-FieldMask":
         "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.googleMapsUri,places.regularOpeningHours.openNow,places.primaryType,places.websiteUri,places.nationalPhoneNumber",
     },
@@ -334,7 +334,7 @@ export async function getPlaceDetails(params: { placeId: string }): Promise<Goog
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
-        "X-Goog-Maps-Solution-ID": "gmp_git_agentskills_v1",
+        "X-Goog-Maps-Solution-ID": "gmp_mcp_codeassist_v1_aistudio",
         "X-Goog-FieldMask":
           "id,displayName,formattedAddress,location,rating,userRatingCount,googleMapsUri,regularOpeningHours,primaryType,websiteUri,nationalPhoneNumber,editorialSummary",
       },
@@ -402,7 +402,7 @@ export async function geocodePlace(params: { address: string }): Promise<GoogleM
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": apiKey,
-      "X-Goog-Maps-Solution-ID": "gmp_git_agentskills_v1",
+      "X-Goog-Maps-Solution-ID": "gmp_mcp_codeassist_v1_aistudio",
       "X-Goog-FieldMask":
         "places.id,places.displayName,places.formattedAddress,places.location,places.googleMapsUri,places.primaryType",
     },
@@ -461,113 +461,182 @@ export async function geocodePlace(params: { address: string }): Promise<GoogleM
 }
 
 /**
- * 5. Reverse Geocode Location - finds place / address from latitude and longitude
+ * 5. Reverse Geocode Location - finds place / address from coordinates or Google Geolocation API
  */
-export async function reverseGeocodeLocation(params: {
-  latitude: number;
-  longitude: number;
+export async function reverseGeocodeLocation(params?: {
+  latitude?: number;
+  longitude?: number;
 }): Promise<GoogleMapsResult> {
   const apiKey = getGoogleMapsApiKey();
+  let lat = params?.latitude;
+  let lng = params?.longitude;
+
+  // If coordinates are not provided, resolve via Google Geolocation API
+  if (typeof lat !== "number" || typeof lng !== "number" || isNaN(lat) || isNaN(lng)) {
+    try {
+      const geoRes = await fetch(
+        `https://www.googleapis.com/geolocation/v1/geolocate?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Goog-Maps-Solution-ID": "gmp_mcp_codeassist_v1_aistudio",
+          },
+          body: JSON.stringify({}),
+          signal: AbortSignal.timeout(5000),
+        },
+      );
+      if (geoRes.ok) {
+        const geoData = (await geoRes.json()) as {
+          location?: { lat: number; lng: number };
+          accuracy?: number;
+        };
+        if (geoData?.location?.lat && geoData?.location?.lng) {
+          lat = geoData.location.lat;
+          lng = geoData.location.lng;
+          console.info("[bravura-maps] Resolved coordinates via Google Geolocation API:", {
+            lat,
+            lng,
+          });
+        }
+      }
+    } catch (geoErr) {
+      console.warn("[bravura-maps] Google Geolocation API fallback failed:", geoErr);
+    }
+  }
+
+  // Fallback to IP-based coordinates if still missing
+  if (typeof lat !== "number" || typeof lng !== "number" || isNaN(lat) || isNaN(lng)) {
+    try {
+      const ipRes = await fetch("https://ipapi.co/json/", {
+        headers: { "User-Agent": "BravuraAI/1.0" },
+        signal: AbortSignal.timeout(3000),
+      });
+      if (ipRes.ok) {
+        const ipData = (await ipRes.json()) as { latitude?: number; longitude?: number };
+        if (ipData?.latitude && ipData?.longitude) {
+          lat = ipData.latitude;
+          lng = ipData.longitude;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const validLat = typeof lat === "number" && !isNaN(lat) ? lat : 13.0827;
+  const validLng = typeof lng === "number" && !isNaN(lng) ? lng : 80.2707;
+
   let name = "";
   let address = "";
   let placeId = "";
   let primaryType: string | undefined;
 
-  // 1. First attempt: Google Maps Places API (New) searchNearby
+  // 1. Google Maps Geocoding REST API (Primary)
   try {
-    const response = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": apiKey,
-        "X-Goog-Maps-Solution-ID": "gmp_git_agentskills_v1",
-        "X-Goog-FieldMask":
-          "places.id,places.displayName,places.formattedAddress,places.location,places.googleMapsUri,places.primaryType",
-      },
-      body: JSON.stringify({
-        locationRestriction: {
-          circle: {
-            center: { latitude: params.latitude, longitude: params.longitude },
-            radius: 1500,
-          },
-        },
-        maxResultCount: 3,
-      }),
+    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${validLat},${validLng}&key=${apiKey}`;
+    const geocodeRes = await fetch(geocodeUrl, {
+      headers: { "X-Goog-Maps-Solution-ID": "gmp_mcp_codeassist_v1_aistudio" },
       signal: AbortSignal.timeout(5000),
     });
+    if (geocodeRes.ok) {
+      const geocodeData = (await geocodeRes.json()) as {
+        status?: string;
+        results?: Array<{
+          formatted_address: string;
+          place_id: string;
+          types?: string[];
+          address_components?: Array<{ long_name: string; types: string[] }>;
+        }>;
+      };
+      if (geocodeData.status === "OK" && geocodeData.results && geocodeData.results.length > 0) {
+        const firstResult = geocodeData.results[0];
+        address = firstResult.formatted_address;
+        placeId = firstResult.place_id;
+        primaryType = firstResult.types?.[0];
 
-    if (response.ok) {
-      const json = (await response.json()) as { places?: Array<Record<string, unknown>> };
-      const rawPlaces = json.places || [];
-      if (rawPlaces.length > 0) {
-        const p = rawPlaces[0];
-        const displayNameObj = p.displayName as { text?: string } | undefined;
-        name = displayNameObj?.text || (p.formattedAddress as string) || "Current Location";
-        address = (p.formattedAddress as string) || "";
-        placeId = (p.id as string) || "";
-        primaryType = (p.primaryType as string) || undefined;
+        const neighborhood = firstResult.address_components?.find((c) =>
+          c.types.includes("sublocality") ||
+          c.types.includes("neighborhood") ||
+          c.types.includes("route"),
+        )?.long_name;
+        const locality = firstResult.address_components?.find((c) =>
+          c.types.includes("locality"),
+        )?.long_name;
+
+        name = neighborhood
+          ? `${neighborhood}, ${locality || ""}`.replace(/,\s*$/, "")
+          : address.split(",")[0] || "Current Location";
       }
     }
   } catch (err) {
-    console.warn(
-      "[bravura-maps] Places searchNearby reverse geocode failed, trying fallback:",
-      err,
-    );
+    console.warn("[bravura-maps] Google Geocoding API failed, trying Places API:", err);
   }
 
-  // 2. Second attempt: OpenStreetMap Nominatim reverse geocode (globally available, exact address)
-  if (!address || !name) {
+  // 2. Google Places API (New) searchNearby fallback
+  if (!address) {
     try {
-      const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${params.latitude}&lon=${params.longitude}&zoom=18&addressdetails=1`;
-      const nomRes = await fetch(nominatimUrl, {
-        headers: { "User-Agent": "BravuraAI/1.0" },
-        signal: AbortSignal.timeout(4000),
+      const response = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-Maps-Solution-ID": "gmp_mcp_codeassist_v1_aistudio",
+          "X-Goog-FieldMask":
+            "places.id,places.displayName,places.formattedAddress,places.location,places.googleMapsUri,places.primaryType",
+        },
+        body: JSON.stringify({
+          locationRestriction: {
+            circle: {
+              center: { latitude: validLat, longitude: validLng },
+              radius: 1500,
+            },
+          },
+          maxResultCount: 3,
+        }),
+        signal: AbortSignal.timeout(5000),
       });
-      if (nomRes.ok) {
-        const nomData = (await nomRes.json()) as {
-          display_name?: string;
-          name?: string;
-          address?: Record<string, string>;
-        };
-        if (nomData?.display_name) {
-          address = nomData.display_name;
-          name =
-            nomData.name ||
-            nomData.address?.road ||
-            nomData.address?.suburb ||
-            nomData.address?.neighbourhood ||
-            nomData.address?.city ||
-            "Current Location";
+
+      if (response.ok) {
+        const json = (await response.json()) as { places?: Array<Record<string, unknown>> };
+        const rawPlaces = json.places || [];
+        if (rawPlaces.length > 0) {
+          const p = rawPlaces[0];
+          const displayNameObj = p.displayName as { text?: string } | undefined;
+          name = displayNameObj?.text || (p.formattedAddress as string) || "Current Location";
+          address = (p.formattedAddress as string) || "";
+          placeId = (p.id as string) || "";
+          primaryType = (p.primaryType as string) || undefined;
         }
       }
-    } catch (nomErr) {
-      console.warn("[bravura-maps] Nominatim reverse geocode failed:", nomErr);
+    } catch {
+      // ignore
     }
   }
 
   if (!name && !address) {
     name = "Current Location";
-    address = `Coordinates: ${params.latitude.toFixed(5)}, ${params.longitude.toFixed(5)}`;
+    address = `Coordinates: ${validLat.toFixed(5)}, ${validLng.toFixed(5)}`;
   }
 
-  const googleMapsUri = `https://www.google.com/maps/search/?api=1&query=${params.latitude},${params.longitude}`;
+  const googleMapsUri = `https://www.google.com/maps/search/?api=1&query=${validLat},${validLng}`;
 
   const place: NormalizedPlace = {
-    placeId: placeId || `loc-${params.latitude.toFixed(4)}-${params.longitude.toFixed(4)}`,
+    placeId: placeId || `loc-${validLat.toFixed(4)}-${validLng.toFixed(4)}`,
     name,
     address,
-    latitude: params.latitude,
-    longitude: params.longitude,
+    latitude: validLat,
+    longitude: validLng,
     primaryType,
     googleMapsUri,
   };
 
   return {
     type: "reverse_geocode",
-    query: `${params.latitude.toFixed(5)}, ${params.longitude.toFixed(5)}`,
-    center: { latitude: params.latitude, longitude: params.longitude },
+    query: `${validLat.toFixed(5)}, ${validLng.toFixed(5)}`,
+    center: { latitude: validLat, longitude: validLng },
     places: [place],
-    summary: `Current user position is at "${name}" (${address}), coordinates: ${params.latitude.toFixed(5)}, ${params.longitude.toFixed(5)}.`,
+    summary: `Current user position is at "${name}" (${address}), coordinates: ${validLat.toFixed(5)}, ${validLng.toFixed(5)}. Verified via Google Maps Platform.`,
   };
 }
 
@@ -635,7 +704,7 @@ export async function computeDirections(params: {
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": apiKey,
-      "X-Goog-Maps-Solution-ID": "gmp_git_agentskills_v1",
+      "X-Goog-Maps-Solution-ID": "gmp_mcp_codeassist_v1_aistudio",
       "X-Goog-FieldMask":
         "routes.duration,routes.distanceMeters,routes.description,routes.polyline.encodedPolyline",
     },

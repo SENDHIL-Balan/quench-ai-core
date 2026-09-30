@@ -178,7 +178,7 @@ function detectGoogleMapsIntent(
       text,
     );
   const isExplicitMapQuery =
-    /\b(navigate|directions? to|how far is|distance to|map of|located at|where is the nearest|near me|around me|closest to me|where am i|find address)\b/i.test(
+    /\b(navigate|directions? to|how far is|distance to|map of|located at|where is the nearest|near me|around me|closest to me|where am i|find address|realtime location|real-time location|google map|google maps|my location|see my location|track my location|my live location)\b/i.test(
       text,
     );
 
@@ -196,7 +196,7 @@ function detectGoogleMapsIntent(
 
   // 0. Current Location / Where Am I / My Location
   const isWhereAmIQuery =
-    /\b(where am i|where i am|where.*(?:right now|located|spot)|where.*riht|where im|my location|my current location|current location|what is my location|what's my location|show my location|locate me|pin my location|my coordinates|where am i now|where am i standing|what city am i in|what country am i in|what address am i at|show where i am)\b/i.test(
+    /\b(where am i|where i am|where.*(?:right now|located|spot)|where.*riht|where im|my location|my current location|current location|what is my location|what's my location|show my location|locate me|pin my location|my coordinates|where am i now|where am i standing|what city am i in|what country am i in|what address am i at|show where i am|realtime location|real-time location|see my.*location|see your realtime location|detect my location|know my location|find my location|track my location|google map.*location)\b/i.test(
       text,
     );
 
@@ -501,7 +501,7 @@ export async function orchestrateAgentRun({
   let mapsData: GoogleMapsResult | null = null;
 
   const isLocationQuery =
-    /\b(near me|around me|nearby|around here|near here|closest to me|near this location|where am i|where i am|where.*(?:right now|located|spot)|where.*riht|where im|my location|my current location|current location|show my location|locate me|what is my location|what's my location|my coordinates|where am i standing)\b/i.test(
+    /\b(near me|around me|nearby|around here|near here|closest to me|near this location|where am i|where i am|where.*(?:right now|located|spot)|where.*riht|where im|my location|my current location|current location|show my location|locate me|what is my location|what's my location|my coordinates|where am i standing|realtime location|real-time location|google map|see my location|track my location|my live location)\b/i.test(
       userText,
     );
   if (isLocationQuery && !userLocation) {
