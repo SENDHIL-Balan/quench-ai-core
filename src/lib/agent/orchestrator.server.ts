@@ -172,7 +172,20 @@ function detectGoogleMapsIntent(
 ): AgentPlanStep | null {
   const text = userText.trim().toLowerCase();
 
-  // Negative filters: purely technical or conceptual queries
+  // Negative filters: programming, algorithms, conceptual, educational, or creative queries
+  const isTechnicalOrConversational =
+    /\b(loop|loops|infinite|code|coding|function|variable|python|javascript|typescript|react|html|css|algorithm|debug|error|compile|syntax|class|array|object|database|sql|api|backend|frontend|while|for loop|recursion|write|story|essay|poem|math|calculate|translate|review|summary|read words)\b/i.test(
+      text,
+    );
+  const isExplicitMapQuery =
+    /\b(navigate|directions? to|how far is|distance to|map of|located at|where is the nearest|near me|around me|closest to me|where am i|find address)\b/i.test(
+      text,
+    );
+
+  if (isTechnicalOrConversational && !isExplicitMapQuery) {
+    return null;
+  }
+
   if (
     /^(?:what is (?:rag|ai|ml|machine learning|python|coding|a component|docker)|explain (?:ai|ml|machine learning|python|rag)|write (?:python|code|a react|a script)|create a workout (?:plan|routine)|help me (?:code|write|debug))\b/i.test(
       text,

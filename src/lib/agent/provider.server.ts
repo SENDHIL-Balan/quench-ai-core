@@ -791,6 +791,8 @@ export class NvidiaProvider implements LLMProvider {
           max_tokens: maxOutputTokens ?? defaultMaxTokens,
           temperature: temperature ?? (deepThink ? 0.3 : 0.6),
           top_p: 0.95,
+          frequency_penalty: 0.1,
+          presence_penalty: 0.05,
         }),
         ...(abortSignal ? { signal: abortSignal } : {}),
       });
@@ -999,6 +1001,8 @@ export class NvidiaProvider implements LLMProvider {
           max_tokens: maxOutputTokens ?? defaultMaxTokens,
           temperature: temperature ?? (deepThink ? 0.3 : 0.6),
           top_p: 0.95,
+          frequency_penalty: 0.1,
+          presence_penalty: 0.05,
         }),
         ...(abortSignal ? { signal: abortSignal } : {}),
       });
@@ -1458,6 +1462,8 @@ export class OpenRouterProvider implements LLMProvider {
           max_tokens: maxOutputTokens ?? defaultMaxTokens,
           temperature: temperature ?? (deepThink ? 0.3 : 0.6),
           top_p: 0.95,
+          frequency_penalty: 0.1,
+          presence_penalty: 0.05,
         }),
         ...(abortSignal ? { signal: abortSignal } : {}),
       });
@@ -1676,6 +1682,8 @@ export class OpenRouterProvider implements LLMProvider {
           max_tokens: maxOutputTokens ?? defaultMaxTokens,
           temperature: temperature ?? (deepThink ? 0.3 : 0.6),
           top_p: 0.95,
+          frequency_penalty: 0.1,
+          presence_penalty: 0.05,
         }),
         ...(abortSignal ? { signal: abortSignal } : {}),
       });
@@ -1797,9 +1805,6 @@ export class OpenRouterProvider implements LLMProvider {
                 } else if (delta.reasoning || delta.reasoning_content) {
                   const reasoningDelta = delta.reasoning || delta.reasoning_content || "";
                   fullReasoning += reasoningDelta;
-                  if (deepThink) {
-                    await onDelta(reasoningDelta);
-                  }
                 }
               }
             } catch {
@@ -1811,9 +1816,9 @@ export class OpenRouterProvider implements LLMProvider {
         reader.releaseLock();
       }
 
-      if (!fullContent && fullReasoning && !deepThink) {
-        await onDelta(fullReasoning);
-        fullContent = fullReasoning;
+      if (!fullContent.trim() && fullReasoning.trim()) {
+        await onDelta(fullReasoning.trim());
+        fullContent = fullReasoning.trim();
       }
 
       const durationMs = Date.now() - startTime;

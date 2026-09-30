@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { QuenchOrb } from "./QuenchOrb";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { GoogleMapsCards } from "./GoogleMapsCards";
 import type { AgentState } from "./AgentStatus";
 import { BravuraTypingIndicator } from "./BravuraTypingIndicator";
 import { RealtimeAudioVisualizer } from "./RealtimeAudioVisualizer";
@@ -253,8 +254,27 @@ const AssistantMessage = memo(function AssistantMessage({
     );
   }, [text]);
 
+  const mapsData = useMemo(() => {
+    const match = text.match(/```(?:json:)?google_maps\s*([\s\S]*?)\s*```/i);
+    if (match && match[1]) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        if (parsed && (Array.isArray(parsed.places) || parsed.route)) {
+          return parsed;
+        }
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }, [text]);
+
   const cleanText = useMemo(() => {
-    return text.replace(/\[ACTION:REQUEST_LOCATION\]/g, "").trim();
+    return text
+      .replace(/```(?:json:)?google_maps[\s\S]*?```/gi, "")
+      .replace(/<think>[\s\S]*?<\/think>/gi, "")
+      .replace(/\[ACTION:REQUEST_LOCATION\]/g, "")
+      .trim();
   }, [text]);
 
   const handleCopy = () => {
@@ -290,8 +310,15 @@ const AssistantMessage = memo(function AssistantMessage({
         <div className="max-w-none text-[15px] sm:text-[15.5px] leading-[1.65] text-[#ececf1]">
           <MarkdownRenderer content={cleanText} />
         </div>
-      ) : (
+      ) : mapsData ? null : (
         <span className="text-zinc-400 text-sm">Generating…</span>
+      )}
+
+      {/* Render Google Maps UI widget without any code block */}
+      {mapsData && (
+        <div className="my-3">
+          <GoogleMapsCards data={mapsData} />
+        </div>
       )}
 
       {/* Interactive Mobile Location Permission Card */}

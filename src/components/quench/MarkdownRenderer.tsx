@@ -10,7 +10,10 @@ function CodeBlock({ children }: { children: ReactNode }) {
 
   const childElement = children as { props?: { className?: string } } | undefined;
   const langClass = childElement?.props?.className || "";
-  const isMapsBlock = /language-json:google_maps|language-google_maps/.test(langClass);
+  const isMapsBlock =
+    /language-json:google_maps|language-google_maps|google_maps/i.test(langClass) ||
+    text.includes('"places"') ||
+    text.includes('"routes"');
 
   if (isMapsBlock) {
     try {
@@ -19,8 +22,10 @@ function CodeBlock({ children }: { children: ReactNode }) {
         return <GoogleMapsCards data={parsed} />;
       }
     } catch {
-      // Fallback to normal code block
+      // Never show internal maps payload as raw code block
+      return null;
     }
+    return null;
   }
 
   return (

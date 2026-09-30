@@ -644,14 +644,14 @@ export async function runBaseAgent({
         writer.write({ type: "start" });
         writer.write({ type: "text-start", id: "bravura-response" });
 
-        // Stream in natural-sized token chunks to ensure smooth UI responsiveness
-        const chunkSize = 24;
+        // Stream in natural-sized token chunks to ensure smooth and swift UI responsiveness
+        const chunkSize = Math.max(32, Math.ceil(text.length / 100));
         for (let i = 0; i < text.length; i += chunkSize) {
           if (abortSignal?.aborted) break;
           const chunk = text.slice(i, i + chunkSize);
           writer.write({ type: "text-delta", id: "bravura-response", delta: chunk });
           if (text.length > 300) {
-            await new Promise((r) => setTimeout(r, 6));
+            await new Promise((r) => setTimeout(r, 4));
           }
         }
 
