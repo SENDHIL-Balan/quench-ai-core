@@ -14,7 +14,14 @@
 
 import type { UIMessage } from "ai";
 import { AGENT_TOOLS, type ToolExecutionResult } from "../tools/agent-tools.server";
-import { chunkDocumentText, type DocumentChunk } from "../rag/rag-engine.server";
+import {
+  chunkDocumentText,
+  type DocumentChunk,
+  searchConversationHistory,
+  isConversationSearchIntent,
+  formatChatRagContextForPrompt,
+  type ChatHistoryItem,
+} from "../rag/rag-engine.server";
 import { resolveProvider, isVisionCapableModel, type LLMProvider } from "./provider.server";
 import { buildSystemPrompt, type ModeId } from "./modes";
 import {
@@ -31,6 +38,7 @@ export interface AgentPlanStep {
 
 export interface OrchestratorOptions {
   messages: UIMessage[];
+  otherChats?: ChatHistoryItem[];
   mode: ModeId;
   deepThink?: boolean;
   webSearch?: boolean;
@@ -459,6 +467,7 @@ function planToolSteps(
  */
 export async function orchestrateAgentRun({
   messages,
+  otherChats,
   mode,
   deepThink = false,
   webSearch = false,
@@ -499,6 +508,32 @@ export async function orchestrateAgentRun({
   const sources: Array<{ title: string; url: string }> = [];
   let toolContextAppend = "";
   let mapsData: GoogleMapsResult | null = null;
+
+  // 2. Conversational RAG: Search past chat messages and previous turns if user references prior statements or in multi-turn conversation
+  const isChatRecallIntent = isConversationSearchIntent(userText);
+  const shouldSearchChatHistory =
+    isChatRecallIntent ||
+    messages.length > 2 ||
+    (Array.isArray(otherChats) && otherChats.length > 0);
+
+  if (shouldSearchChatHistory) {
+    try {
+      const chatRagResults = await searchConversationHistory(userText, messages, otherChats, 5);
+      const minScore = isChatRecallIntent ? 0.05 : 0.28;
+      const relevantChatMemory = chatRagResults.filter((r) => r.score >= minScore);
+
+      if (relevantChatMemory.length > 0) {
+        activityStages.push("Conversational RAG (retrieving previous chat history)");
+        const chatRagBlock = formatChatRagContextForPrompt(relevantChatMemory);
+        toolContextAppend += `\n\n${chatRagBlock}`;
+        console.info(
+          `[bravura-agent] Conversational RAG retrieved ${relevantChatMemory.length} prior message snippet(s) (isRecallIntent=${isChatRecallIntent})`,
+        );
+      }
+    } catch (chatRagErr) {
+      console.warn("[bravura-agent] Conversational RAG notice:", chatRagErr);
+    }
+  }
 
   const isLocationQuery =
     /\b(near me|around me|nearby|around here|near here|closest to me|near this location|where am i|where i am|where.*(?:right now|located|spot)|where.*riht|where im|my location|my current location|current location|show my location|locate me|what is my location|what's my location|my coordinates|where am i standing|realtime location|real-time location|google map|see my location|track my location|my live location)\b/i.test(

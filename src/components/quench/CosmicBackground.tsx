@@ -6,15 +6,35 @@ interface CosmicBackgroundProps {
   theme?: CosmicThemeId;
 }
 
-type Star = {
+type StarSpectralClass = "O" | "B" | "A" | "F" | "G" | "K" | "M";
+
+type RealisticStar = {
   x: number;
   y: number;
+  layer: 0 | 1 | 2; // 0 = distant micro-star, 1 = mid-ground, 2 = bright foreground
   radius: number;
-  alpha: number;
   baseAlpha: number;
+  alpha: number;
   speed: number;
   phase: number;
-  color?: string;
+  spectralClass: StarSpectralClass;
+  colorRgb: string;
+  hasSpikes: boolean;
+  spikeLength?: number;
+};
+
+type ShootingStar = {
+  active: boolean;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  length: number;
+  thickness: number;
+  alpha: number;
+  life: number;
+  maxLife: number;
+  color: string;
 };
 
 type QuantumNode = {
@@ -35,9 +55,22 @@ type NebulaCloud = {
   driftX: number;
   driftY: number;
   phase: number;
+  aspectRatio: number;
+  rotation: number;
 };
 
 const MAX_DPR = 2;
+
+// Real astronomical stellar spectral color temperatures
+const SPECTRAL_COLORS: Record<StarSpectralClass, string> = {
+  O: "162, 192, 255", // Deep blue-white (30,000K+)
+  B: "188, 214, 255", // Blue-white (20,000K)
+  A: "228, 236, 255", // Pure white (10,000K - Sirius)
+  F: "248, 247, 255", // Yellow-white (7,000K - Procyon)
+  G: "255, 244, 224", // Solar yellow (5,500K - Sun)
+  K: "255, 214, 168", // Warm amber (4,000K - Arcturus)
+  M: "255, 178, 138", // Cool red-orange (3,000K - Betelgeuse)
+};
 
 function prefersReducedMotion(): boolean {
   return (
@@ -71,64 +104,150 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
 
     const reducedMotion = prefersReducedMotion();
     const mobile = isMobileViewport();
-    const random = seededRandom(1337 + currentTheme.length * 99);
+    const random = seededRandom(42069 + currentTheme.length * 137);
 
-    // Initialize stars tailored to current theme
+    // Mouse parallax target & smoothed position
+    let mouseX = 0.5;
+    let mouseY = 0.5;
+    let targetMouseX = 0.5;
+    let targetMouseY = 0.5;
+
+    const onMouseMove = (e: MouseEvent) => {
+      targetMouseX = e.clientX / Math.max(1, window.innerWidth);
+      targetMouseY = e.clientY / Math.max(1, window.innerHeight);
+    };
+
+    if (!mobile && !reducedMotion) {
+      window.addEventListener("mousemove", onMouseMove, { passive: true });
+    }
+
+    // Initialize stars tailored to current theme with real spectral types and depth layers
     const starCount =
       currentTheme === "void"
         ? mobile
-          ? 20
-          : 35
+          ? 35
+          : 60
         : currentTheme === "stellar" || currentTheme === "galaxy"
           ? mobile
-            ? 90
-            : 160
+            ? 120
+            : 220
           : mobile
-            ? 45
-            : 85;
+            ? 70
+            : 140;
 
-    const stars: Star[] = Array.from({ length: starCount }, () => {
-      const isBright = random() > 0.9;
+    const spectralPool: StarSpectralClass[] = [
+      "O",
+      "B",
+      "B",
+      "A",
+      "A",
+      "A",
+      "F",
+      "F",
+      "G",
+      "G",
+      "K",
+      "M",
+    ];
+
+    const stars: RealisticStar[] = Array.from({ length: starCount }, () => {
+      const spectralClass = spectralPool[Math.floor(random() * spectralPool.length)] || "A";
+      const colorRgb = SPECTRAL_COLORS[spectralClass];
+
+      // Layer 0: 60% distant micro-stars, Layer 1: 30% mid-depth, Layer 2: 10% foreground luminous
+      const layerRoll = random();
+      const layer: 0 | 1 | 2 = layerRoll > 0.9 ? 2 : layerRoll > 0.6 ? 1 : 0;
+
+      let radius = 0.4 + random() * 0.5;
+      let hasSpikes = false;
+      let spikeLength = 0;
+
+      if (layer === 1) {
+        radius = 0.8 + random() * 0.7;
+      } else if (layer === 2) {
+        radius = 1.4 + random() * 1.0;
+        // ~40% of layer 2 stars have optical telescope cross-diffraction spikes
+        if (
+          random() > 0.55 &&
+          (spectralClass === "O" ||
+            spectralClass === "B" ||
+            spectralClass === "A" ||
+            spectralClass === "K")
+        ) {
+          hasSpikes = true;
+          spikeLength = 6 + random() * 10;
+        }
+      }
+
       return {
         x: random(),
         y: random(),
-        radius: isBright ? 1.2 + random() * 0.9 : 0.4 + random() * 0.75,
-        alpha: 0.2 + random() * 0.6,
-        baseAlpha: 0.2 + random() * 0.6,
-        speed: 0.2 + random() * 0.8,
+        layer,
+        radius,
+        baseAlpha:
+          layer === 0
+            ? 0.2 + random() * 0.35
+            : layer === 1
+              ? 0.4 + random() * 0.4
+              : 0.65 + random() * 0.35,
+        alpha: 0.5,
+        speed: 0.15 + random() * 0.7,
         phase: random() * Math.PI * 2,
+        spectralClass,
+        colorRgb,
+        hasSpikes,
+        spikeLength,
       };
     });
 
-    // Quantum nodes setup
-    const nodeCount = mobile ? 22 : 44;
+    // Shooting stars pool (1-2 concurrent maximum for realistic rarity)
+    const shootingStars: ShootingStar[] = Array.from({ length: 2 }, () => ({
+      active: false,
+      x: 0,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      length: 0,
+      thickness: 1,
+      alpha: 0,
+      life: 0,
+      maxLife: 1,
+      color: "230, 245, 255",
+    }));
+
+    let nextMeteorTime = 4 + random() * 8; // First meteor in 4-12 seconds
+
+    // Quantum nodes setup (for quantum theme)
+    const nodeCount = mobile ? 24 : 48;
     const quantumNodes: QuantumNode[] = Array.from({ length: nodeCount }, () => ({
       x: random(),
       y: random(),
-      vx: (random() - 0.5) * 0.00015,
-      vy: (random() - 0.5) * 0.00015,
-      radius: 1.5 + random() * 1.5,
+      vx: (random() - 0.5) * 0.00014,
+      vy: (random() - 0.5) * 0.00014,
+      radius: 1.4 + random() * 1.6,
       color: random() > 0.45 ? "0, 240, 255" : "168, 85, 247",
     }));
 
-    // Nebula clouds setup
-    const cloudCount = 6;
+    // Realistic volumetric nebula clouds
+    const cloudCount = 7;
     const nebulaColors =
       currentTheme === "nebula"
-        ? ["168, 85, 247", "236, 72, 153", "6, 182, 212", "59, 130, 246"]
+        ? ["168, 85, 247", "217, 70, 239", "6, 182, 212", "59, 130, 246", "99, 102, 241"]
         : currentTheme === "supernova"
-          ? ["244, 63, 94", "168, 85, 247", "56, 189, 248", "255, 255, 255"]
+          ? ["244, 63, 94", "168, 85, 247", "56, 189, 248", "251, 146, 60"]
           : ["59, 130, 246", "6, 182, 212", "16, 185, 129", "139, 92, 246"];
 
     const nebulaClouds: NebulaCloud[] = Array.from({ length: cloudCount }, (_, i) => ({
-      x: 0.15 + random() * 0.7,
-      y: 0.15 + random() * 0.7,
-      radius: 0.22 + random() * 0.28,
+      x: 0.12 + random() * 0.76,
+      y: 0.12 + random() * 0.76,
+      radius: 0.24 + random() * 0.32,
       color: nebulaColors[i % nebulaColors.length],
-      alpha: 0.08 + random() * 0.07,
-      driftX: (random() - 0.5) * 0.003,
-      driftY: (random() - 0.5) * 0.003,
+      alpha: 0.07 + random() * 0.065,
+      driftX: (random() - 0.5) * 0.002,
+      driftY: (random() - 0.5) * 0.002,
       phase: random() * Math.PI * 2,
+      aspectRatio: 0.7 + random() * 0.6,
+      rotation: random() * Math.PI * 2,
     }));
 
     // Constellations for Stellar theme
@@ -153,6 +272,7 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
     let height = 1;
     let frameId = 0;
     let running = true;
+    let lastTime = performance.now();
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
@@ -173,90 +293,103 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
       ctx.save();
 
       if (currentTheme === "deep-space") {
-        // Deep Space: Minimal dark navy with electric blue and cyan edge ambiance
+        // Deep Space: Physically realistic deep navy void with subtle blue interstellar radiation
         ctx.globalCompositeOperation = "lighter";
+
+        // Cosmic microwave background / distant star cluster luminescence
         const g1 = ctx.createRadialGradient(
-          width * 0.1,
-          height * 0.15,
+          width * 0.12,
+          height * 0.18,
           0,
-          width * 0.1,
-          height * 0.15,
-          width * 0.55,
+          width * 0.12,
+          height * 0.18,
+          Math.max(width, height) * 0.65,
         );
-        g1.addColorStop(0, "rgba(0, 153, 255, 0.09)");
-        g1.addColorStop(0.5, "rgba(0, 240, 255, 0.03)");
+        g1.addColorStop(0, "rgba(0, 140, 255, 0.08)");
+        g1.addColorStop(0.4, "rgba(0, 220, 255, 0.025)");
         g1.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = g1;
         ctx.fillRect(0, 0, width, height);
 
         const g2 = ctx.createRadialGradient(
-          width * 0.85,
-          height * 0.85,
+          width * 0.88,
+          height * 0.82,
           0,
-          width * 0.85,
-          height * 0.85,
-          width * 0.6,
+          width * 0.88,
+          height * 0.82,
+          Math.max(width, height) * 0.7,
         );
-        g2.addColorStop(0, "rgba(0, 102, 255, 0.08)");
+        g2.addColorStop(0, "rgba(20, 80, 220, 0.07)");
+        g2.addColorStop(0.5, "rgba(10, 30, 80, 0.015)");
         g2.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = g2;
         ctx.fillRect(0, 0, width, height);
       } else if (currentTheme === "nebula") {
-        // Nebula: Rich cosmic gas clouds drifting and breathing softly
+        // Nebula: Interstellar gas cloud with organic volumetric dust lanes
         ctx.globalCompositeOperation = "screen";
         for (const cloud of nebulaClouds) {
-          const drift = reducedMotion ? 0 : Math.sin(time * 0.12 + cloud.phase) * 0.03;
+          const drift = reducedMotion ? 0 : Math.sin(time * 0.08 + cloud.phase) * 0.025;
           const cx = (cloud.x + drift) * width;
-          const cy = (cloud.y + drift * 0.8) * height;
+          const cy = (cloud.y + drift * 0.7) * height;
           const cr = cloud.radius * Math.min(width, height);
-          const pulse = reducedMotion ? 1 : 0.88 + Math.sin(time * 0.2 + cloud.phase) * 0.12;
+          const pulse = reducedMotion ? 1 : 0.9 + Math.sin(time * 0.18 + cloud.phase) * 0.1;
 
-          const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, cr);
-          grad.addColorStop(0, `rgba(${cloud.color}, ${cloud.alpha * pulse * 1.4})`);
-          grad.addColorStop(0.45, `rgba(${cloud.color}, ${cloud.alpha * pulse * 0.5})`);
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(cloud.rotation + (reducedMotion ? 0 : time * 0.008));
+          ctx.scale(1, cloud.aspectRatio);
+
+          const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, cr);
+          grad.addColorStop(0, `rgba(${cloud.color}, ${cloud.alpha * pulse * 1.3})`);
+          grad.addColorStop(0.4, `rgba(${cloud.color}, ${cloud.alpha * pulse * 0.5})`);
+          grad.addColorStop(0.75, `rgba(${cloud.color}, ${cloud.alpha * pulse * 0.15})`);
           grad.addColorStop(1, "rgba(0, 0, 0, 0)");
           ctx.fillStyle = grad;
-          ctx.fillRect(cx - cr, cy - cr, cr * 2, cr * 2);
+          ctx.beginPath();
+          ctx.arc(0, 0, cr, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
         }
       } else if (currentTheme === "galaxy") {
-        // Galaxy: Celestial spiral core with soft rotating disc lighting
+        // Galaxy: Celestial galactic core with soft rotating disc lighting
         ctx.globalCompositeOperation = "lighter";
         const cx = width * 0.5;
         const cy = height * 0.46;
-        const rot = reducedMotion ? 0.3 : time * 0.015;
+        const rot = reducedMotion ? 0.3 : time * 0.012;
 
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(rot);
 
-        // Elliptical galactic core
-        const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.min(width, height) * 0.42);
-        coreGrad.addColorStop(0, "rgba(168, 85, 247, 0.18)");
-        coreGrad.addColorStop(0.25, "rgba(59, 130, 246, 0.11)");
-        coreGrad.addColorStop(0.6, "rgba(139, 92, 246, 0.04)");
+        // Core bright nucleus
+        const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.min(width, height) * 0.48);
+        coreGrad.addColorStop(0, "rgba(224, 231, 255, 0.22)");
+        coreGrad.addColorStop(0.18, "rgba(139, 92, 246, 0.14)");
+        coreGrad.addColorStop(0.45, "rgba(59, 130, 246, 0.07)");
+        coreGrad.addColorStop(0.75, "rgba(30, 58, 138, 0.02)");
         coreGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
 
-        ctx.scale(1.4, 0.7);
+        ctx.scale(1.5, 0.65);
         ctx.fillStyle = coreGrad;
         ctx.beginPath();
-        ctx.arc(0, 0, Math.min(width, height) * 0.42, 0, Math.PI * 2);
+        ctx.arc(0, 0, Math.min(width, height) * 0.48, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       } else if (currentTheme === "aurora-space") {
-        // Aurora Space: Undulating luminous northern lights ribbons in space
+        // Aurora Space: Luminous magnetic curtains of emerald and cyan light
         ctx.globalCompositeOperation = "screen";
         const ribbons = [
-          { yBase: 0.28, color: "16, 185, 129", amp: 38, speed: 0.25, widthScale: 1.2 },
-          { yBase: 0.38, color: "6, 182, 212", amp: 48, speed: 0.2, widthScale: 1.5 },
-          { yBase: 0.46, color: "56, 189, 248", amp: 32, speed: 0.18, widthScale: 1.0 },
+          { yBase: 0.26, color: "16, 185, 129", amp: 36, speed: 0.22, widthScale: 1.2 },
+          { yBase: 0.36, color: "6, 182, 212", amp: 44, speed: 0.18, widthScale: 1.5 },
+          { yBase: 0.45, color: "56, 189, 248", amp: 30, speed: 0.15, widthScale: 1.0 },
         ];
 
         for (const r of ribbons) {
           ctx.beginPath();
           ctx.moveTo(0, height * r.yBase);
-          for (let x = 0; x <= width; x += 25) {
-            const wave1 = Math.sin(x * 0.003 + time * r.speed) * r.amp;
-            const wave2 = Math.sin(x * 0.007 - time * r.speed * 0.7) * (r.amp * 0.4);
+          for (let x = 0; x <= width; x += 20) {
+            const wave1 = Math.sin(x * 0.0028 + time * r.speed) * r.amp;
+            const wave2 = Math.sin(x * 0.006 - time * r.speed * 0.6) * (r.amp * 0.35);
             const y = height * r.yBase + (reducedMotion ? 0 : wave1 + wave2);
             ctx.lineTo(x, y);
           }
@@ -266,30 +399,30 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
 
           const grad = ctx.createLinearGradient(
             0,
-            height * (r.yBase - 0.15),
+            height * (r.yBase - 0.12),
             0,
             height * (r.yBase + 0.35),
           );
           grad.addColorStop(0, "rgba(0, 0, 0, 0)");
           grad.addColorStop(0.3, `rgba(${r.color}, 0.085)`);
-          grad.addColorStop(0.7, `rgba(${r.color}, 0.035)`);
+          grad.addColorStop(0.7, `rgba(${r.color}, 0.025)`);
           grad.addColorStop(1, "rgba(0, 0, 0, 0)");
           ctx.fillStyle = grad;
           ctx.fill();
         }
       } else if (currentTheme === "solar-flare") {
-        // Solar Flare: Powerful star coronal aura & magnetic plasma arcs
+        // Solar Flare: Photospheric coronal glow with plasma flare
         ctx.globalCompositeOperation = "lighter";
-        const cx = width * 0.88;
-        const cy = height * 0.18;
-        const radius = Math.min(width, height) * 0.65;
+        const cx = width * 0.9;
+        const cy = height * 0.15;
+        const radius = Math.min(width, height) * 0.7;
 
-        const pulse = reducedMotion ? 1 : 0.94 + Math.sin(time * 0.35) * 0.06;
+        const pulse = reducedMotion ? 1 : 0.95 + Math.sin(time * 0.3) * 0.05;
         const sunGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius * pulse);
-        sunGrad.addColorStop(0, "rgba(254, 240, 138, 0.24)");
-        sunGrad.addColorStop(0.18, "rgba(249, 115, 22, 0.16)");
-        sunGrad.addColorStop(0.48, "rgba(220, 38, 38, 0.07)");
-        sunGrad.addColorStop(0.85, "rgba(234, 179, 8, 0.02)");
+        sunGrad.addColorStop(0, "rgba(255, 250, 204, 0.28)");
+        sunGrad.addColorStop(0.15, "rgba(249, 115, 22, 0.18)");
+        sunGrad.addColorStop(0.45, "rgba(220, 38, 38, 0.08)");
+        sunGrad.addColorStop(0.8, "rgba(234, 179, 8, 0.02)");
         sunGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
 
         ctx.fillStyle = sunGrad;
@@ -297,38 +430,38 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
         ctx.arc(cx, cy, radius * pulse, 0, Math.PI * 2);
         ctx.fill();
 
-        // Solar flare magnetic prominence arc
+        // Magnetic prominence filament arc
         ctx.save();
-        ctx.strokeStyle = "rgba(251, 146, 60, 0.18)";
-        ctx.lineWidth = 2.5;
-        ctx.shadowColor = "rgba(249, 115, 22, 0.5)";
+        ctx.strokeStyle = "rgba(251, 146, 60, 0.2)";
+        ctx.lineWidth = 2.2;
+        ctx.shadowColor = "rgba(249, 115, 22, 0.6)";
         ctx.shadowBlur = 18;
         ctx.beginPath();
-        const arcPhase = reducedMotion ? 0 : Math.sin(time * 0.2) * 12;
-        ctx.arc(cx, cy, radius * 0.42 + arcPhase, Math.PI * 0.65, Math.PI * 1.15);
+        const arcPhase = reducedMotion ? 0 : Math.sin(time * 0.2) * 10;
+        ctx.arc(cx, cy, radius * 0.44 + arcPhase, Math.PI * 0.68, Math.PI * 1.15);
         ctx.stroke();
         ctx.restore();
       } else if (currentTheme === "void") {
-        // Void: Pure black vacuum with gravitational lensing ring
+        // Void: Event horizon gravitational lensing ring with deep dark core
         ctx.globalCompositeOperation = "lighter";
         const cx = width * 0.5;
         const cy = height * 0.5;
         const ringR = Math.min(width, height) * 0.28;
 
-        const pulse = reducedMotion ? 1 : 0.96 + Math.sin(time * 0.25) * 0.04;
+        const pulse = reducedMotion ? 1 : 0.97 + Math.sin(time * 0.2) * 0.03;
         ctx.save();
         ctx.beginPath();
         ctx.arc(cx, cy, ringR * pulse, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(139, 92, 246, 0.09)";
+        ctx.strokeStyle = "rgba(139, 92, 246, 0.11)";
         ctx.lineWidth = 1.5;
-        ctx.shadowColor = "rgba(124, 58, 237, 0.35)";
+        ctx.shadowColor = "rgba(124, 58, 237, 0.4)";
         ctx.shadowBlur = 24;
         ctx.stroke();
 
-        // Gravitational dark core
+        // Deep gravitational center
         const voidGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, ringR * 1.6);
-        voidGrad.addColorStop(0, "rgba(0, 0, 0, 0.85)");
-        voidGrad.addColorStop(0.7, "rgba(10, 5, 20, 0.12)");
+        voidGrad.addColorStop(0, "rgba(0, 0, 0, 0.88)");
+        voidGrad.addColorStop(0.7, "rgba(8, 4, 16, 0.15)");
         voidGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = voidGrad;
         ctx.beginPath();
@@ -336,9 +469,9 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
         ctx.fill();
         ctx.restore();
       } else if (currentTheme === "quantum") {
-        // Quantum: Energy lines and interconnected lattice nodes
+        // Quantum: Lattice nodes with interconnected synaptic rays
         ctx.globalCompositeOperation = "lighter";
-        const maxDist = mobile ? 85 : 120;
+        const maxDist = mobile ? 85 : 125;
 
         for (let i = 0; i < quantumNodes.length; i++) {
           const n1 = quantumNodes[i];
@@ -352,7 +485,6 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
           const px1 = n1.x * width;
           const py1 = n1.y * height;
 
-          // Connect nearby nodes
           for (let j = i + 1; j < quantumNodes.length; j++) {
             const n2 = quantumNodes[j];
             const px2 = n2.x * width;
@@ -367,15 +499,14 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
               ctx.moveTo(px1, py1);
               ctx.lineTo(px2, py2);
               ctx.strokeStyle = `rgba(${n1.color}, ${alpha})`;
-              ctx.lineWidth = 0.75;
+              ctx.lineWidth = 0.8;
               ctx.stroke();
             }
           }
 
-          // Node point
           ctx.beginPath();
           ctx.arc(px1, py1, n1.radius, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(${n1.color}, 0.45)`;
+          ctx.fillStyle = `rgba(${n1.color}, 0.5)`;
           ctx.shadowColor = `rgba(${n1.color}, 0.8)`;
           ctx.shadowBlur = 8;
           ctx.fill();
@@ -384,16 +515,16 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
         // Cosmic Ocean: Gentle fluid bioluminescent oceanic waves
         ctx.globalCompositeOperation = "screen";
         const waves = [
-          { y: 0.65, color: "20, 184, 166", amp: 35, speed: 0.3 },
-          { y: 0.78, color: "6, 182, 212", amp: 42, speed: 0.22 },
-          { y: 0.88, color: "34, 211, 238", amp: 28, speed: 0.26 },
+          { y: 0.65, color: "20, 184, 166", amp: 35, speed: 0.28 },
+          { y: 0.78, color: "6, 182, 212", amp: 42, speed: 0.2 },
+          { y: 0.88, color: "34, 211, 238", amp: 26, speed: 0.24 },
         ];
 
         for (const w of waves) {
           ctx.beginPath();
           ctx.moveTo(0, height * w.y);
           for (let x = 0; x <= width; x += 20) {
-            const dy = Math.sin(x * 0.004 + time * w.speed) * w.amp;
+            const dy = Math.sin(x * 0.0035 + time * w.speed) * w.amp;
             ctx.lineTo(x, height * w.y + (reducedMotion ? 0 : dy));
           }
           ctx.lineTo(width, height);
@@ -401,7 +532,7 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
           ctx.closePath();
 
           const wGrad = ctx.createLinearGradient(0, height * (w.y - 0.1), 0, height);
-          wGrad.addColorStop(0, `rgba(${w.color}, 0.065)`);
+          wGrad.addColorStop(0, `rgba(${w.color}, 0.07)`);
           wGrad.addColorStop(0.5, `rgba(${w.color}, 0.035)`);
           wGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
           ctx.fillStyle = wGrad;
@@ -412,22 +543,22 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
         ctx.globalCompositeOperation = "lighter";
         const cx = width * 0.52;
         const cy = height * 0.42;
-        const pulse = reducedMotion ? 1 : 0.95 + Math.sin(time * 0.4) * 0.08;
+        const pulse = reducedMotion ? 1 : 0.95 + Math.sin(time * 0.35) * 0.07;
 
-        // Shockwave ring
+        // Shockwave expansion ring
         const ringR =
-          Math.min(width, height) * 0.35 * (reducedMotion ? 1 : 0.85 + ((time * 0.04) % 0.4));
+          Math.min(width, height) * 0.36 * (reducedMotion ? 1 : 0.85 + ((time * 0.04) % 0.4));
         ctx.beginPath();
         ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(244, 63, 94, 0.12)";
-        ctx.lineWidth = 1.75;
-        ctx.shadowColor = "rgba(168, 85, 247, 0.4)";
-        ctx.shadowBlur = 15;
+        ctx.strokeStyle = "rgba(244, 63, 94, 0.13)";
+        ctx.lineWidth = 1.6;
+        ctx.shadowColor = "rgba(168, 85, 247, 0.45)";
+        ctx.shadowBlur = 16;
         ctx.stroke();
 
         // 4-point diffraction spike
         ctx.save();
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
         ctx.lineWidth = 1;
         const spikeLen = Math.min(width, height) * 0.22 * pulse;
         ctx.beginPath();
@@ -438,7 +569,6 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
         ctx.stroke();
         ctx.restore();
 
-        // Central core
         const coreGrad = ctx.createRadialGradient(
           cx,
           cy,
@@ -447,7 +577,7 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
           cy,
           Math.min(width, height) * 0.28,
         );
-        coreGrad.addColorStop(0, "rgba(255, 255, 255, 0.35)");
+        coreGrad.addColorStop(0, "rgba(255, 255, 255, 0.38)");
         coreGrad.addColorStop(0.2, "rgba(244, 63, 94, 0.18)");
         coreGrad.addColorStop(0.55, "rgba(168, 85, 247, 0.08)");
         coreGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
@@ -456,15 +586,14 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
         ctx.arc(cx, cy, Math.min(width, height) * 0.28, 0, Math.PI * 2);
         ctx.fill();
       } else if (currentTheme === "stellar") {
-        // Stellar: Observatory constellation lines and celestial grid
+        // Stellar: Constellation lines and celestial grid
         ctx.globalCompositeOperation = "lighter";
         ctx.strokeStyle = "rgba(147, 197, 253, 0.12)";
         ctx.lineWidth = 0.9;
 
-        // Draw constellation lines
         ctx.beginPath();
         for (let i = 0; i < constellationPoints.length - 1; i++) {
-          if (i === 3 || i === 7 || i === 10) continue; // separate constellation figures
+          if (i === 3 || i === 7 || i === 10) continue;
           const [x1, y1] = constellationPoints[i];
           const [x2, y2] = constellationPoints[i + 1];
           ctx.moveTo(x1 * width, y1 * height);
@@ -472,11 +601,10 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
         }
         ctx.stroke();
 
-        // Constellation nodes
         for (const [x, y] of constellationPoints) {
           ctx.beginPath();
           ctx.arc(x * width, y * height, 2.2, 0, Math.PI * 2);
-          ctx.fillStyle = "rgba(224, 242, 254, 0.65)";
+          ctx.fillStyle = "rgba(224, 242, 254, 0.7)";
           ctx.shadowColor = "rgba(147, 197, 253, 0.9)";
           ctx.shadowBlur = 10;
           ctx.fill();
@@ -486,44 +614,124 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
       ctx.restore();
     };
 
-    // DRAW STARS & PARTICLES
-    const drawParticles = (time: number) => {
+    // DRAW STARS & METEOR TRAILS (ASTROPHYSICS REALISM)
+    const drawParticles = (time: number, dt: number) => {
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
 
-      const colorMap: Record<CosmicThemeId, string> = {
-        "deep-space": "0, 240, 255",
-        nebula: "192, 132, 252",
-        galaxy: "129, 140, 248",
-        "aurora-space": "52, 211, 153",
-        "solar-flare": "251, 191, 36",
-        void: "167, 139, 250",
-        quantum: "0, 240, 255",
-        "cosmic-ocean": "34, 211, 238",
-        supernova: "244, 114, 182",
-        stellar: "186, 230, 253",
-      };
-
-      const particleColor = colorMap[currentTheme] || "0, 240, 255";
+      // Parallax smooth interpolation
+      if (!reducedMotion) {
+        mouseX += (targetMouseX - mouseX) * 0.06;
+        mouseY += (targetMouseY - mouseY) * 0.06;
+      }
+      const offsetX = (mouseX - 0.5) * 18;
+      const offsetY = (mouseY - 0.5) * 18;
 
       for (const star of stars) {
-        // Twinkle factor
-        const twinkle = reducedMotion ? 1 : 0.68 + Math.sin(time * star.speed + star.phase) * 0.32;
-        const currentAlpha = Math.max(0.05, star.baseAlpha * twinkle);
+        // Subtle layer parallax (foreground moves faster than deep background)
+        const parallaxFactor = star.layer === 0 ? 0.3 : star.layer === 1 ? 0.65 : 1.1;
+        const px = star.x * width + offsetX * parallaxFactor;
+        const py = star.y * height + offsetY * parallaxFactor;
 
-        const px = star.x * width;
-        const py = star.y * height;
+        // Twinkle factor using continuous sinusoidal phase
+        const twinkle = reducedMotion ? 1 : 0.72 + Math.sin(time * star.speed + star.phase) * 0.28;
+        const currentAlpha = Math.max(0.04, Math.min(1, star.baseAlpha * twinkle));
 
-        ctx.fillStyle = `rgba(${particleColor}, ${currentAlpha})`;
+        // Draw star core
+        ctx.fillStyle = `rgba(${star.colorRgb}, ${currentAlpha})`;
         ctx.beginPath();
         ctx.arc(px, py, star.radius, 0, Math.PI * 2);
         ctx.fill();
 
-        // Subtle glow on larger stars
-        if (star.radius > 1.2) {
-          ctx.fillStyle = `rgba(${particleColor}, ${currentAlpha * 0.25})`;
+        // Layer 2: Optical Airy halo + diffraction spikes
+        if (star.layer === 2) {
+          // Soft atmospheric halo
+          ctx.fillStyle = `rgba(${star.colorRgb}, ${currentAlpha * 0.22})`;
           ctx.beginPath();
           ctx.arc(px, py, star.radius * 2.8, 0, Math.PI * 2);
+          ctx.fill();
+
+          // 4-point telescope cross diffraction spikes on bright stars
+          if (star.hasSpikes && star.spikeLength && currentAlpha > 0.4) {
+            const spikeAlpha = currentAlpha * 0.28;
+            ctx.save();
+            ctx.strokeStyle = `rgba(${star.colorRgb}, ${spikeAlpha})`;
+            ctx.lineWidth = 0.75;
+            ctx.beginPath();
+            // Horizontal spike
+            ctx.moveTo(px - star.spikeLength, py);
+            ctx.lineTo(px + star.spikeLength, py);
+            // Vertical spike
+            ctx.moveTo(px, py - star.spikeLength);
+            ctx.lineTo(px, py + star.spikeLength);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+      }
+
+      // Handle realistic shooting stars
+      if (!reducedMotion) {
+        nextMeteorTime -= dt;
+        if (nextMeteorTime <= 0) {
+          // Spawn meteor
+          const meteor = shootingStars.find((m) => !m.active);
+          if (meteor) {
+            meteor.active = true;
+            meteor.x = random() * width * 0.85;
+            meteor.y = random() * height * 0.45;
+            const angle = Math.PI / 4 + (random() - 0.5) * 0.3; // ~45 degree downward trajectory
+            const speed = 400 + random() * 550; // swift streak
+            meteor.vx = Math.cos(angle) * speed;
+            meteor.vy = Math.sin(angle) * speed;
+            meteor.length = 80 + random() * 110;
+            meteor.thickness = 1.2 + random() * 0.8;
+            meteor.maxLife = 0.5 + random() * 0.45; // 500-950ms lifespan
+            meteor.life = meteor.maxLife;
+            meteor.color = random() > 0.4 ? "220, 240, 255" : "255, 235, 210";
+          }
+          nextMeteorTime = 7 + random() * 12; // Next in 7-19 seconds
+        }
+
+        // Draw & update active meteors
+        for (const meteor of shootingStars) {
+          if (!meteor.active) continue;
+
+          meteor.life -= dt;
+          if (meteor.life <= 0) {
+            meteor.active = false;
+            continue;
+          }
+
+          meteor.x += meteor.vx * dt;
+          meteor.y += meteor.vy * dt;
+
+          const progress = meteor.life / meteor.maxLife;
+          const currentAlpha = Math.sin(progress * Math.PI) * 0.85; // smooth bell-curve fade in and out
+
+          const headX = meteor.x;
+          const headY = meteor.y;
+          const angle = Math.atan2(meteor.vy, meteor.vx);
+          const tailX = headX - Math.cos(angle) * meteor.length;
+          const tailY = headY - Math.sin(angle) * meteor.length;
+
+          const trailGrad = ctx.createLinearGradient(headX, headY, tailX, tailY);
+          trailGrad.addColorStop(0, `rgba(${meteor.color}, ${currentAlpha})`);
+          trailGrad.addColorStop(0.3, `rgba(${meteor.color}, ${currentAlpha * 0.6})`);
+          trailGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
+
+          ctx.strokeStyle = trailGrad;
+          ctx.lineWidth = meteor.thickness;
+          ctx.lineCap = "round";
+          ctx.beginPath();
+          ctx.moveTo(headX, headY);
+          ctx.lineTo(tailX, tailY);
+          ctx.stroke();
+
+          // Brilliant nucleus head
+          ctx.fillStyle = `rgba(255, 255, 255, ${currentAlpha})`;
+          ctx.beginPath();
+          ctx.arc(headX, headY, meteor.thickness * 1.2, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -533,11 +741,14 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
 
     const render = (now: number) => {
       if (!running) return;
+      const dt = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
       const time = now / 1000;
+
       ctx.clearRect(0, 0, width, height);
 
       drawThemeBackground(time);
-      drawParticles(time);
+      drawParticles(time, dt);
 
       if (!reducedMotion) {
         frameId = requestAnimationFrame(render);
@@ -550,6 +761,7 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
         cancelAnimationFrame(frameId);
       } else if (!running) {
         running = true;
+        lastTime = performance.now();
         frameId = requestAnimationFrame(render);
       }
     };
@@ -562,6 +774,9 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
       cancelAnimationFrame(frameId);
       resizeObserver.disconnect();
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (!mobile && !reducedMotion) {
+        window.removeEventListener("mousemove", onMouseMove);
+      }
     };
   }, [currentTheme]);
 
@@ -581,12 +796,12 @@ export function CosmicBackground({ theme: themeProp }: CosmicBackgroundProps) {
         }}
       />
       <canvas ref={canvasRef} className="absolute inset-0 size-full" style={{ display: "block" }} />
-      {/* Vignette depth gradient to preserve central contrast */}
+      {/* Subtle photographic vignette preserving central chat contrast */}
       <div
-        className="absolute inset-0 transition-opacity duration-700"
+        className="absolute inset-0 transition-opacity duration-700 pointer-events-none"
         style={{
           background:
-            "radial-gradient(ellipse 65% 55% at 50% 45%, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.42) 70%, rgba(0, 0, 0, 0.85) 100%)",
+            "radial-gradient(ellipse 70% 60% at 50% 48%, rgba(0, 0, 0, 0) 0%, rgba(0, 0, 0, 0.35) 68%, rgba(0, 0, 0, 0.82) 100%)",
         }}
       />
     </div>

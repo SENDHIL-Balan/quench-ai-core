@@ -555,10 +555,11 @@ export async function reverseGeocodeLocation(params?: {
         placeId = firstResult.place_id;
         primaryType = firstResult.types?.[0];
 
-        const neighborhood = firstResult.address_components?.find((c) =>
-          c.types.includes("sublocality") ||
-          c.types.includes("neighborhood") ||
-          c.types.includes("route"),
+        const neighborhood = firstResult.address_components?.find(
+          (c) =>
+            c.types.includes("sublocality") ||
+            c.types.includes("neighborhood") ||
+            c.types.includes("route"),
         )?.long_name;
         const locality = firstResult.address_components?.find((c) =>
           c.types.includes("locality"),

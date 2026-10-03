@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Menu, Search, X } from "lucide-react";
 import type { SupportedModelId } from "./ModelSelector";
+import { CosmicThemeButton } from "./CosmicThemeButton";
 
 export function TopBar({
   onToggleSidebar,
@@ -77,14 +78,14 @@ export function TopBar({
             {/* Sidebar toggle */}
             <button
               onClick={onToggleSidebar}
-              className="glass-panel text-muted-foreground hover:text-foreground flex size-10 sm:size-11 shrink-0 items-center justify-center rounded-2xl lg:hidden cursor-pointer"
+              className="glass-panel text-muted-foreground hover:text-foreground flex size-10 sm:size-11 shrink-0 items-center justify-center rounded-2xl lg:hidden cursor-pointer active:scale-95 transition-transform"
               aria-label="Open menu"
             >
               <Menu className="size-5" />
             </button>
 
             {/* Desktop / Tablet Search Input */}
-            <label className="glass-panel hidden sm:flex h-11 flex-1 max-w-xl items-center gap-3 rounded-full px-4 border-border/80">
+            <label className="glass-panel hidden sm:flex h-11 flex-1 max-w-xl items-center gap-3 rounded-full px-4 border-border/80 transition-colors focus-within:border-cyan-400/50">
               <Search className="text-muted-foreground size-4 shrink-0" />
               <input
                 value={query}
@@ -108,12 +109,18 @@ export function TopBar({
             <button
               type="button"
               onClick={() => setMobileSearchOpen(true)}
-              className="glass-panel text-muted-foreground hover:text-foreground flex sm:hidden size-10 items-center justify-center rounded-2xl cursor-pointer shrink-0 hover:border-cyan-400/40"
+              className="glass-panel text-muted-foreground hover:text-foreground flex sm:hidden size-10 items-center justify-center rounded-2xl cursor-pointer shrink-0 hover:border-cyan-400/40 active:scale-95 transition-transform"
               aria-label="Toggle search"
               title="Search"
             >
               <Search className="size-5" />
             </button>
+          </div>
+
+          {/* Quick Realistic Theme Switcher */}
+          <div className="flex items-center gap-2 shrink-0">
+            <CosmicThemeButton compact={false} className="hidden md:flex" />
+            <CosmicThemeButton compact={true} className="flex md:hidden" />
           </div>
         </div>
       )}

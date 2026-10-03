@@ -11,6 +11,7 @@ import {
 
 type ChatBody = {
   messages?: unknown;
+  otherChats?: unknown;
   mode?: unknown;
   deepThink?: unknown;
   webSearch?: unknown;
@@ -72,9 +73,18 @@ export const Route = createFileRoute("/api/chat")({
             ? userLocation
             : undefined;
 
+        const validOtherChats = Array.isArray(otherChats)
+          ? (otherChats as Array<{
+              id?: string;
+              title?: string;
+              messages: Array<{ role: string; text: string }>;
+            }>)
+          : undefined;
+
         try {
           return await runBaseAgent({
             messages: messages as UIMessage[],
+            otherChats: validOtherChats,
             mode: modeId,
             deepThink: deepThink === true,
             webSearch: webSearch === true,

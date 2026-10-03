@@ -35,6 +35,33 @@ const DIMENSIONS_MAP: Record<string, { width: number; height: number }> = {
   "4:1": { width: 1024, height: 512 },
 };
 
+function cleanAndOptimizePrompt(rawPrompt: string, stylePreset?: string): string {
+  let cleaned = rawPrompt.trim();
+  // Strip conversational prefixes
+  cleaned = cleaned
+    .replace(
+      /^(?:can you\s+)?(?:please\s+)?(?:could you\s+)?(?:generate|create|draw|make|paint|render|produce|show me|give me)\s+(?:an?|me an?|a new|the)?\s*(?:image|picture|photo|photograph|artwork|drawing|illustration|painting|wallpaper|portrait|render|graphic)?\s*(?:of|about|depicting|showing|with)?\s*/i,
+      "",
+    )
+    .replace(
+      /^(?:image|picture|photo|artwork|drawing|illustration|painting)\s+(?:of|depicting|showing|with)\s*/i,
+      "",
+    )
+    .trim();
+
+  if (!cleaned) cleaned = rawPrompt.trim();
+
+  let finalPrompt = cleaned;
+  if (stylePreset && stylePreset.trim()) {
+    finalPrompt = `${cleaned}, ${stylePreset.trim()}`;
+  } else if (!/(?:8k|photorealistic|cinematic|detailed|masterpiece|illustration)/i.test(cleaned)) {
+    // Enrich default prompt for superior fidelity
+    finalPrompt = `${cleaned}, highly detailed, sharp focus, cinematic lighting, 8k resolution, photorealistic masterpiece`;
+  }
+
+  return finalPrompt;
+}
+
 export const Route = createFileRoute("/api/image")({
   server: {
     handlers: {
@@ -63,21 +90,17 @@ export const Route = createFileRoute("/api/image")({
             ? body.imageSize
             : "1K";
 
-        let finalPrompt = rawPrompt;
-        if (typeof body.stylePreset === "string" && body.stylePreset.trim()) {
-          finalPrompt = `${rawPrompt}, ${body.stylePreset.trim()}`;
-        }
+        const preset = typeof body.stylePreset === "string" ? body.stylePreset : undefined;
+        const finalPrompt = cleanAndOptimizePrompt(rawPrompt, preset);
 
         let generatedImageUrl: string | null = null;
         let usedModel = "gemini-3.1-flash-image";
         let assistantText: string | null = null;
-        let authNotice: string | null = null;
 
-        // 1. Try Gemini official client if key is configured and is a valid AI Studio key
+        // 1. Try Gemini client if key is configured
         const rawApiKey = process.env.GEMINI_API_KEY?.trim() || "";
-        const isStandardGeminiKey = rawApiKey.startsWith("AIzaSy");
 
-        if (isStandardGeminiKey) {
+        if (rawApiKey.length > 5) {
           try {
             const ai = new GoogleGenAI({
               apiKey: rawApiKey,
@@ -106,7 +129,6 @@ export const Route = createFileRoute("/api/image")({
                     mimeType: parsed.mimeType,
                   },
                 });
-                finalPrompt = `Edit and transform this image according to the following instructions: ${finalPrompt}`;
               }
             }
 
@@ -143,32 +165,24 @@ export const Route = createFileRoute("/api/image")({
 
                 if (generatedImageUrl) break;
               } catch (modelErr) {
-                const isAuthError =
-                  modelErr instanceof Error &&
-                  /UNAUTHENTICATED|invalid authentication|401/i.test(modelErr.message);
-                if (!isAuthError) {
-                  console.warn(`[bravura-image] Gemini model ${modelName} call:`, modelErr);
-                }
+                // If quota exhausted or model not accessible on current tier, proceed to neural synthesis fallback
+                console.info(
+                  `[bravura-image] Gemini model ${modelName} fallback needed:`,
+                  (modelErr as Error)?.message?.slice(0, 120),
+                );
               }
             }
           } catch (geminiClientErr) {
-            console.warn("[bravura-image] Gemini client initialization error:", geminiClientErr);
+            console.warn("[bravura-image] Gemini client init fallback:", geminiClientErr);
           }
-        } else if (rawApiKey) {
-          authNotice =
-            "Notice: To use native Google Gemini image models, provide a standard Google AI Studio API key (starting with 'AIzaSy') in Settings > Secrets. Bravura AI seamlessly used neural synthesis so your generation succeeded.";
         }
 
-        // 2. High-performance direct neural synthesis fallback
+        // 2. High-performance direct neural synthesis fallback using Flux
         if (!generatedImageUrl) {
-          console.info(
-            "[bravura-image] Using direct neural synthesis fallback for prompt:",
-            rawPrompt,
-          );
           const { width, height } = DIMENSIONS_MAP[aspectRatio] || { width: 1024, height: 1024 };
           const seed = Math.floor(Math.random() * 999999);
-          const cleanPrompt = encodeURIComponent(finalPrompt.slice(0, 300));
-          generatedImageUrl = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=${width}&height=${height}&nologo=true&seed=${seed}`;
+          const cleanPrompt = encodeURIComponent(finalPrompt.slice(0, 360));
+          generatedImageUrl = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=${width}&height=${height}&model=flux&nologo=true&seed=${seed}`;
           usedModel = "bravura-neural-flux";
         }
 
@@ -182,7 +196,6 @@ export const Route = createFileRoute("/api/image")({
             imageSize,
             model: usedModel,
             text: assistantText,
-            authNotice,
           }),
           {
             status: 200,

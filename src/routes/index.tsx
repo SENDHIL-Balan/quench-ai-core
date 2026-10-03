@@ -3,7 +3,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Clock3, Trash2, X, Sparkles, FileText } from "lucide-react";
+import { Clock3, Trash2, X, Sparkles, FileText, ChevronDown } from "lucide-react";
 import { CosmicBackground } from "@/components/quench/CosmicBackground";
 import { Sidebar } from "@/components/quench/Sidebar";
 import { TopBar } from "@/components/quench/TopBar";
@@ -25,6 +25,7 @@ import { ImageStudioModal } from "@/components/quench/ImageStudioModal";
 import { PdfStudioModal } from "@/components/quench/PdfStudioModal";
 import { AppLoadingScreen } from "@/components/quench/AppLoadingScreen";
 import { type SupportedModelId, DEFAULT_MODEL_ID } from "@/components/quench/ModelSelector";
+import { getPromptSuggestions } from "@/lib/agent/image-suggestions";
 
 // Track if the initial splash animation has already run in this session
 let hasBootedOnce = false;
@@ -450,6 +451,20 @@ function BravuraApp() {
     }
   }, [activeChatId]);
 
+  // Handle interactive suggestion prompt clicks from chat artwork cards
+  useEffect(() => {
+    const handlePickPrompt = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      if (typeof customEvent.detail === "string" && customEvent.detail.trim()) {
+        setInput(customEvent.detail.trim());
+        const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
+        textarea?.focus();
+      }
+    };
+    window.addEventListener("bravura:pick-prompt", handlePickPrompt);
+    return () => window.removeEventListener("bravura:pick-prompt", handlePickPrompt);
+  }, [setInput]);
+
   useEffect(() => {
     if (!activeChatId || messages.length === 0) return;
 
@@ -553,15 +568,66 @@ function BravuraApp() {
   const isImageMode = mode === "image";
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [hasUnseenStream, setHasUnseenStream] = useState(false);
+  const isNearBottomRef = useRef(true);
+  const rafScrollIdRef = useRef<number | null>(null);
 
-  useEffect(() => {
+  const handleChatScroll = useCallback(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
     const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distanceToBottom < 220 || messages.length <= 2) {
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    const nearBottom = distanceToBottom < 120;
+    isNearBottomRef.current = nearBottom;
+    setShowScrollBottom(!nearBottom);
+    if (nearBottom) {
+      setHasUnseenStream(false);
     }
-  }, [messages, state]);
+  }, []);
+
+  const scrollToBottom = useCallback((smooth = true) => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    isNearBottomRef.current = true;
+    setShowScrollBottom(false);
+    setHasUnseenStream(false);
+    el.scrollTo({
+      top: el.scrollHeight,
+      behavior: smooth ? "smooth" : "auto",
+    });
+  }, []);
+
+  // Butter-smooth auto-follow during streaming without layout jitter or competing animation loops
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    if (state === "generating") {
+      if (isNearBottomRef.current) {
+        if (rafScrollIdRef.current !== null) {
+          cancelAnimationFrame(rafScrollIdRef.current);
+        }
+        rafScrollIdRef.current = requestAnimationFrame(() => {
+          if (el && isNearBottomRef.current) {
+            el.scrollTop = el.scrollHeight;
+          }
+          rafScrollIdRef.current = null;
+        });
+      } else {
+        setHasUnseenStream(true);
+      }
+    } else if (state === "thinking" || messages.length <= 2) {
+      // Smooth initial descent when prompt is submitted
+      scrollToBottom(true);
+    }
+
+    return () => {
+      if (rafScrollIdRef.current !== null) {
+        cancelAnimationFrame(rafScrollIdRef.current);
+        rafScrollIdRef.current = null;
+      }
+    };
+  }, [messages, state, scrollToBottom]);
 
   const handleSpeak = useCallback(
     (id: string, text: string) => {
@@ -677,6 +743,18 @@ function BravuraApp() {
       }
     }
 
+    const otherChatsForRag = chats
+      .filter((c) => c.id !== chatId)
+      .slice(0, 8)
+      .map((c) => ({
+        id: c.id,
+        title: c.title,
+        messages: c.messages.slice(-8).map((m) => ({
+          role: m.role,
+          text: messageText(m),
+        })),
+      }));
+
     void sendMessage(
       { text: textToSend, files: fileParts },
       {
@@ -687,10 +765,80 @@ function BravuraApp() {
           model: selectedModel,
           userLocation: locToSend || undefined,
           userLocationDenied: locDenied,
+          otherChats: otherChatsForRag,
         },
       },
     );
   };
+
+  const handleSendImageToChat = useCallback(
+    (promptText: string, imageUrl: string) => {
+      const cleanPrompt = promptText.trim() || "Generated Artwork";
+      const now = new Date().toISOString();
+      let chatId = activeChatIdRef.current;
+
+      if (!chatId) {
+        const newTitle = `🎨 ${cleanPrompt.length > 40 ? cleanPrompt.slice(0, 40).trim() + "…" : cleanPrompt}`;
+        const newChat: StoredChat = {
+          id: typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`,
+          title: newTitle,
+          createdAt: now,
+          updatedAt: now,
+          messages: [],
+        };
+        chatId = newChat.id;
+        lastLoadedChatIdRef.current = chatId;
+        activeChatIdRef.current = chatId;
+        setChats((current) => [newChat, ...current]);
+        setActiveChatId(chatId);
+      }
+
+      const userMsg: UIMessage = {
+        id: `img-user-${Date.now()}`,
+        role: "user",
+        parts: [{ type: "text", text: `Generate an image: ${cleanPrompt}` }],
+      };
+
+      const suggestions = getPromptSuggestions(cleanPrompt);
+      const suggestionsBlock = [
+        `### 💡 Try Creating Next:`,
+        ...suggestions.map((s) => `- [✨ ${s}](#prompt:${encodeURIComponent(s)})`),
+      ].join("\n");
+
+      const assistantMsg: UIMessage = {
+        id: `img-assistant-${Date.now() + 1}`,
+        role: "assistant",
+        parts: [
+          {
+            type: "text",
+            text: `### 🎨 Generated Artwork\n\n![${cleanPrompt}](${imageUrl})\n\n**Prompt:** "${cleanPrompt}"  \n**Engine:** \`Bravura AI Image Studio (Flux)\`\n\n${suggestionsBlock}`,
+          },
+        ],
+      };
+
+      const newMessages = [...messages, userMsg, assistantMsg];
+      setMessages(newMessages);
+
+      setChats((current) =>
+        current.map((c) =>
+          c.id === chatId
+            ? { ...c, messages: newMessages, updatedAt: new Date().toISOString() }
+            : c,
+        ),
+      );
+
+      if (authUser?.uid && chatId) {
+        const chatObj = chatsRef.current.find((c) => c.id === chatId);
+        const title = chatObj?.title || `🎨 ${cleanPrompt.slice(0, 40)}`;
+        void saveChatToFirestore(chatId, authUser.uid, title, newMessages);
+      }
+
+      setTimeout(() => {
+        scrollToBottom(true);
+      }, 100);
+    },
+    [messages, authUser?.uid, scrollToBottom, setMessages],
+  );
 
   const handleAllowLocation = useCallback(async () => {
     const loc = await requestUserLocation();
@@ -886,28 +1034,59 @@ function BravuraApp() {
 
           <div className="flex min-h-0 flex-1 flex-col relative">
             {messages.length > 0 ? (
-              <div
-                ref={scrollContainerRef}
-                className="min-h-0 flex-1 overflow-y-auto px-1.5 sm:px-4"
-              >
-                {errorMessage && (
-                  <p
-                    className="text-destructive glass-panel mx-auto mb-4 w-full max-w-3xl rounded-2xl px-4 py-3 text-sm"
-                    role="alert"
-                  >
-                    {errorMessage}
-                  </p>
-                )}
-                <ChatView
-                  messages={messages}
-                  state={state}
-                  playingId={playingId}
-                  isSpeaking={isSpeaking}
-                  onSpeak={handleSpeak}
-                  onStopSpeak={stopSpeech}
-                  onAllowLocation={handleAllowLocation}
-                />
-              </div>
+              <>
+                <div
+                  ref={scrollContainerRef}
+                  onScroll={handleChatScroll}
+                  className="min-h-0 flex-1 overflow-y-auto px-1.5 sm:px-4 relative overscroll-contain [scrollbar-width:thin]"
+                >
+                  {errorMessage && (
+                    <p
+                      className="text-destructive glass-panel mx-auto mb-4 w-full max-w-3xl rounded-2xl px-4 py-3 text-sm"
+                      role="alert"
+                    >
+                      {errorMessage}
+                    </p>
+                  )}
+                  <ChatView
+                    messages={messages}
+                    state={state}
+                    playingId={playingId}
+                    isSpeaking={isSpeaking}
+                    onSpeak={handleSpeak}
+                    onStopSpeak={stopSpeech}
+                    onAllowLocation={handleAllowLocation}
+                  />
+                </div>
+
+                {/* Floating smooth scroll to bottom button */}
+                <AnimatePresence>
+                  {showScrollBottom && (
+                    <motion.button
+                      type="button"
+                      initial={{ opacity: 0, y: 14, scale: 0.9 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 14, scale: 0.9 }}
+                      transition={{ duration: 0.2, ease: "easeOut" }}
+                      onClick={() => scrollToBottom(true)}
+                      className="absolute bottom-24 right-4 sm:right-8 z-30 flex items-center gap-2 rounded-full border border-white/20 bg-[#121622]/95 px-3.5 py-2 text-xs font-medium text-white shadow-[0_12px_36px_rgba(0,0,0,0.65)] backdrop-blur-xl hover:bg-[#1a2030] hover:border-cyan-400/50 transition-all cursor-pointer group active:scale-95"
+                    >
+                      {hasUnseenStream ? (
+                        <>
+                          <span className="relative flex size-2">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75" />
+                            <span className="relative inline-flex size-2 rounded-full bg-cyan-500" />
+                          </span>
+                          <span className="text-cyan-300 font-semibold">New response</span>
+                        </>
+                      ) : (
+                        <span>Scroll to bottom</span>
+                      )}
+                      <ChevronDown className="size-3.5 text-zinc-400 group-hover:text-white transition-transform group-hover:translate-y-0.5" />
+                    </motion.button>
+                  )}
+                </AnimatePresence>
+              </>
             ) : (
               <motion.div
                 initial="hidden"
@@ -1173,9 +1352,8 @@ function BravuraApp() {
       {imageStudioOpen && (
         <ImageStudioModal
           onClose={() => setImageStudioOpen(false)}
-          onSendToChat={(imgPrompt) => {
-            setMode("image");
-            submit(imgPrompt);
+          onSendToChat={(imgPrompt, imgUrl) => {
+            handleSendImageToChat(imgPrompt, imgUrl);
           }}
         />
       )}

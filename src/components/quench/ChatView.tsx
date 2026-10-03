@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { UIMessage } from "ai";
+import { motion, AnimatePresence } from "motion/react";
 import {
   Check,
   Copy,
@@ -11,6 +12,8 @@ import {
   MapPin,
   Crosshair,
   Loader2,
+  Sparkles,
+  Download,
 } from "lucide-react";
 import { QuenchOrb } from "./QuenchOrb";
 import { MarkdownRenderer } from "./MarkdownRenderer";
@@ -19,6 +22,7 @@ import type { AgentState } from "./AgentStatus";
 import { BravuraTypingIndicator } from "./BravuraTypingIndicator";
 import { RealtimeAudioVisualizer } from "./RealtimeAudioVisualizer";
 import { unlockAudio } from "@/lib/voice/player";
+import { downloadImageFile } from "@/lib/download-image";
 import { cn } from "@/lib/utils";
 
 export { BravuraTypingIndicator };
@@ -31,25 +35,15 @@ export function messageText(message: UIMessage): string {
     parts?: Array<{ type: string; text?: string; filename?: string }>;
   };
 
-  if (Array.isArray(anyMsg.parts) && anyMsg.parts.length > 0) {
-    const extracted = anyMsg.parts
-      .map((part) => {
-        if (part.type === "text" && typeof part.text === "string") return part.text;
-        if (part.type === "file") return `Attached file: ${part.filename ?? "document"}`;
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n\n")
-      .trim();
-    if (extracted) return extracted;
-  }
+  if (typeof anyMsg.text === "string" && anyMsg.text) return anyMsg.text;
+  if (typeof anyMsg.content === "string" && anyMsg.content) return anyMsg.content;
 
-  if (typeof anyMsg.content === "string" && anyMsg.content.trim()) {
-    return anyMsg.content.trim();
-  }
-
-  if (typeof anyMsg.text === "string" && anyMsg.text.trim()) {
-    return anyMsg.text.trim();
+  if (Array.isArray(anyMsg.parts)) {
+    const textPart = anyMsg.parts
+      .filter((p) => p && p.type === "text" && typeof p.text === "string")
+      .map((p) => p.text)
+      .join("\n\n");
+    if (textPart.trim()) return textPart.trim();
   }
 
   return "";
@@ -81,35 +75,66 @@ export function ChatView({
 
   const displayMessages = hasPendingEmptyAssistant ? messages.slice(0, -1) : messages;
   const isWaiting = state === "thinking" || hasPendingEmptyAssistant;
+  const isStreaming = state === "generating";
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-2 py-4 sm:px-4">
-      {displayMessages.map((message) =>
-        message.role === "user" ? (
-          <UserMessage key={message.id} message={message} />
-        ) : (
-          <AssistantMessage
-            key={message.id}
-            message={message}
-            isPlaying={playingId === message.id && Boolean(isSpeaking)}
-            onSpeak={onSpeak}
-            onStopSpeak={onStopSpeak}
-            onAllowLocation={onAllowLocation}
-          />
-        ),
-      )}
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-2 py-4 sm:px-4 min-w-0">
+      <AnimatePresence initial={false} mode="popLayout">
+        {displayMessages.map((message, idx) => {
+          const isLatest = idx === displayMessages.length - 1;
+          return message.role === "user" ? (
+            <motion.div
+              key={message.id}
+              initial={{ opacity: 0, y: 14, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full flex justify-end"
+            >
+              <UserMessage message={message} />
+            </motion.div>
+          ) : (
+            <motion.div
+              key={message.id}
+              initial={{ opacity: 0, y: 14, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+              className="w-full"
+            >
+              <AssistantMessage
+                message={message}
+                isStreaming={isStreaming && isLatest}
+                isPlaying={playingId === message.id && Boolean(isSpeaking)}
+                onSpeak={onSpeak}
+                onStopSpeak={onStopSpeak}
+                onAllowLocation={onAllowLocation}
+              />
+            </motion.div>
+          );
+        })}
+      </AnimatePresence>
+
       {isWaiting && (
-        <div className="py-2">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -6 }}
+          transition={{ duration: 0.25, ease: "easeOut" }}
+          className="py-2"
+        >
           <BravuraTypingIndicator />
-        </div>
+        </motion.div>
       )}
-      <div ref={endRef} />
+      <div ref={endRef} className="h-2" />
     </div>
   );
 }
 
 function UserMessage({ message }: { message: UIMessage }) {
   const [activePreviewImage, setActivePreviewImage] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const copyTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  useEffect(() => () => clearTimeout(copyTimeout.current), []);
 
   const fileParts = useMemo(() => {
     if (!Array.isArray(message.parts)) return [];
@@ -129,11 +154,19 @@ function UserMessage({ message }: { message: UIMessage }) {
     return messageText(message);
   }, [message]);
 
+  const handleCopyUserText = () => {
+    if (!pureText) return;
+    void navigator.clipboard.writeText(pureText);
+    setCopied(true);
+    clearTimeout(copyTimeout.current);
+    copyTimeout.current = setTimeout(() => setCopied(false), 1600);
+  };
+
   return (
-    <div className="flex flex-col items-end my-1 gap-1.5 w-full">
+    <div className="group relative flex flex-col items-end my-1 gap-2 w-full max-w-[88%] sm:max-w-[78%]">
       {/* Attached Files display in Conversation History */}
       {fileParts.length > 0 && (
-        <div className="flex flex-wrap justify-end gap-2 max-w-[85%] sm:max-w-[70%]">
+        <div className="flex flex-wrap justify-end gap-2 max-w-full">
           {fileParts.map((f, idx) => {
             const isImg =
               f.mediaType?.startsWith("image/") ||
@@ -147,16 +180,17 @@ function UserMessage({ message }: { message: UIMessage }) {
                 <div
                   key={`${filename}-${idx}`}
                   onClick={() => setActivePreviewImage(f.url)}
-                  className="group relative cursor-pointer overflow-hidden rounded-2xl border border-white/20 bg-black/60 shadow-md transition-all hover:scale-[1.01] hover:border-cyan-400/60"
+                  className="group/img relative cursor-pointer overflow-hidden rounded-2xl border border-white/20 bg-black/60 shadow-lg transition-all hover:scale-[1.015] hover:border-cyan-400/60"
                   title="Click to view full image"
                 >
                   <img
                     src={f.url}
                     alt={filename}
-                    className="max-h-48 max-w-xs object-cover rounded-2xl"
+                    referrerPolicy="no-referrer"
+                    className="max-h-52 max-w-xs object-cover rounded-2xl"
                     loading="lazy"
                   />
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-2 text-left opacity-90 transition-opacity group-hover:opacity-100">
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-2.5 text-left opacity-90 transition-opacity group-hover/img:opacity-100">
                     <p className="truncate text-xs font-medium text-white">{filename}</p>
                   </div>
                 </div>
@@ -166,14 +200,14 @@ function UserMessage({ message }: { message: UIMessage }) {
             return (
               <div
                 key={`${filename}-${idx}`}
-                className="flex items-center gap-3 rounded-2xl border border-white/15 bg-[#1b1e2a] px-3.5 py-2.5 shadow-sm text-left max-w-full"
+                className="flex items-center gap-3 rounded-2xl border border-white/15 bg-[#171b26]/90 px-3.5 py-2.5 shadow-md text-left backdrop-blur-md max-w-full"
               >
                 <div
                   className={cn(
                     "flex size-9 shrink-0 items-center justify-center rounded-xl font-bold text-xs border shadow-inner",
                     isPdf
-                      ? "bg-rose-500/20 text-rose-400 border-rose-500/30"
-                      : "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+                      ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
+                      : "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
                   )}
                 >
                   {isPdf ? "PDF" : "DOC"}
@@ -195,10 +229,18 @@ function UserMessage({ message }: { message: UIMessage }) {
         </div>
       )}
 
-      {/* User Prompt Text */}
+      {/* User Prompt Text Bubble with refined realistic glassmorphism */}
       {pureText && (
-        <div className="max-w-[85%] sm:max-w-[70%] rounded-[22px] bg-[#242630] border border-white/10 px-4 py-2 sm:py-2.5 text-[15px] leading-relaxed text-[#f4f4f6] shadow-sm whitespace-pre-wrap">
+        <div className="realistic-user-bubble relative rounded-[22px] px-4.5 py-3 text-[15px] sm:text-[15.5px] leading-relaxed text-[#f4f6fb] whitespace-pre-wrap selection:bg-cyan-500/30 selection:text-white transition-all hover:border-white/25">
           {pureText}
+          <button
+            type="button"
+            onClick={handleCopyUserText}
+            className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all duration-150 absolute -left-8 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-zinc-800/90 hover:bg-zinc-700 text-zinc-400 hover:text-white border border-white/10 text-xs cursor-pointer shadow-lg active:scale-95"
+            title="Copy text"
+          >
+            {copied ? <Check className="size-3 text-emerald-400" /> : <Copy className="size-3" />}
+          </button>
         </div>
       )}
 
@@ -206,20 +248,49 @@ function UserMessage({ message }: { message: UIMessage }) {
       {activePreviewImage && (
         <div
           onClick={() => setActivePreviewImage(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 cursor-zoom-out animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 flex flex-col bg-black/95 animate-in fade-in duration-200"
         >
-          <div className="relative max-h-[90vh] max-w-[90vw]" onClick={(e) => e.stopPropagation()}>
+          {/* Top Cancel/Action Bar */}
+          <div
+            className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/10 bg-[#0c101a]/95 backdrop-blur-md shrink-0 z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 text-xs text-zinc-300">
+              <span className="font-semibold text-white">Attached Image Preview</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  void downloadImageFile(activePreviewImage, `attached-image-${Date.now()}.png`)
+                }
+                className="flex items-center gap-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-semibold px-3 py-1.5 text-xs transition-colors cursor-pointer shadow-md"
+              >
+                <Download className="size-3.5" />
+                <span>Download</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActivePreviewImage(null)}
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer"
+                title="Close (Esc)"
+              >
+                <X className="size-4" />
+                <span>Close</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 flex items-center justify-center p-4 sm:p-6 overflow-hidden">
             <img
               src={activePreviewImage}
               alt="Enlarged preview"
-              className="max-h-[85vh] max-w-[85vw] rounded-2xl border border-white/20 object-contain shadow-2xl"
+              referrerPolicy="no-referrer"
+              className="max-h-[85vh] max-w-[92vw] rounded-2xl border border-white/20 object-contain shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
             />
-            <button
-              onClick={() => setActivePreviewImage(null)}
-              className="absolute -top-3 -right-3 flex size-8 items-center justify-center rounded-full bg-zinc-800 text-white border border-white/20 hover:bg-zinc-700 shadow-lg cursor-pointer"
-            >
-              <X className="size-4" />
-            </button>
           </div>
         </div>
       )}
@@ -229,12 +300,14 @@ function UserMessage({ message }: { message: UIMessage }) {
 
 const AssistantMessage = memo(function AssistantMessage({
   message,
+  isStreaming,
   isPlaying,
   onSpeak,
   onStopSpeak,
   onAllowLocation,
 }: {
   message: UIMessage;
+  isStreaming?: boolean;
   isPlaying?: boolean;
   onSpeak?: (id: string, text: string) => void;
   onStopSpeak?: () => void;
@@ -295,7 +368,6 @@ const AssistantMessage = memo(function AssistantMessage({
   };
 
   const handleToggleSpeak = () => {
-    // Synchronously unlock browser audio hardware on direct user gesture
     unlockAudio();
     if (isPlaying) {
       onStopSpeak?.();
@@ -305,25 +377,42 @@ const AssistantMessage = memo(function AssistantMessage({
   };
 
   return (
-    <div className="group relative w-full my-1.5 text-left">
+    <div
+      className={cn(
+        "group relative w-full my-3 text-left transition-all duration-300 rounded-2xl",
+        isStreaming && "border-l-2 border-cyan-400/80 pl-3.5 sm:pl-4 bg-cyan-500/[0.02]",
+      )}
+    >
+      {/* Subtle identity kicker with realistic orb */}
+      <div className="flex items-center gap-2 mb-2.5 select-none">
+        <QuenchOrb className="size-6" glow={Boolean(isStreaming)} />
+        <span className="text-[12.5px] font-semibold tracking-wide text-cyan-300/90">
+          Bravura AI
+        </span>
+      </div>
+
       {cleanText ? (
-        <div className="max-w-none text-[15px] sm:text-[15.5px] leading-[1.65] text-[#ececf1]">
-          <MarkdownRenderer content={cleanText} />
+        <div className="max-w-none text-[15px] sm:text-[15.5px] leading-[1.74] text-[#f0f3fa] selection:bg-cyan-500/25">
+          <MarkdownRenderer content={cleanText} isStreaming={isStreaming} />
         </div>
       ) : mapsData ? null : (
-        <span className="text-zinc-400 text-sm">Generating…</span>
+        <div className="flex items-center gap-2 text-zinc-400 text-sm py-1">
+          <Sparkles className="size-4 text-cyan-400 animate-spin" />
+          <span>Generating response…</span>
+          <span className="bravura-stream-caret" aria-label="Generating" />
+        </div>
       )}
 
       {/* Render Google Maps UI widget without any code block */}
       {mapsData && (
-        <div className="my-3">
+        <div className="my-3.5">
           <GoogleMapsCards data={mapsData} />
         </div>
       )}
 
       {/* Interactive Mobile Location Permission Card */}
       {isLocationRequest && onAllowLocation && (
-        <div className="my-3 overflow-hidden rounded-2xl border border-cyan-500/35 bg-gradient-to-r from-cyan-950/40 via-blue-950/20 to-purple-950/20 p-4 shadow-xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
+        <div className="my-3.5 overflow-hidden rounded-2xl border border-cyan-500/35 bg-gradient-to-r from-cyan-950/40 via-blue-950/20 to-purple-950/20 p-4 shadow-xl backdrop-blur-md animate-in fade-in zoom-in-95 duration-200">
           <div className="flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row">
             <div className="flex items-center gap-3">
               <div className="flex size-10 items-center justify-center rounded-xl bg-cyan-500/20 border border-cyan-500/40 text-cyan-400 shrink-0 shadow-[0_0_12px_rgba(6,182,212,0.25)]">
@@ -358,8 +447,9 @@ const AssistantMessage = memo(function AssistantMessage({
           </div>
         </div>
       )}
+
       {isPlaying && (
-        <div className="mt-3 mb-1 max-w-sm animate-in fade-in zoom-in-95 duration-200">
+        <div className="mt-3.5 mb-1 max-w-sm animate-in fade-in zoom-in-95 duration-200">
           <RealtimeAudioVisualizer
             variant="bars"
             height={36}
@@ -369,19 +459,24 @@ const AssistantMessage = memo(function AssistantMessage({
           />
         </div>
       )}
+
+      {/* Bottom Action Controls with silky micro-interactions */}
       {text && (
-        <div className="mt-2.5 flex items-center gap-2 text-xs text-zinc-400">
+        <div className="mt-3 flex items-center gap-2 text-xs text-zinc-400">
           <button
             type="button"
             onClick={handleCopy}
-            className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-zinc-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/[0.07] transition-all duration-150 cursor-pointer active:scale-95"
+            title="Copy response"
           >
             {copied ? (
               <Check className="size-3.5 text-emerald-400" />
             ) : (
               <Copy className="size-3.5" />
             )}
-            <span>{copied ? "Copied" : "Copy"}</span>
+            <span className={cn(copied && "text-emerald-400 font-medium")}>
+              {copied ? "Copied" : "Copy"}
+            </span>
           </button>
 
           {onSpeak && (
@@ -389,10 +484,10 @@ const AssistantMessage = memo(function AssistantMessage({
               type="button"
               onClick={handleToggleSpeak}
               className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-all duration-150 cursor-pointer active:scale-95",
+                "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all duration-150 cursor-pointer active:scale-95",
                 isPlaying
-                  ? "bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 shadow-sm shadow-cyan-950/50"
-                  : "bg-white/[0.04] border border-white/5 text-zinc-300 hover:text-white hover:bg-white/10",
+                  ? "bg-cyan-500/15 border border-cyan-500/35 text-cyan-300 shadow-sm shadow-cyan-950/50"
+                  : "text-zinc-400 hover:text-white hover:bg-white/[0.07]",
               )}
               title={isPlaying ? "Stop audio" : "Listen to response"}
               aria-label={isPlaying ? "Stop audio playback" : "Listen to response"}

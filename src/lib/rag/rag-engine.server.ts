@@ -256,6 +256,142 @@ export async function retrieveRelevantChunks(
 
 export const searchSimilarChunks = retrieveRelevantChunks;
 
+export interface ChatHistoryItem {
+  id?: string;
+  title?: string;
+  messages: Array<{
+    role: string;
+    text: string;
+  }>;
+}
+
+/**
+ * Detects whether the user query specifically asks to recall or search prior conversation statements.
+ */
+export function isConversationSearchIntent(query: string): boolean {
+  const q = query.toLowerCase().trim();
+  return (
+    /\b(what did i (?:say|tell you|ask|send|mention|write)|did i (?:say|tell you|ask|send|mention)|search (?:my |the |our )?chat|search what i('ve| have)? sent|recall (?:what|when|my|the)|remember (?:what|when|my|the|that)|as i (?:said|told you|mentioned|wrote) earlier|what was (?:my|the) (?:name|pet|dog|cat|car|code|recipe|favorite|location|address|email|phone|project|password|choice|decision|answer)|what was that .* i (?:said|told you|mentioned|sent|asked)|look through (?:my |our )?(?:chat|messages|history)|check our (?:chat|messages|history)|repeat what i said|remind me what i (?:said|sent|told you))\b/i.test(
+      q,
+    ) ||
+    /^(?:what was (?:it|that)|what did i say|what did i tell you|do you remember me|do you remember what)\b/i.test(
+      q,
+    )
+  );
+}
+
+/**
+ * Indexes past conversation turns and prior chats into searchable RAG chunks.
+ */
+export function chunkConversationHistory(
+  currentMessages: Array<{ role: string; parts?: Array<{ type: string; text?: string }> }>,
+  otherChats?: ChatHistoryItem[],
+): DocumentChunk[] {
+  const chunks: DocumentChunk[] = [];
+
+  // Index current chat messages (exclude the latest user message which is the current query)
+  const pastCurrent = currentMessages.slice(0, Math.max(0, currentMessages.length - 1));
+  pastCurrent.forEach((m, idx) => {
+    const text = (m.parts || [])
+      .filter((p) => p.type === "text" && p.text)
+      .map((p) => p.text!)
+      .join(" ")
+      .trim();
+
+    if (!text || text.length < 3) return;
+
+    const source = `Current Chat (Turn #${idx + 1} - ${m.role})`;
+    const formattedText =
+      m.role === "user"
+        ? `[User previously sent]: "${text}"`
+        : `[Assistant previously replied]: "${text}"`;
+
+    if (text.length > 600) {
+      const subChunks = chunkDocumentText(formattedText, source);
+      chunks.push(...subChunks);
+    } else {
+      chunks.push({
+        id: `chat-turn-${idx}-${m.role}`,
+        source,
+        text: formattedText,
+        charStart: 0,
+        charEnd: text.length,
+        tokenEstimate: Math.ceil(text.length / 4),
+      });
+    }
+  });
+
+  // Index prior stored chats if provided
+  if (Array.isArray(otherChats)) {
+    otherChats.forEach((chat) => {
+      const chatTitle = chat.title || "Past Conversation";
+      (chat.messages || []).forEach((m, idx) => {
+        const text = m.text?.trim();
+        if (!text || text.length < 3) return;
+
+        const source = `Past Chat: "${chatTitle}" (Turn #${idx + 1} - ${m.role})`;
+        const formattedText =
+          m.role === "user"
+            ? `In previous conversation "${chatTitle}", user sent: "${text}"`
+            : `In previous conversation "${chatTitle}", assistant replied: "${text}"`;
+
+        if (text.length > 600) {
+          const subChunks = chunkDocumentText(formattedText, source);
+          chunks.push(...subChunks);
+        } else {
+          chunks.push({
+            id: `past-${chat.id || "chat"}-turn-${idx}`,
+            source,
+            text: formattedText,
+            charStart: 0,
+            charEnd: text.length,
+            tokenEstimate: Math.ceil(text.length / 4),
+          });
+        }
+      });
+    });
+  }
+
+  return chunks;
+}
+
+/**
+ * Searches conversational history via RAG embeddings and term matching.
+ */
+export async function searchConversationHistory(
+  query: string,
+  currentMessages: Array<{ role: string; parts?: Array<{ type: string; text?: string }> }>,
+  otherChats?: ChatHistoryItem[],
+  topK = 5,
+): Promise<RagSearchResult[]> {
+  const chunks = chunkConversationHistory(currentMessages, otherChats);
+  if (chunks.length === 0) return [];
+
+  // Remove common filler words from conversational query to boost search accuracy
+  const cleanQuery = query
+    .replace(
+      /\b(what did i (?:say|tell you|ask|send|mention)|search (?:my |the )?chat|search what i sent|recall|remember|as i said earlier)\b/gi,
+      "",
+    )
+    .trim();
+
+  const searchQuery = cleanQuery.length > 3 ? cleanQuery : query;
+  return retrieveRelevantChunks(searchQuery, chunks, topK);
+}
+
+/**
+ * Builds a clean RAG context block formatted for LLM system prompt injection.
+ */
+export function formatChatRagContextForPrompt(results: RagSearchResult[]): string {
+  if (results.length === 0) return "";
+
+  const sections = results.map((r, i) => {
+    return `### [Retrieved Chat Memory ${i + 1}] — ${r.chunk.source} (Match score: ${r.score.toFixed(2)})\n${r.chunk.text}`;
+  });
+
+  return `\n\n==================================================\nRETRIEVED CHAT MEMORY (CONVERSATIONAL RAG ENGINE)\n==================================================\nThe user is asking about or referencing prior messages or information they have already sent.\nThe Conversational RAG Engine searched across the chat history and retrieved these matching statements:\n\n${sections.join("\n\n")}\n\nSTRICT INSTRUCTIONS FOR REPLYING:\n1. The user explicitly asked you to recall or search what they previously sent.\n2. Acknowledge and quote/summarize what they told you based on the retrieved memory above (e.g., "Earlier in our conversation, you sent / mentioned that...").\n3. Answer their question completely and accurately using their previously provided information.\n==================================================\n`;
+}
+
 /**
  * Builds a clean RAG context block formatted for LLM system prompt injection.
  */

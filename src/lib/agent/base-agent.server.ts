@@ -12,6 +12,8 @@ import { formatSearchForPrompt } from "@/lib/tools/format-search";
 import { WebSearchError } from "@/lib/tools/web-search-types";
 import { GoogleGenAI } from "@google/genai";
 import { orchestrateAgentRun } from "./orchestrator.server";
+import { getPromptSuggestions } from "./image-suggestions";
+import type { ChatHistoryItem } from "@/lib/rag/rag-engine.server";
 
 /**
  * Bravura AI base agent.
@@ -26,6 +28,7 @@ import { orchestrateAgentRun } from "./orchestrator.server";
 
 export interface AgentRunInput {
   messages: UIMessage[];
+  otherChats?: ChatHistoryItem[];
   mode: ModeId;
   deepThink?: boolean;
   webSearch?: boolean;
@@ -53,6 +56,86 @@ function lastUserText(messages: UIMessage[]): string {
     if (text) return text;
   }
   return "";
+}
+
+function cleanImagePrompt(rawText: string): string {
+  let cleaned = rawText.trim();
+  cleaned = cleaned
+    .replace(
+      /^(?:can you\s+)?(?:please\s+)?(?:could you\s+)?(?:generate|create|draw|make|paint|render|produce|show me|give me)\s+(?:an?|me an?|a new|the)?\s*(?:image|picture|photo|photograph|artwork|drawing|illustration|painting|wallpaper|portrait|render|graphic)?\s*(?:of|about|depicting|showing|with)?\s*/i,
+      "",
+    )
+    .replace(
+      /^(?:image|picture|photo|artwork|drawing|illustration|painting)\s+(?:of|depicting|showing|with)\s*/i,
+      "",
+    )
+    .replace(/^(?:draw|paint)\s+(?:me\s+)?(?:an?|a)\s*/i, "")
+    .trim();
+
+  return cleaned || rawText.trim();
+}
+
+export function isImageGenerationIntent(text: string): boolean {
+  if (!text || typeof text !== "string") return false;
+  const t = text.trim().toLowerCase();
+
+  // Negative filters: technical explanations, programming, tutorials, OCR
+  if (
+    /^(?:explain|how to|what is|how do (?:i|you)|why|tell me about|analyze|describe|read|ocr|write a python|python script|code to generate|how can i generate)\b/i.test(
+      t,
+    )
+  ) {
+    return false;
+  }
+  if (
+    /\b(?:how do i generate|can you explain|tutorial|code snippet|algorithm|what model|write code)\b/i.test(
+      t,
+    )
+  ) {
+    return false;
+  }
+
+  // 1. Explicit generation commands
+  if (
+    /\b(?:generate|create|draw|make|paint|render|produce)\s+(?:an?|me an?|a new|the)?\s*(?:image|picture|photo|photograph|artwork|drawing|illustration|painting|wallpaper|portrait|render|banner|graphic)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+
+  // 2. Direct requests like "image of a cat", "picture of a sunset"
+  if (
+    /^(?:image|picture|photo|artwork|drawing|illustration|painting)\s+(?:of|showing|depicting)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+
+  // 3. "can you draw / generate / paint / create"
+  if (
+    /\b(?:can you|could you|please)\s+(?:generate|draw|create|make|paint|render)\s+(?:an?|me an?|a)\s*(?:image|picture|photo|drawing|illustration|artwork|painting)?\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+
+  // 4. "draw me a ..." or "paint me a ..."
+  if (/\b(?:draw|paint)\s+(?:me\s+)?(?:a|an)\s+[a-z0-9]/i.test(t)) {
+    return true;
+  }
+
+  if (
+    /\b(?:show me|give me)\s+(?:an?|a)\s+(?:image|picture|photo|drawing|illustration)\s+of\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function extractImagePromptAndReference(messages: UIMessage[]): {
@@ -240,38 +323,65 @@ function parseDataUrl(dataUrl: string): { mimeType: string; data: string } | nul
 }
 
 async function handleImageModeAgent(messages: UIMessage[]): Promise<Response> {
-  const { prompt, referenceImage } = extractImagePromptAndReference(messages);
+  const { prompt: rawPrompt, referenceImage } = extractImagePromptAndReference(messages);
+  const prompt = cleanImagePrompt(rawPrompt) || "A creative high-fidelity artwork";
   const geminiKey = process.env.GEMINI_API_KEY?.trim();
-  const isStandardGeminiKey = Boolean(geminiKey && geminiKey.startsWith("AIzaSy"));
+
+  // Detect aspect ratio from user request
+  let aspectRatio = "1:1";
+  let width = 1024;
+  let height = 1024;
+
+  const lowerRaw = rawPrompt.toLowerCase();
+  if (/\b(?:16:9|landscape|wide|widescreen|horizontal)\b/i.test(lowerRaw)) {
+    aspectRatio = "16:9";
+    width = 1280;
+    height = 720;
+  } else if (/\b(?:9:16|portrait|vertical|tall)\b/i.test(lowerRaw)) {
+    aspectRatio = "9:16";
+    width = 720;
+    height = 1280;
+  } else if (/\b(?:4:3)\b/i.test(lowerRaw)) {
+    aspectRatio = "4:3";
+    width = 1024;
+    height = 768;
+  } else if (/\b(?:3:4)\b/i.test(lowerRaw)) {
+    aspectRatio = "3:4";
+    width = 768;
+    height = 1024;
+  }
+
+  let enhancedPrompt = prompt;
+  if (
+    !/(?:8k|photorealistic|cinematic|masterpiece|octane|unreal engine|illustration)/i.test(prompt)
+  ) {
+    enhancedPrompt = `${prompt}, highly detailed, sharp focus, cinematic lighting, 8k resolution, photorealistic masterpiece`;
+  }
 
   let generatedImageUrl: string | null = null;
-  let modelNote = "";
+  let modelNote = "Bravura Neural Flux";
 
-  if (isStandardGeminiKey) {
+  if (geminiKey && geminiKey.length > 5) {
     try {
       const ai = new GoogleGenAI({
-        apiKey: geminiKey!,
+        apiKey: geminiKey,
         httpOptions: { headers: { "User-Agent": "aistudio-build" } },
       });
 
       const parts: Array<{ text?: string; inlineData?: { data: string; mimeType: string } }> = [];
-      let finalPrompt = prompt;
+      let geminiPrompt = enhancedPrompt;
 
       if (referenceImage) {
         const parsed = parseDataUrl(referenceImage);
         if (parsed) {
           parts.push({ inlineData: { data: parsed.data, mimeType: parsed.mimeType } });
-          finalPrompt = `Edit and transform this image: ${prompt}`;
+          geminiPrompt = `Edit and transform this image: ${prompt}`;
         }
       }
 
-      parts.push({ text: finalPrompt });
+      parts.push({ text: geminiPrompt });
 
-      const candidateModels = [
-        "gemini-3.1-flash-image-preview",
-        "gemini-3.1-flash-image",
-        "gemini-3.1-flash-lite-image",
-      ];
+      const candidateModels = ["gemini-3.1-flash-image", "gemini-3.1-flash-lite-image"];
 
       for (const modelName of candidateModels) {
         try {
@@ -280,7 +390,12 @@ async function handleImageModeAgent(messages: UIMessage[]): Promise<Response> {
             contents: { parts },
             config: {
               imageConfig: {
-                aspectRatio: "1:1",
+                aspectRatio: (aspectRatio === "16:9" ||
+                aspectRatio === "9:16" ||
+                aspectRatio === "4:3" ||
+                aspectRatio === "3:4"
+                  ? aspectRatio
+                  : "1:1") as "1:1",
                 imageSize: "1K",
               },
             },
@@ -300,26 +415,40 @@ async function handleImageModeAgent(messages: UIMessage[]): Promise<Response> {
 
           if (generatedImageUrl) break;
         } catch (err) {
-          const isAuthError =
-            err instanceof Error && /UNAUTHENTICATED|invalid authentication|401/i.test(err.message);
-          if (!isAuthError) {
-            console.warn(`[bravura-chat-image] model ${modelName} attempt failed:`, err);
-          }
+          console.info(
+            `[bravura-chat-image] model ${modelName} fallback needed:`,
+            (err as Error)?.message?.slice(0, 100),
+          );
         }
       }
     } catch (clientErr) {
-      console.error("[bravura-chat-image] Gemini client error:", clientErr);
+      console.warn("[bravura-chat-image] Gemini client fallback:", clientErr);
     }
   }
 
   if (!generatedImageUrl) {
     const seed = Math.floor(Math.random() * 999999);
-    const cleanPrompt = encodeURIComponent(prompt.slice(0, 300));
-    generatedImageUrl = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=1024&height=1024&nologo=true&seed=${seed}`;
-    modelNote = "bravura-neural-flux";
+    const cleanPromptEncoded = encodeURIComponent(enhancedPrompt.slice(0, 360));
+    generatedImageUrl = `https://image.pollinations.ai/prompt/${cleanPromptEncoded}?width=${width}&height=${height}&model=flux&nologo=true&seed=${seed}`;
+    modelNote = "Bravura Neural Flux";
   }
 
-  const replyText = `### Generated Image\n\n![${prompt}](${generatedImageUrl})\n\n*Prompt:* **"${prompt}"**  \n*Engine:* \`${modelNote}\`  \n\n💡 *Tip: Click the image to expand full size, download as PNG, or launch the AI Image Studio from Tools for aspect ratio adjustments.*`;
+  const suggestions = getPromptSuggestions(prompt);
+  const suggestionsBlock = [
+    `### 💡 Try Creating Next:`,
+    ...suggestions.map((s) => `- [✨ ${s}](#prompt:${encodeURIComponent(s)})`),
+  ].join("\n");
+
+  const replyText = [
+    `### 🎨 Generated Artwork`,
+    ``,
+    `![${prompt}](${generatedImageUrl})`,
+    ``,
+    `**Prompt:** "${prompt}"  `,
+    `**Engine:** \`${modelNote}\` • **Aspect Ratio:** \`${aspectRatio}\``,
+    ``,
+    suggestionsBlock,
+  ].join("\n");
 
   const stream = createUIMessageStream({
     originalMessages: messages,
@@ -340,6 +469,7 @@ async function handleImageModeAgent(messages: UIMessage[]): Promise<Response> {
 
 export async function runBaseAgent({
   messages,
+  otherChats,
   mode,
   deepThink = false,
   webSearch = false,
@@ -350,8 +480,11 @@ export async function runBaseAgent({
   userLocationDenied,
   abortSignal,
 }: AgentRunInput): Promise<Response> {
-  // If in Image mode, route directly to image generation
-  if (mode === "image") {
+  const userText = lastUserText(messages);
+  const isImageRequest = mode === "image" || isImageGenerationIntent(userText);
+
+  // If in Image mode or user explicitly requests image generation, route directly to image generation
+  if (isImageRequest) {
     return handleImageModeAgent(messages);
   }
 
@@ -360,6 +493,7 @@ export async function runBaseAgent({
   // Run full Agent Orchestration (plan, select tools, execute RAG/Search/Calculator, evaluate)
   const orchestration = await orchestrateAgentRun({
     messages,
+    otherChats,
     mode,
     deepThink,
     webSearch: shouldSearch,

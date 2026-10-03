@@ -14,7 +14,12 @@ import {
   Wand2,
   Compass,
   ArrowRight,
+  Send,
+  CheckCheck,
+  Loader2,
 } from "lucide-react";
+import { downloadImageFile } from "@/lib/download-image";
+import { getPromptSuggestions } from "@/lib/agent/image-suggestions";
 import { cn } from "@/lib/utils";
 
 interface ImageStudioModalProps {
@@ -117,6 +122,12 @@ export function ImageStudioModal({
   const [error, setError] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
+  const [sentToChat, setSentToChat] = useState(false);
+  const [autoSendToChat, setAutoSendToChat] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [progressStage, setProgressStage] = useState("Initializing neural latent canvas...");
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [activeMobileTab, setActiveMobileTab] = useState<"create" | "preview">("create");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -163,8 +174,28 @@ export function ImageStudioModal({
     }
 
     setIsGenerating(true);
+    setProgress(8);
+    setProgressStage("Initializing neural latent canvas...");
     setError(null);
     setAuthNotice(null);
+
+    // Realistic progress animation timer
+    const progressTimer = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 95) return 95;
+        let inc = 3;
+        if (prev < 30) inc = 7;
+        else if (prev < 65) inc = 4;
+        else if (prev < 85) inc = 2;
+        else inc = 1;
+        const next = Math.min(95, prev + inc);
+        if (next < 30) setProgressStage("Initializing neural latent canvas...");
+        else if (next < 60) setProgressStage("Computing diffusion steps & latents...");
+        else if (next < 85) setProgressStage("Synthesizing high-frequency details...");
+        else setProgressStage("Refining lighting, contrast & colors...");
+        return next;
+      });
+    }, 180);
 
     try {
       const res = await fetch("/api/image", {
@@ -190,12 +221,25 @@ export function ImageStudioModal({
         throw new Error(data.error || "Image generation failed. Please try again.");
       }
 
+      clearInterval(progressTimer);
+      setProgress(100);
+      setProgressStage("Artwork Complete!");
+
+      // Brief delay to showcase satisfying 100% completion before revealing artwork
+      await new Promise((resolve) => setTimeout(resolve, 320));
+
       setGeneratedImage(data.imageUrl);
       if (data.model) setUsedModel(data.model);
       if (data.authNotice) setAuthNotice(data.authNotice);
       // Seamlessly switch to preview tab on mobile
       setActiveMobileTab("preview");
+
+      if (autoSendToChat && onSendToChat && data.imageUrl) {
+        onSendToChat(prompt.trim(), data.imageUrl);
+        setSentToChat(true);
+      }
     } catch (err) {
+      clearInterval(progressTimer);
       console.error("[image-studio] generation error", err);
       const msg = err instanceof Error ? err.message : "An unexpected error occurred.";
       setError(
@@ -204,34 +248,21 @@ export function ImageStudioModal({
           : msg,
       );
     } finally {
+      clearInterval(progressTimer);
       setIsGenerating(false);
     }
   };
 
   const handleDownload = async () => {
-    if (!generatedImage) return;
-    try {
-      if (generatedImage.startsWith("data:")) {
-        const link = document.createElement("a");
-        link.href = generatedImage;
-        link.download = `bravura-ai-${Date.now()}.png`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } else {
-        const res = await fetch(generatedImage);
-        const blob = await res.blob();
-        const blobUrl = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = blobUrl;
-        link.download = `bravura-ai-${Date.now()}.png`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-      }
-    } catch {
-      window.open(generatedImage, "_blank");
+    if (!generatedImage || isDownloading) return;
+    setIsDownloading(true);
+    const cleanPrompt = (prompt || "artwork").replace(/[^a-zA-Z0-9_ -]/g, "_").slice(0, 30);
+    const filename = `bravura-${cleanPrompt}-${Date.now()}.png`;
+    const ok = await downloadImageFile(generatedImage, filename);
+    setIsDownloading(false);
+    if (ok) {
+      setDownloaded(true);
+      setTimeout(() => setDownloaded(false), 2200);
     }
   };
 
@@ -501,8 +532,21 @@ export function ImageStudioModal({
               </div>
             )}
 
+            {/* Auto-send to chat toggle */}
+            {onSendToChat && (
+              <label className="flex items-center gap-2 text-xs text-zinc-300 cursor-pointer select-none py-1">
+                <input
+                  type="checkbox"
+                  checked={autoSendToChat}
+                  onChange={(e) => setAutoSendToChat(e.target.checked)}
+                  className="rounded border-white/20 bg-black/40 text-cyan-500 focus:ring-cyan-400 size-3.5 cursor-pointer accent-cyan-500"
+                />
+                <span>Automatically send artwork to chat upon generation</span>
+              </label>
+            )}
+
             {/* Generate Button */}
-            <div className="mt-auto pt-3">
+            <div className="mt-auto pt-2">
               <button
                 type="button"
                 onClick={handleGenerate}
@@ -512,7 +556,7 @@ export function ImageStudioModal({
                 {isGenerating ? (
                   <>
                     <RefreshCw className="size-4 animate-spin text-cyan-200" />
-                    <span>Rendering Artwork with AI...</span>
+                    <span>Generating Artwork ({progress}%)…</span>
                   </>
                 ) : (
                   <>
@@ -532,16 +576,65 @@ export function ImageStudioModal({
             )}
           >
             {isGenerating ? (
-              <div className="flex flex-col items-center justify-center gap-4 text-center p-8">
-                <div className="relative flex size-24 items-center justify-center">
-                  <div className="absolute inset-0 animate-ping rounded-full bg-cyan-500/20" />
-                  <div className="size-16 animate-spin rounded-full border-2 border-cyan-400 border-t-transparent shadow-[0_0_25px_rgba(6,182,212,0.45)]" />
-                  <Sparkles className="absolute size-7 text-cyan-300" />
+              <div className="flex flex-col items-center justify-center gap-5 text-center p-6 sm:p-8 max-w-sm w-full animate-in fade-in duration-200">
+                {/* Radial Percentage Ring */}
+                <div className="relative flex size-32 items-center justify-center">
+                  <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-cyan-500/20 via-blue-500/15 to-purple-500/20 blur-xl animate-pulse" />
+
+                  {/* SVG circular track & animated progress stroke */}
+                  <svg className="size-32 -rotate-90 transform" viewBox="0 0 120 120">
+                    <circle
+                      cx="60"
+                      cy="60"
+                      r="50"
+                      className="stroke-white/10"
+                      strokeWidth="6"
+                      fill="transparent"
+                    />
+                    <circle
+                      cx="60"
+                      cy="60"
+                      r="50"
+                      className="stroke-cyan-400 transition-all duration-300 ease-out"
+                      strokeWidth="6"
+                      strokeDasharray={2 * Math.PI * 50}
+                      strokeDashoffset={2 * Math.PI * 50 * (1 - progress / 100)}
+                      strokeLinecap="round"
+                      fill="transparent"
+                    />
+                  </svg>
+
+                  {/* Centered Percentage Display */}
+                  <div className="absolute flex flex-col items-center justify-center">
+                    <span className="font-mono text-2xl sm:text-3xl font-extrabold tracking-tight text-white drop-shadow-[0_0_12px_rgba(6,182,212,0.5)]">
+                      {progress}
+                      <span className="text-sm font-semibold text-cyan-300 ml-0.5">%</span>
+                    </span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400/90 mt-0.5">
+                      Neural AI
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-base font-bold text-white">Synthesizing Imagery...</p>
-                  <p className="text-muted-foreground mt-1 text-xs max-w-xs leading-relaxed">
-                    Computing diffusion passes with {aspectRatio} framing.
+
+                {/* Linear progress bar & Stage description */}
+                <div className="w-full space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-medium text-white truncate max-w-[240px]">
+                      {progressStage}
+                    </span>
+                    <span className="font-mono text-cyan-300 font-bold ml-2">{progress}%</span>
+                  </div>
+
+                  <div className="relative h-2 w-full overflow-hidden rounded-full bg-white/10 p-0.5">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 transition-all duration-300 ease-out shadow-[0_0_12px_rgba(6,182,212,0.6)]"
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+
+                  <p className="text-muted-foreground text-[11px] leading-relaxed">
+                    Framing: <strong className="text-zinc-300">{aspectRatio}</strong> • Model:{" "}
+                    <strong className="text-zinc-300">Flux Synthesis Engine</strong>
                   </p>
                 </div>
               </div>
@@ -570,10 +663,25 @@ export function ImageStudioModal({
                   <button
                     type="button"
                     onClick={handleDownload}
+                    disabled={isDownloading}
                     className="flex items-center justify-center gap-1.5 rounded-xl bg-cyan-500 text-black font-semibold px-4 py-2.5 text-xs hover:bg-cyan-400 transition-colors cursor-pointer shadow-md shadow-cyan-500/20 min-h-[44px]"
                   >
-                    <Download className="size-4" />
-                    <span>Download PNG</span>
+                    {downloaded ? (
+                      <>
+                        <Check className="size-4 text-black" />
+                        <span>Downloaded!</span>
+                      </>
+                    ) : isDownloading ? (
+                      <>
+                        <Loader2 className="size-4 animate-spin text-black" />
+                        <span>Downloading…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Download className="size-4" />
+                        <span>Download PNG</span>
+                      </>
+                    )}
                   </button>
 
                   <button
@@ -603,15 +711,57 @@ export function ImageStudioModal({
                     <button
                       type="button"
                       onClick={() => {
-                        onSendToChat(prompt, generatedImage);
-                        onClose();
+                        onSendToChat(prompt.trim(), generatedImage);
+                        setSentToChat(true);
+                        setTimeout(() => {
+                          onClose();
+                        }, 350);
                       }}
-                      className="flex items-center justify-center gap-1.5 rounded-xl bg-white/10 border border-white/20 px-3.5 py-2.5 text-xs font-medium text-white hover:bg-white/15 transition-colors cursor-pointer min-h-[44px]"
+                      className={cn(
+                        "flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-semibold transition-all cursor-pointer min-h-[44px] shadow-sm",
+                        sentToChat
+                          ? "bg-emerald-500/20 border border-emerald-400/50 text-emerald-300"
+                          : "bg-cyan-500/20 border border-cyan-400/50 hover:bg-cyan-500/30 text-cyan-200 hover:text-white shadow-cyan-500/10 active:scale-95",
+                      )}
                     >
-                      <Eye className="size-4 text-cyan-300" />
-                      <span>Send to Chat</span>
+                      {sentToChat ? (
+                        <>
+                          <CheckCheck className="size-4 text-emerald-400" />
+                          <span>Sent to Chat!</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="size-4 text-cyan-300" />
+                          <span>Send to Chat</span>
+                        </>
+                      )}
                     </button>
                   )}
+                </div>
+
+                {/* Thematic Prompt Suggestions based on what was generated */}
+                <div className="w-full mt-2 rounded-2xl border border-white/10 bg-white/[0.02] p-3 sm:p-3.5 space-y-2 text-left">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-cyan-300">
+                    <Sparkles className="size-3.5 text-cyan-400" />
+                    <span>Try Creating Next:</span>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    {getPromptSuggestions(prompt).map((suggestion, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setPrompt(suggestion);
+                          setActiveMobileTab("create");
+                        }}
+                        className="group flex items-center justify-between gap-2 rounded-xl border border-white/5 bg-white/[0.03] px-3 py-2 text-left text-xs text-zinc-300 hover:border-cyan-400/40 hover:bg-cyan-500/10 hover:text-white transition-all cursor-pointer"
+                        title="Click to load this prompt"
+                      >
+                        <span className="truncate">{suggestion}</span>
+                        <ArrowRight className="size-3 text-cyan-400 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all shrink-0" />
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             ) : (
@@ -665,26 +815,70 @@ export function ImageStudioModal({
         </div>
       </div>
 
-      {/* Fullscreen Lightbox Modal */}
+      {/* Fullscreen Lightbox Modal with Dedicated Cancel/Close Bar */}
       {lightboxOpen && generatedImage && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 p-4 animate-in fade-in"
+          className="fixed inset-0 z-[100] flex flex-col bg-black/95 animate-in fade-in duration-200"
           onClick={() => setLightboxOpen(false)}
         >
-          <button
-            type="button"
-            onClick={() => setLightboxOpen(false)}
-            className="absolute top-4 right-4 rounded-full bg-white/10 p-3 text-white hover:bg-white/20 transition-colors cursor-pointer"
-          >
-            <X className="size-6" />
-          </button>
-          <img
-            src={generatedImage}
-            alt="Fullscreen Preview"
-            referrerPolicy="no-referrer"
-            className="max-h-[90vh] max-w-[90vw] rounded-2xl object-contain shadow-2xl"
+          {/* Top Cancel/Action Bar */}
+          <div
+            className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/10 bg-[#0c101a]/95 backdrop-blur-md shrink-0 z-10"
             onClick={(e) => e.stopPropagation()}
-          />
+          >
+            <div className="flex items-center gap-2 text-xs text-zinc-300 truncate max-w-[60%]">
+              <span className="font-semibold text-white">Full Resolution Preview</span>
+              <span className="text-zinc-500">•</span>
+              <span className="text-zinc-400 truncate">{prompt || "Generated Artwork"}</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownload}
+                disabled={isDownloading}
+                className="flex items-center gap-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-semibold px-3 py-1.5 text-xs transition-colors cursor-pointer shadow-md"
+              >
+                {downloaded ? (
+                  <>
+                    <Check className="size-3.5 text-black" />
+                    <span>Downloaded!</span>
+                  </>
+                ) : isDownloading ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin text-black" />
+                    <span>Downloading…</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="size-3.5" />
+                    <span>Download PNG</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLightboxOpen(false)}
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer"
+                title="Close Lightbox (Esc)"
+              >
+                <X className="size-4" />
+                <span>Close</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Centered Image Viewport */}
+          <div className="flex-1 flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+            <img
+              src={generatedImage}
+              alt="Fullscreen Preview"
+              referrerPolicy="no-referrer"
+              className="max-h-[85vh] max-w-[92vw] rounded-2xl object-contain shadow-2xl transition-transform duration-200"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
         </div>
       )}
     </div>

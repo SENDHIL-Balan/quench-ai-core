@@ -1,8 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, Copy, Download, Maximize2, X } from "lucide-react";
+import { Check, Copy, Download, Maximize2, X, Loader2, Sparkles } from "lucide-react";
 import { GoogleMapsCards } from "./GoogleMapsCards";
+import { downloadImageFile } from "@/lib/download-image";
+import { cn } from "@/lib/utils";
 
 function CodeBlock({ children }: { children: ReactNode }) {
   const [copied, setCopied] = useState(false);
@@ -61,73 +63,258 @@ function extractText(node: ReactNode): string {
 
 function ChatImage({ src, alt }: { src?: string; alt?: string }) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [progress, setProgress] = useState(15);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
+
+  useEffect(() => {
+    setIsLoaded(false);
+    setProgress(15);
+
+    const timer = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 96) return 96;
+        let inc = 3;
+        if (prev < 40) inc = 8;
+        else if (prev < 70) inc = 5;
+        else if (prev < 88) inc = 3;
+        else inc = 1;
+        return Math.min(96, prev + inc);
+      });
+    }, 160);
+
+    return () => clearInterval(timer);
+  }, [src]);
+
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightboxOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightboxOpen]);
 
   if (!src) return null;
 
-  const handleDownload = () => {
-    const a = document.createElement("a");
-    a.href = src;
-    a.download = `bravura-ai-${Date.now()}.png`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+  const handleDownload = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    if (!src || isDownloading) return;
+    setIsDownloading(true);
+    const cleanAlt = (alt || "artwork").replace(/[^a-zA-Z0-9_ -]/g, "_").slice(0, 30);
+    const filename = `bravura-${cleanAlt}-${Date.now()}.png`;
+    const ok = await downloadImageFile(src, filename);
+    setIsDownloading(false);
+    if (ok) {
+      setDownloaded(true);
+      setTimeout(() => setDownloaded(false), 2000);
+    }
+  };
+
+  const handleImageLoad = () => {
+    setProgress(100);
+    setTimeout(() => {
+      setIsLoaded(true);
+    }, 180);
   };
 
   return (
     <div className="group relative my-3 max-w-lg overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-xl">
+      {/* Animated Percentage Generation Skeleton */}
+      {!isLoaded && (
+        <div className="flex flex-col items-center justify-center p-6 sm:p-8 min-h-[260px] sm:min-h-[290px] w-full bg-gradient-to-b from-[#0f1422] to-[#090c14] relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/10 via-transparent to-blue-500/10 blur-xl animate-pulse" />
+
+          {/* Radial progress circle */}
+          <div className="relative flex size-24 items-center justify-center mb-4">
+            <svg className="size-24 -rotate-90 transform" viewBox="0 0 100 100">
+              <circle
+                cx="50"
+                cy="50"
+                r="40"
+                className="stroke-white/10"
+                strokeWidth="5"
+                fill="transparent"
+              />
+              <circle
+                cx="50"
+                cy="50"
+                r="40"
+                className="stroke-cyan-400 transition-all duration-300 ease-out"
+                strokeWidth="5"
+                strokeDasharray={2 * Math.PI * 40}
+                strokeDashoffset={2 * Math.PI * 40 * (1 - progress / 100)}
+                strokeLinecap="round"
+                fill="transparent"
+              />
+            </svg>
+            <div className="absolute flex flex-col items-center justify-center">
+              <span className="font-mono text-xl font-bold tracking-tight text-white drop-shadow-[0_0_8px_rgba(6,182,212,0.5)]">
+                {progress}%
+              </span>
+            </div>
+          </div>
+
+          <div className="relative z-10 w-full max-w-xs space-y-2 text-center">
+            <div className="flex items-center justify-between text-xs text-zinc-300">
+              <span className="truncate max-w-[200px] font-medium text-cyan-200">
+                {progress < 40
+                  ? "Sampling diffusion steps..."
+                  : progress < 75
+                    ? "Rendering details & textures..."
+                    : progress < 100
+                      ? "Finalizing neural synthesis..."
+                      : "Rendering complete!"}
+              </span>
+              <span className="font-mono text-cyan-400 font-bold">{progress}%</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 transition-all duration-300 ease-out shadow-[0_0_10px_rgba(6,182,212,0.6)]"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="text-[11px] text-zinc-400 truncate mt-1">
+              {alt || "Generating artwork..."}
+            </p>
+          </div>
+        </div>
+      )}
+
       <img
         src={src}
         alt={alt || "Generated Image"}
         referrerPolicy="no-referrer"
-        className="w-full max-h-[460px] object-contain transition-transform duration-200 group-hover:scale-[1.01]"
+        onLoad={handleImageLoad}
+        className={cn(
+          "w-full max-h-[480px] object-contain transition-all duration-500 group-hover:scale-[1.01]",
+          isLoaded ? "opacity-100 block" : "opacity-0 absolute inset-0 pointer-events-none",
+        )}
       />
-      <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
-        <button
-          type="button"
-          onClick={handleDownload}
-          title="Download PNG"
-          className="rounded-lg bg-black/70 p-1.5 text-white backdrop-blur-md hover:bg-black/90 cursor-pointer"
-        >
-          <Download className="size-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => setLightboxOpen(true)}
-          title="View Fullscreen"
-          className="rounded-lg bg-black/70 p-1.5 text-white backdrop-blur-md hover:bg-black/90 cursor-pointer"
-        >
-          <Maximize2 className="size-3.5" />
-        </button>
-      </div>
 
-      {lightboxOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 p-4"
-          onClick={() => setLightboxOpen(false)}
-        >
+      {isLoaded && (
+        <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 opacity-0 transition-opacity group-hover:opacity-100">
           <button
             type="button"
-            onClick={() => setLightboxOpen(false)}
-            className="absolute top-4 right-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+            onClick={handleDownload}
+            disabled={isDownloading}
+            title="Download Image File"
+            className="rounded-lg bg-black/75 p-1.5 text-white backdrop-blur-md hover:bg-black/90 cursor-pointer shadow-md flex items-center gap-1 text-xs"
           >
-            <X className="size-6" />
+            {downloaded ? (
+              <Check className="size-3.5 text-emerald-400" />
+            ) : isDownloading ? (
+              <Loader2 className="size-3.5 animate-spin text-cyan-300" />
+            ) : (
+              <Download className="size-3.5" />
+            )}
           </button>
-          <img
-            src={src}
-            alt={alt || "Generated Image"}
-            referrerPolicy="no-referrer"
-            className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(true)}
+            title="View Fullscreen"
+            className="rounded-lg bg-black/75 p-1.5 text-white backdrop-blur-md hover:bg-black/90 cursor-pointer shadow-md"
+          >
+            <Maximize2 className="size-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Fullscreen Lightbox with Dedicated Cancel/Close Bar */}
+      {lightboxOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex flex-col bg-black/95 animate-in fade-in duration-200"
+          onClick={() => setLightboxOpen(false)}
+        >
+          {/* Top Cancel/Action Bar */}
+          <div
+            className="flex items-center justify-between px-4 sm:px-6 py-3 border-b border-white/10 bg-[#0c101a]/95 backdrop-blur-md shrink-0 z-10"
             onClick={(e) => e.stopPropagation()}
-          />
+          >
+            <div className="flex items-center gap-2 text-xs text-zinc-300 truncate max-w-[60%]">
+              <span className="font-semibold text-white">Full Resolution Artwork</span>
+              <span className="text-zinc-500">•</span>
+              <span className="text-zinc-400 truncate">{alt || "Generated Artwork"}</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownload}
+                disabled={isDownloading}
+                className="flex items-center gap-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-semibold px-3 py-1.5 text-xs transition-colors cursor-pointer shadow-md"
+              >
+                {downloaded ? (
+                  <>
+                    <Check className="size-3.5 text-black" />
+                    <span>Downloaded!</span>
+                  </>
+                ) : isDownloading ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin text-black" />
+                    <span>Downloading…</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="size-3.5" />
+                    <span>Download PNG</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLightboxOpen(false)}
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer"
+                title="Close Lightbox (Esc)"
+              >
+                <X className="size-4" />
+                <span>Close</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Centered Image Viewport */}
+          <div className="flex-1 flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+            <img
+              src={src}
+              alt={alt || "Generated Image"}
+              referrerPolicy="no-referrer"
+              className="max-h-[85vh] max-w-[92vw] rounded-2xl object-contain shadow-2xl transition-transform duration-200"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-export function MarkdownRenderer({ content }: { content: string }) {
+function hasBlockOrImageDescendant(node: unknown): boolean {
+  if (!node || typeof node !== "object") return false;
+  const n = node as { tagName?: string; children?: unknown[] };
+  if (n.tagName === "img" || n.tagName === "div") return true;
+  if (Array.isArray(n.children)) {
+    return n.children.some(hasBlockOrImageDescendant);
+  }
+  return false;
+}
+
+export function MarkdownRenderer({
+  content,
+  isStreaming = false,
+}: {
+  content: string;
+  isStreaming?: boolean;
+}) {
   return (
-    <div className="text-[15px] sm:text-[15.5px] leading-[1.65] text-[#ececf1] break-words">
+    <div
+      className={cn(
+        "text-[15px] sm:text-[15.5px] leading-[1.65] text-[#ececf1] break-words",
+        isStreaming && "bravura-streaming-active",
+      )}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
@@ -150,7 +337,31 @@ export function MarkdownRenderer({ content }: { content: string }) {
             />
           ),
           h4: (p) => <h4 className="mt-2.5 mb-1 text-[15px] font-semibold text-white" {...p} />,
-          p: (p) => <p className="mb-3 last:mb-0 text-[#ececf1] leading-[1.65]" {...p} />,
+          p: ({ children, node, ...props }) => {
+            const hasBlockOrImage =
+              hasBlockOrImageDescendant(node) ||
+              (Array.isArray(children) &&
+                children.some(
+                  (c) =>
+                    Boolean(c) &&
+                    typeof c === "object" &&
+                    "props" in (c as Record<string, unknown>) &&
+                    Boolean((c as { props?: { src?: unknown } }).props?.src),
+                ));
+
+            if (hasBlockOrImage) {
+              return (
+                <div className="mb-3 last:mb-0 text-[#ececf1] leading-[1.65]" {...props}>
+                  {children}
+                </div>
+              );
+            }
+            return (
+              <p className="mb-3 last:mb-0 text-[#ececf1] leading-[1.65]" {...props}>
+                {children}
+              </p>
+            );
+          },
           strong: (p) => <strong className="font-semibold text-white" {...p} />,
           ul: (p) => (
             <ul
@@ -165,14 +376,37 @@ export function MarkdownRenderer({ content }: { content: string }) {
             />
           ),
           li: (p) => <li className="pl-0.5 text-[#ececf1]" {...p} />,
-          a: (p) => (
-            <a
-              className="text-cyan-400 hover:text-cyan-300 underline underline-offset-4"
-              target="_blank"
-              rel="noreferrer"
-              {...p}
-            />
-          ),
+          a: ({ href, children, ...rest }) => {
+            if (href && href.startsWith("#prompt:")) {
+              const promptText = decodeURIComponent(href.replace("#prompt:", ""));
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(
+                      new CustomEvent("bravura:pick-prompt", { detail: promptText }),
+                    );
+                  }}
+                  className="group my-1 inline-flex items-center gap-1.5 rounded-xl border border-cyan-500/30 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-200 hover:border-cyan-400 hover:bg-cyan-500/25 hover:text-white transition-all cursor-pointer shadow-sm text-left max-w-full active:scale-95"
+                  title={`Click to use prompt: "${promptText}"`}
+                >
+                  <Sparkles className="size-3 text-cyan-400 shrink-0 group-hover:rotate-12 transition-transform" />
+                  <span className="truncate">{children}</span>
+                </button>
+              );
+            }
+            return (
+              <a
+                className="text-cyan-400 hover:text-cyan-300 underline underline-offset-4"
+                target="_blank"
+                rel="noreferrer"
+                href={href}
+                {...rest}
+              >
+                {children}
+              </a>
+            );
+          },
           blockquote: (p) => (
             <blockquote
               className="border-cyan-500/60 text-zinc-300 my-2.5 border-l-2 pl-3.5 italic"
@@ -212,6 +446,9 @@ export function MarkdownRenderer({ content }: { content: string }) {
       >
         {content}
       </ReactMarkdown>
+      {isStreaming && (
+        <span className="bravura-stream-caret" role="status" aria-label="Generating" />
+      )}
     </div>
   );
 }

@@ -16,19 +16,22 @@ export function QuickActions({ onOpenImageStudio, onOpenPdfStudio }: QuickAction
             <button
               type="button"
               onClick={onOpenImageStudio}
-              className="glass-panel group hover:border-cyan-400/50 flex items-center gap-2.5 sm:gap-3 rounded-2xl p-3 sm:p-3.5 text-left transition-all hover:bg-cyan-500/10 cursor-pointer min-w-0 w-full overflow-hidden"
+              className="glass-panel group hover:border-cyan-400/50 flex items-center gap-2.5 sm:gap-3 rounded-2xl p-3 sm:p-3.5 text-left transition-all duration-200 hover:bg-cyan-500/10 cursor-pointer min-w-0 w-full overflow-hidden active:scale-[0.985]"
             >
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-400/30">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-400/30 shadow-[0_0_12px_rgba(6,182,212,0.2)]">
                 <Sparkles className="size-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
-                  <span className="text-xs font-semibold text-white truncate">AI Image Studio</span>
-                  <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-medium text-cyan-300 truncate shrink-0 max-w-[140px] sm:max-w-none">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-white truncate min-w-0">
+                  <span className="truncate">AI Image Studio</span>
+                  <span className="text-zinc-500 text-[11px] font-normal" aria-hidden="true">
+                    ·
+                  </span>
+                  <span className="text-[11px] font-normal text-cyan-300/80 truncate">
                     gemini-3.1-flash-image
                   </span>
                 </div>
-                <span className="text-muted-foreground block truncate text-xs">
+                <span className="text-muted-foreground block truncate text-xs mt-0.5">
                   Create & edit high-res images with prompt controls
                 </span>
               </div>
@@ -40,21 +43,22 @@ export function QuickActions({ onOpenImageStudio, onOpenPdfStudio }: QuickAction
             <button
               type="button"
               onClick={onOpenPdfStudio}
-              className="glass-panel group hover:border-emerald-400/50 flex items-center gap-2.5 sm:gap-3 rounded-2xl p-3 sm:p-3.5 text-left transition-all hover:bg-emerald-500/10 cursor-pointer min-w-0 w-full overflow-hidden"
+              className="glass-panel group hover:border-emerald-400/50 flex items-center gap-2.5 sm:gap-3 rounded-2xl p-3 sm:p-3.5 text-left transition-all duration-200 hover:bg-emerald-500/10 cursor-pointer min-w-0 w-full overflow-hidden active:scale-[0.985]"
             >
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/30">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/30 shadow-[0_0_12px_rgba(16,185,129,0.2)]">
                 <FileText className="size-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
-                  <span className="text-xs font-semibold text-white truncate">
-                    AI PDF Document Studio
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-white truncate min-w-0">
+                  <span className="truncate">AI PDF Document Studio</span>
+                  <span className="text-zinc-500 text-[11px] font-normal" aria-hidden="true">
+                    ·
                   </span>
-                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-300 truncate shrink-0">
+                  <span className="text-[11px] font-normal text-emerald-300/80 truncate">
                     Prompt to PDF
                   </span>
                 </div>
-                <span className="text-muted-foreground block truncate text-xs">
+                <span className="text-muted-foreground block truncate text-xs mt-0.5">
                   Generate and download formatted PDF documents
                 </span>
               </div>

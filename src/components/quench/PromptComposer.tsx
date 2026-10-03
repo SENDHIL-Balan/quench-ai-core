@@ -256,11 +256,11 @@ export function PromptComposer({
           boxShadow: isDragging
             ? "0 0 40px rgba(6,182,212,0.35), inset 0 0 25px rgba(6,182,212,0.15)"
             : hasContent
-              ? "0 10px 35px rgba(6,182,212,0.12), inset 0 0 16px rgba(6,182,212,0.03)"
-              : "0 10px 30px rgba(0,0,0,0.35)",
+              ? "0 14px 44px rgba(6,182,212,0.16), inset 0 1px 0 rgba(255,255,255,0.2)"
+              : "0 12px 36px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.14)",
         }}
         className={cn(
-          "glass-panel relative flex flex-col rounded-2xl sm:rounded-3xl border p-2.5 sm:p-3.5 backdrop-blur-2xl w-full max-w-full min-w-0 transition-colors duration-200",
+          "realistic-composer relative flex flex-col rounded-2xl sm:rounded-3xl border p-2.5 sm:p-3.5 w-full max-w-full min-w-0 transition-all duration-300",
           isDragging && "ring-2 ring-cyan-400 bg-cyan-950/20",
           busy && "ring-1 ring-cyan-500/50",
           error && "border-destructive/60",
