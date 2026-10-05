@@ -88,9 +88,9 @@ export const AGENT_MODES: Record<ModeId, AgentMode> = {
   image: {
     id: "image",
     label: "Image",
-    hint: "Create & edit images with gemini-3.1-flash-image-preview",
+    hint: "Create & edit images with Google Nano Banana (gemini-3.1-flash-image)",
     instruction:
-      "Mode: IMAGE. You are an expert AI visual artist and prompt engineer powered by gemini-3.1-flash-image-preview. When asked to create or edit images, give clear, descriptive visual concepts.",
+      "Mode: IMAGE. You are an expert AI visual artist and prompt engineer powered by Google Nano Banana (gemini-3.1-flash-image / gemini-3.1-flash-lite-image). When asked to create or edit images, give clear, descriptive visual concepts.",
     available: true,
   },
 };

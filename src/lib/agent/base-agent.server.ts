@@ -76,11 +76,13 @@ function cleanImagePrompt(rawText: string): string {
   return cleaned || rawText.trim();
 }
 
-export function isImageGenerationIntent(text: string): boolean {
+let geminiImageQuotaExhaustedUntil = 0;
+
+export function isImageGenerationIntent(text: string, messages?: UIMessage[]): boolean {
   if (!text || typeof text !== "string") return false;
   const t = text.trim().toLowerCase();
 
-  // Negative filters: technical explanations, programming, tutorials, OCR
+  // Negative filters: technical explanations, programming, tutorials, OCR, prompt engineering advice
   if (
     /^(?:explain|how to|what is|how do (?:i|you)|why|tell me about|analyze|describe|read|ocr|write a python|python script|code to generate|how can i generate)\b/i.test(
       t,
@@ -96,40 +98,108 @@ export function isImageGenerationIntent(text: string): boolean {
     return false;
   }
 
-  // 1. Explicit generation commands
+  // 1. Explicit generation commands with or without typo / spacing
   if (
-    /\b(?:generate|create|draw|make|paint|render|produce)\s+(?:an?|me an?|a new|the)?\s*(?:image|picture|photo|photograph|artwork|drawing|illustration|painting|wallpaper|portrait|render|banner|graphic)\b/i.test(
+    /\b(?:generate|create|draw|make|paint|render|produce)\s+(?:an?|me an?|a new|the)?\s*(?:image|picture|photo|photograph|artwork|drawing|illustration|painting|wallpaper|portrait|render|banner|graphic|visual)\b/i.test(
       t,
     )
   ) {
     return true;
   }
 
-  // 2. Direct requests like "image of a cat", "picture of a sunset"
+  // Typo support: "imageof", "pictureof", "photoof"
+  if (/\b(?:imageof|pictureof|photoof)\b/i.test(t)) {
+    return true;
+  }
+
+  // 2. Direct requests like "image of ...", "picture of ...", "photo of ...", "illustration of ..."
   if (
-    /^(?:image|picture|photo|artwork|drawing|illustration|painting)\s+(?:of|showing|depicting)\b/i.test(
+    /^(?:image|picture|photo|artwork|drawing|illustration|painting|wallpaper)\s+(?:of|showing|depicting)\b/i.test(
       t,
     )
   ) {
     return true;
   }
 
-  // 3. "can you draw / generate / paint / create"
+  // 3. "can you draw / generate / paint / create / render"
   if (
-    /\b(?:can you|could you|please)\s+(?:generate|draw|create|make|paint|render)\s+(?:an?|me an?|a)\s*(?:image|picture|photo|drawing|illustration|artwork|painting)?\b/i.test(
+    /\b(?:can you|could you|please)\s+(?:generate|draw|create|make|paint|render)\s+(?:an?|me an?|a)?\s*(?:image|picture|photo|drawing|illustration|artwork|painting|dragon|dinosaur|cat|dog|car|robot|landscape|portrait)?\b/i.test(
       t,
     )
   ) {
     return true;
   }
 
-  // 4. "draw me a ..." or "paint me a ..."
-  if (/\b(?:draw|paint)\s+(?:me\s+)?(?:a|an)\s+[a-z0-9]/i.test(t)) {
+  // 4. "draw / paint / sketch / render [me a] <subject>"
+  if (/\b(?:draw|paint|sketch|render)\s+(?:me\s+)?(?:an?|a)?\s*[a-z0-9]/i.test(t)) {
     return true;
   }
 
+  // 5. "create [a/an] <creative entity>" or "generate [a/an] <creative entity>"
   if (
-    /\b(?:show me|give me)\s+(?:an?|a)\s+(?:image|picture|photo|drawing|illustration)\s+of\b/i.test(
+    /\b(?:create|generate|produce|make)\s+(?:an?|a)\s+(?:dragon|dinosaur|t-rex|raptor|cat|kitten|dog|puppy|lion|tiger|wolf|bear|horse|eagle|bird|car|sports car|supercar|vehicle|spaceship|ship|airplane|plane|robot|cyborg|mech|warrior|samurai|ninja|knight|wizard|witch|superhero|monster|beast|alien|landscape|city|cityscape|forest|mountain|sunset|sunrise|galaxy|nebula|planet|castle|temple|house|palace|avatar|portrait|logo|icon|character|figure|creature)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+
+  // 6. Direct "generate <subject>" or "create <subject>" (e.g. "generate dragon", "create dinosaur", "create dragon prompt")
+  if (
+    /^(?:generate|create|render)\s+(?:dragon|dinosaur|t-rex|cat|dog|car|robot|cyborg|landscape|sunset|galaxy|monster|warrior|avatar|logo|wallpaper|prompt)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+
+  // 7. "show me / give me / send me [an/a] image/picture/photo of"
+  if (
+    /\b(?:show me|give me|send me)\s+(?:an?|a)\s*(?:image|picture|photo|drawing|illustration|artwork)?\s*(?:of)?\b/i.test(
+      t,
+    ) &&
+    /\b(?:image|picture|photo|drawing|illustration|artwork)\b/i.test(t)
+  ) {
+    return true;
+  }
+
+  // 8. If previous turn was an image generation and user inputs a descriptive visual follow-up prompt
+  if (Array.isArray(messages) && messages.length > 0) {
+    const lastAssistant = messages
+      .slice()
+      .reverse()
+      .find((m) => m.role === "assistant");
+    const lastText = lastAssistant?.parts
+      ?.filter((p) => p.type === "text")
+      .map((p) => p.text)
+      .join(" ");
+
+    if (lastText && lastText.includes("### 🎨 Generated Artwork")) {
+      // User is continuing an image generation conversation
+      if (
+        /^(?:a |an |now |make it |add |with |create |generate |draw |paint )/i.test(t) ||
+        /\b(?:dragon|dinosaur|warrior|cyber|neon|galaxy|ocean|mountain|forest|desert|futuristic|mythical)\b/i.test(
+          t,
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+
+  // 9. Visual rendering modifiers
+  if (
+    /\b(?:concept art|digital art|digital painting|oil painting|watercolor painting|anime style|cinematic shot|photorealistic|hyperrealistic|3d render|unreal engine|octane render|8k wallpaper)\b/i.test(
+      t,
+    ) &&
+    !/\b(?:what is|how to|code|tutorial)\b/i.test(t)
+  ) {
+    return true;
+  }
+
+  // 10. Google Nano Banana explicit triggers
+  if (
+    /\b(?:nano\s*banana|nano\s*banana\s*2|nano\s*banana\s*lite|nano\s*banana\s*pro|gemini\s*flash\s*image)\b/i.test(
       t,
     )
   ) {
@@ -362,7 +432,7 @@ async function handleImageModeAgent(messages: UIMessage[]): Promise<Response> {
   let generatedImageUrl: string | null = null;
   let modelNote = "Bravura Neural Flux";
 
-  if (geminiKey && geminiKey.length > 5) {
+  if (geminiKey && geminiKey.length > 5 && Date.now() > geminiImageQuotaExhaustedUntil) {
     try {
       const ai = new GoogleGenAI({
         apiKey: geminiKey,
@@ -382,7 +452,12 @@ async function handleImageModeAgent(messages: UIMessage[]): Promise<Response> {
 
       parts.push({ text: geminiPrompt });
 
-      const candidateModels = ["gemini-3.1-flash-image", "gemini-3.1-flash-lite-image"];
+      // Google Nano Banana series: Nano Banana 2 (3.1 flash image), Nano Banana Lite (3.1 flash lite image), Nano Banana Pro (3 pro image)
+      const candidateModels = [
+        "gemini-3.1-flash-image",
+        "gemini-3.1-flash-lite-image",
+        "gemini-3-pro-image",
+      ];
 
       for (const modelName of candidateModels) {
         try {
@@ -408,7 +483,12 @@ async function handleImageModeAgent(messages: UIMessage[]): Promise<Response> {
               if (part.inlineData?.data) {
                 const mime = part.inlineData.mimeType || "image/png";
                 generatedImageUrl = `data:${mime};base64,${part.inlineData.data}`;
-                modelNote = modelName;
+                modelNote =
+                  modelName === "gemini-3.1-flash-image"
+                    ? "Google Nano Banana 2 (gemini-3.1-flash-image)"
+                    : modelName === "gemini-3.1-flash-lite-image"
+                      ? "Google Nano Banana Lite (gemini-3.1-flash-lite-image)"
+                      : `Google Nano Banana (${modelName})`;
                 break;
               }
             }
@@ -416,14 +496,26 @@ async function handleImageModeAgent(messages: UIMessage[]): Promise<Response> {
 
           if (generatedImageUrl) break;
         } catch (err) {
+          const errMsg = (err as Error)?.message || "";
+          if (
+            errMsg.includes("429") ||
+            errMsg.includes("RESOURCE_EXHAUSTED") ||
+            errMsg.includes("quota")
+          ) {
+            geminiImageQuotaExhaustedUntil = Date.now() + 15 * 60 * 1000;
+            console.info(
+              "[bravura-chat-image] Google Nano Banana quota exhausted, switching to fast neural synthesis",
+            );
+            break;
+          }
           console.info(
-            `[bravura-chat-image] model ${modelName} fallback needed:`,
-            (err as Error)?.message?.slice(0, 100),
+            `[bravura-chat-image] Google Nano Banana model ${modelName} fallback needed:`,
+            errMsg.slice(0, 100),
           );
         }
       }
     } catch (clientErr) {
-      console.warn("[bravura-chat-image] Gemini client fallback:", clientErr);
+      console.warn("[bravura-chat-image] Google Nano Banana client fallback:", clientErr);
     }
   }
 
@@ -431,7 +523,7 @@ async function handleImageModeAgent(messages: UIMessage[]): Promise<Response> {
     const seed = Math.floor(Math.random() * 999999);
     const cleanPromptEncoded = encodeURIComponent(enhancedPrompt.slice(0, 360));
     generatedImageUrl = `https://image.pollinations.ai/prompt/${cleanPromptEncoded}?width=${width}&height=${height}&model=flux&nologo=true&seed=${seed}`;
-    modelNote = "Bravura Neural Flux";
+    modelNote = "Pollinations AI (Flux)";
   }
 
   const suggestions = getPromptSuggestions(prompt);
@@ -483,7 +575,7 @@ export async function runBaseAgent({
   abortSignal,
 }: AgentRunInput): Promise<Response> {
   const userText = lastUserText(messages);
-  const isImageRequest = mode === "image" || isImageGenerationIntent(userText);
+  const isImageRequest = mode === "image" || isImageGenerationIntent(userText, messages);
 
   // If in Image mode or user explicitly requests image generation, route directly to image generation
   if (isImageRequest) {

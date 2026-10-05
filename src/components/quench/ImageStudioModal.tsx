@@ -118,7 +118,8 @@ export function ImageStudioModal({
   const [referenceImage, setReferenceImage] = useState<string | null>(initialImage || null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
-  const [usedModel, setUsedModel] = useState("gemini-3.1-flash-image");
+  const [selectedNanoModel, setSelectedNanoModel] = useState("pollinations");
+  const [usedModel, setUsedModel] = useState("Pollinations AI (Flux)");
   const [error, setError] = useState<string | null>(null);
   const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -206,6 +207,7 @@ export function ImageStudioModal({
           aspectRatio,
           stylePreset,
           referenceImage: referenceImage || undefined,
+          model: selectedNanoModel,
         }),
       });
 
@@ -307,12 +309,12 @@ export function ImageStudioModal({
                 <h2 className="text-base sm:text-lg font-bold text-white truncate">
                   AI Image Studio
                 </h2>
-                <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] sm:text-xs font-semibold text-cyan-300">
-                  {usedModel.includes("flux") ? "Bravura Neural Flux" : "Gemini 3.1 Flash Image"}
+                <span className="rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2.5 py-0.5 text-[10px] sm:text-xs font-semibold text-cyan-300">
+                  {usedModel}
                 </span>
               </div>
               <p className="text-muted-foreground text-[11px] sm:text-xs truncate hidden sm:block">
-                Create & edit images using generative multimodal AI
+                High-fidelity image creation & neural synthesis
               </p>
             </div>
           </div>
@@ -455,6 +457,60 @@ export function ImageStudioModal({
                 className="hidden"
                 onChange={handleFileUpload}
               />
+            </div>
+
+            {/* AI Generation Engine Selector */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                  <Sparkles className="size-3.5 text-cyan-400" />
+                  Generation Engine
+                </span>
+                <span className="text-[10px] text-cyan-300 bg-cyan-500/10 px-2 py-0.5 rounded-full border border-cyan-400/20">
+                  {selectedNanoModel === "pollinations" ? "Pollinations AI" : "Google GenAI"}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedNanoModel("pollinations")}
+                  className={cn(
+                    "flex flex-col rounded-xl border p-2 text-left transition-all cursor-pointer",
+                    selectedNanoModel === "pollinations"
+                      ? "border-cyan-400/80 bg-cyan-500/20 text-cyan-200 shadow-md shadow-cyan-500/10"
+                      : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-white",
+                  )}
+                >
+                  <span className="text-xs font-semibold text-white truncate">Pollinations AI</span>
+                  <span className="text-[10px] text-zinc-400 truncate">Flux • Instant</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedNanoModel("gemini-3.1-flash-image")}
+                  className={cn(
+                    "flex flex-col rounded-xl border p-2 text-left transition-all cursor-pointer",
+                    selectedNanoModel === "gemini-3.1-flash-image"
+                      ? "border-cyan-400/80 bg-cyan-500/20 text-cyan-200 shadow-md shadow-cyan-500/10"
+                      : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-white",
+                  )}
+                >
+                  <span className="text-xs font-semibold text-white truncate">Nano Banana 2</span>
+                  <span className="text-[10px] text-zinc-400 truncate">Gemini 3.1 Flash</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedNanoModel("gemini-3.1-flash-lite-image")}
+                  className={cn(
+                    "flex flex-col rounded-xl border p-2 text-left transition-all cursor-pointer",
+                    selectedNanoModel === "gemini-3.1-flash-lite-image"
+                      ? "border-cyan-400/80 bg-cyan-500/20 text-cyan-200 shadow-md shadow-cyan-500/10"
+                      : "border-white/10 bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-white",
+                  )}
+                >
+                  <span className="text-xs font-semibold text-white truncate">Nano Lite</span>
+                  <span className="text-[10px] text-zinc-400 truncate">Gemini Lite</span>
+                </button>
+              </div>
             </div>
 
             {/* Aspect Ratio Selector */}

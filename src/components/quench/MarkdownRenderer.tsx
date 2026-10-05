@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy, Download, Maximize2, X, Loader2, Sparkles } from "lucide-react";
@@ -67,9 +67,15 @@ function ChatImage({ src, alt }: { src?: string; alt?: string }) {
   const [progress, setProgress] = useState(15);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [currentSrc, setCurrentSrc] = useState(src);
+  const [loadError, setLoadError] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
+  const imgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
+    setCurrentSrc(src);
     setIsLoaded(false);
+    setLoadError(false);
     setProgress(15);
 
     const timer = setInterval(() => {
@@ -87,6 +93,26 @@ function ChatImage({ src, alt }: { src?: string; alt?: string }) {
     return () => clearInterval(timer);
   }, [src]);
 
+  // Check if image is already cached/complete
+  useEffect(() => {
+    if (imgRef.current && imgRef.current.complete && imgRef.current.naturalWidth > 0) {
+      setIsLoaded(true);
+      setProgress(100);
+    }
+  }, [currentSrc]);
+
+  // Timeout protection: if direct image hasn't loaded within 10s, attempt same-origin proxy
+  useEffect(() => {
+    if (isLoaded || loadError || !src) return;
+    const timeout = setTimeout(() => {
+      if (!isLoaded && currentSrc === src && src.startsWith("http")) {
+        console.info("[ChatImage] Direct load taking long, switching to proxy fallback");
+        setCurrentSrc(`/api/download?url=${encodeURIComponent(src)}`);
+      }
+    }, 10000);
+    return () => clearTimeout(timeout);
+  }, [isLoaded, loadError, currentSrc, src]);
+
   useEffect(() => {
     if (!lightboxOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -100,11 +126,12 @@ function ChatImage({ src, alt }: { src?: string; alt?: string }) {
 
   const handleDownload = async (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (!src || isDownloading) return;
+    const downloadTarget = currentSrc || src;
+    if (!downloadTarget || isDownloading) return;
     setIsDownloading(true);
     const cleanAlt = (alt || "artwork").replace(/[^a-zA-Z0-9_ -]/g, "_").slice(0, 30);
     const filename = `bravura-${cleanAlt}-${Date.now()}.png`;
-    const ok = await downloadImageFile(src, filename);
+    const ok = await downloadImageFile(downloadTarget, filename);
     setIsDownloading(false);
     if (ok) {
       setDownloaded(true);
@@ -116,13 +143,37 @@ function ChatImage({ src, alt }: { src?: string; alt?: string }) {
     setProgress(100);
     setTimeout(() => {
       setIsLoaded(true);
-    }, 180);
+      setLoadError(false);
+    }, 120);
+  };
+
+  const handleImageError = () => {
+    if (currentSrc === src && src.startsWith("http")) {
+      // First fallback: attempt same-origin server proxy
+      console.warn("[ChatImage] Direct load failed, attempting same-origin proxy");
+      setCurrentSrc(`/api/download?url=${encodeURIComponent(src)}`);
+    } else {
+      setLoadError(true);
+    }
+  };
+
+  const handleRetry = () => {
+    setIsRetrying(true);
+    setLoadError(false);
+    setIsLoaded(false);
+    setProgress(20);
+    const cleanPrompt = encodeURIComponent((alt || "creative artwork").slice(0, 200));
+    const freshSeed = Math.floor(Math.random() * 999999);
+    const rawUrl = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=1024&height=1024&model=flux&nologo=true&seed=${freshSeed}`;
+    const freshUrl = `/api/download?url=${encodeURIComponent(rawUrl)}`;
+    setCurrentSrc(freshUrl);
+    setTimeout(() => setIsRetrying(false), 500);
   };
 
   return (
     <div className="group relative my-3 max-w-lg overflow-hidden rounded-2xl border border-white/10 bg-black/40 shadow-xl">
       {/* Animated Percentage Generation Skeleton */}
-      {!isLoaded && (
+      {!isLoaded && !loadError && (
         <div className="flex flex-col items-center justify-center p-6 sm:p-8 min-h-[260px] sm:min-h-[290px] w-full bg-gradient-to-b from-[#0f1422] to-[#090c14] relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/10 via-transparent to-blue-500/10 blur-xl animate-pulse" />
 
@@ -182,14 +233,40 @@ function ChatImage({ src, alt }: { src?: string; alt?: string }) {
         </div>
       )}
 
+      {/* Error state with Retry action */}
+      {loadError && (
+        <div className="flex flex-col items-center justify-center p-8 min-h-[220px] w-full bg-[#121624] text-center space-y-3">
+          <p className="text-sm font-medium text-zinc-300">
+            Artwork synthesis took too long or was interrupted.
+          </p>
+          <button
+            type="button"
+            onClick={handleRetry}
+            disabled={isRetrying}
+            className="flex items-center gap-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black px-4 py-2 text-xs font-semibold shadow-md transition-colors cursor-pointer"
+          >
+            {isRetrying ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="size-3.5" />
+            )}
+            <span>Regenerate Artwork</span>
+          </button>
+        </div>
+      )}
+
       <img
-        src={src}
+        ref={imgRef}
+        src={currentSrc}
         alt={alt || "Generated Image"}
         referrerPolicy="no-referrer"
         onLoad={handleImageLoad}
+        onError={handleImageError}
         className={cn(
           "w-full max-h-[480px] object-contain transition-all duration-500 group-hover:scale-[1.01]",
-          isLoaded ? "opacity-100 block" : "opacity-0 absolute inset-0 pointer-events-none",
+          isLoaded && !loadError
+            ? "opacity-100 block"
+            : "opacity-0 absolute inset-0 pointer-events-none",
         )}
       />
 

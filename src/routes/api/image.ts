@@ -7,6 +7,7 @@ interface ImageRequestBody {
   imageSize?: unknown;
   referenceImage?: unknown;
   stylePreset?: unknown;
+  model?: unknown;
 }
 
 function errorResponse(message: string, status = 400) {
@@ -97,10 +98,13 @@ export const Route = createFileRoute("/api/image")({
         let usedModel = "gemini-3.1-flash-image";
         let assistantText: string | null = null;
 
-        // 1. Try Gemini client if key is configured
+        // If client specifically asks for Pollinations AI or if Gemini is bypassed
+        const isPollinationsRequested = body.model === "pollinations" || body.model === "flux";
+
+        // 1. Try Gemini client if key is configured and not explicitly asking for Pollinations
         const rawApiKey = process.env.GEMINI_API_KEY?.trim() || "";
 
-        if (rawApiKey.length > 5) {
+        if (!isPollinationsRequested && rawApiKey.length > 5) {
           try {
             const ai = new GoogleGenAI({
               apiKey: rawApiKey,
@@ -134,7 +138,16 @@ export const Route = createFileRoute("/api/image")({
 
             parts.push({ text: finalPrompt });
 
-            const candidateModels = ["gemini-3.1-flash-image", "gemini-3.1-flash-lite-image"];
+            const requestedModel =
+              typeof body.model === "string" && body.model ? body.model : "gemini-3.1-flash-image";
+
+            // Candidate models: Google Nano Banana 2, Google Nano Banana Lite, Google Nano Banana Pro
+            const candidateModels = [
+              requestedModel,
+              "gemini-3.1-flash-image",
+              "gemini-3.1-flash-lite-image",
+              "gemini-3-pro-image",
+            ].filter((m, idx, arr) => arr.indexOf(m) === idx);
 
             for (const modelName of candidateModels) {
               try {
@@ -155,7 +168,12 @@ export const Route = createFileRoute("/api/image")({
                     if (part.inlineData?.data) {
                       const mime = part.inlineData.mimeType || "image/png";
                       generatedImageUrl = `data:${mime};base64,${part.inlineData.data}`;
-                      usedModel = modelName;
+                      usedModel =
+                        modelName === "gemini-3.1-flash-image"
+                          ? "Google Nano Banana 2 (gemini-3.1-flash-image)"
+                          : modelName === "gemini-3.1-flash-lite-image"
+                            ? "Google Nano Banana Lite (gemini-3.1-flash-lite-image)"
+                            : `Google Nano Banana (${modelName})`;
                       break;
                     } else if (part.text) {
                       assistantText = part.text;
@@ -167,23 +185,26 @@ export const Route = createFileRoute("/api/image")({
               } catch (modelErr) {
                 // If quota exhausted or model not accessible on current tier, proceed to neural synthesis fallback
                 console.info(
-                  `[bravura-image] Gemini model ${modelName} fallback needed:`,
+                  `[bravura-image] Google Nano Banana model ${modelName} fallback needed:`,
                   (modelErr as Error)?.message?.slice(0, 120),
                 );
               }
             }
           } catch (geminiClientErr) {
-            console.warn("[bravura-image] Gemini client init fallback:", geminiClientErr);
+            console.warn(
+              "[bravura-image] Google Nano Banana client init fallback:",
+              geminiClientErr,
+            );
           }
         }
 
-        // 2. High-performance direct neural synthesis fallback using Flux
+        // 2. High-performance direct neural synthesis fallback using Pollinations AI (Flux)
         if (!generatedImageUrl) {
           const { width, height } = DIMENSIONS_MAP[aspectRatio] || { width: 1024, height: 1024 };
           const seed = Math.floor(Math.random() * 999999);
           const cleanPrompt = encodeURIComponent(finalPrompt.slice(0, 360));
           generatedImageUrl = `https://image.pollinations.ai/prompt/${cleanPrompt}?width=${width}&height=${height}&model=flux&nologo=true&seed=${seed}`;
-          usedModel = "bravura-neural-flux";
+          usedModel = "Pollinations AI (Flux)";
         }
 
         return new Response(

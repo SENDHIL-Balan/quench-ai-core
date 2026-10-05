@@ -364,6 +364,7 @@ function BravuraApp() {
     const handlePickPrompt = (e: Event) => {
       const customEvent = e as CustomEvent<string>;
       if (typeof customEvent.detail === "string" && customEvent.detail.trim()) {
+        setMode("image");
         setInput(customEvent.detail.trim());
         const textarea = document.querySelector<HTMLTextAreaElement>("textarea");
         textarea?.focus();
@@ -371,7 +372,7 @@ function BravuraApp() {
     };
     window.addEventListener("bravura:pick-prompt", handlePickPrompt);
     return () => window.removeEventListener("bravura:pick-prompt", handlePickPrompt);
-  }, [setInput]);
+  }, [setInput, setMode]);
 
   useEffect(() => {
     if (status === "submitted" || status === "streaming") {
