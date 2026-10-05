@@ -12,7 +12,13 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ToolsRouteImport } from './routes/tools'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
+import { Route as ApiDownloadRouteImport } from './routes/api/download'
+import { Route as ApiImageRouteImport } from './routes/api/image'
+import { Route as ApiModelsRouteImport } from './routes/api/models'
+import { Route as ApiPdfRouteImport } from './routes/api/pdf'
 import { Route as ApiSpeakRouteImport } from './routes/api/speak'
+import { Route as ApiTranscribeRouteImport } from './routes/api/transcribe'
+import { Route as ApiVoicesRouteImport } from './routes/api/voices'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -29,9 +35,39 @@ const ApiChatRoute = ApiChatRouteImport.update({
   path: '/api/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDownloadRoute = ApiDownloadRouteImport.update({
+  id: '/api/download',
+  path: '/api/download',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiImageRoute = ApiImageRouteImport.update({
+  id: '/api/image',
+  path: '/api/image',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiModelsRoute = ApiModelsRouteImport.update({
+  id: '/api/models',
+  path: '/api/models',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPdfRoute = ApiPdfRouteImport.update({
+  id: '/api/pdf',
+  path: '/api/pdf',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSpeakRoute = ApiSpeakRouteImport.update({
   id: '/api/speak',
   path: '/api/speak',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTranscribeRoute = ApiTranscribeRouteImport.update({
+  id: '/api/transcribe',
+  path: '/api/transcribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiVoicesRoute = ApiVoicesRouteImport.update({
+  id: '/api/voices',
+  path: '/api/voices',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -39,34 +75,89 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/tools': typeof ToolsRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/download': typeof ApiDownloadRoute
+  '/api/image': typeof ApiImageRoute
+  '/api/models': typeof ApiModelsRoute
+  '/api/pdf': typeof ApiPdfRoute
   '/api/speak': typeof ApiSpeakRoute
+  '/api/transcribe': typeof ApiTranscribeRoute
+  '/api/voices': typeof ApiVoicesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/tools': typeof ToolsRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/download': typeof ApiDownloadRoute
+  '/api/image': typeof ApiImageRoute
+  '/api/models': typeof ApiModelsRoute
+  '/api/pdf': typeof ApiPdfRoute
   '/api/speak': typeof ApiSpeakRoute
+  '/api/transcribe': typeof ApiTranscribeRoute
+  '/api/voices': typeof ApiVoicesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/tools': typeof ToolsRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/download': typeof ApiDownloadRoute
+  '/api/image': typeof ApiImageRoute
+  '/api/models': typeof ApiModelsRoute
+  '/api/pdf': typeof ApiPdfRoute
   '/api/speak': typeof ApiSpeakRoute
+  '/api/transcribe': typeof ApiTranscribeRoute
+  '/api/voices': typeof ApiVoicesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/tools' | '/api/chat' | '/api/speak'
+  fullPaths:
+    | '/'
+    | '/tools'
+    | '/api/chat'
+    | '/api/download'
+    | '/api/image'
+    | '/api/models'
+    | '/api/pdf'
+    | '/api/speak'
+    | '/api/transcribe'
+    | '/api/voices'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/tools' | '/api/chat' | '/api/speak'
-  id: '__root__' | '/' | '/tools' | '/api/chat' | '/api/speak'
+  to:
+    | '/'
+    | '/tools'
+    | '/api/chat'
+    | '/api/download'
+    | '/api/image'
+    | '/api/models'
+    | '/api/pdf'
+    | '/api/speak'
+    | '/api/transcribe'
+    | '/api/voices'
+  id:
+    | '__root__'
+    | '/'
+    | '/tools'
+    | '/api/chat'
+    | '/api/download'
+    | '/api/image'
+    | '/api/models'
+    | '/api/pdf'
+    | '/api/speak'
+    | '/api/transcribe'
+    | '/api/voices'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ToolsRoute: typeof ToolsRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiDownloadRoute: typeof ApiDownloadRoute
+  ApiImageRoute: typeof ApiImageRoute
+  ApiModelsRoute: typeof ApiModelsRoute
+  ApiPdfRoute: typeof ApiPdfRoute
   ApiSpeakRoute: typeof ApiSpeakRoute
+  ApiTranscribeRoute: typeof ApiTranscribeRoute
+  ApiVoicesRoute: typeof ApiVoicesRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -92,11 +183,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/download': {
+      id: '/api/download'
+      path: '/api/download'
+      fullPath: '/api/download'
+      preLoaderRoute: typeof ApiDownloadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/image': {
+      id: '/api/image'
+      path: '/api/image'
+      fullPath: '/api/image'
+      preLoaderRoute: typeof ApiImageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/models': {
+      id: '/api/models'
+      path: '/api/models'
+      fullPath: '/api/models'
+      preLoaderRoute: typeof ApiModelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/pdf': {
+      id: '/api/pdf'
+      path: '/api/pdf'
+      fullPath: '/api/pdf'
+      preLoaderRoute: typeof ApiPdfRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/speak': {
       id: '/api/speak'
       path: '/api/speak'
       fullPath: '/api/speak'
       preLoaderRoute: typeof ApiSpeakRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/transcribe': {
+      id: '/api/transcribe'
+      path: '/api/transcribe'
+      fullPath: '/api/transcribe'
+      preLoaderRoute: typeof ApiTranscribeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/voices': {
+      id: '/api/voices'
+      path: '/api/voices'
+      fullPath: '/api/voices'
+      preLoaderRoute: typeof ApiVoicesRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -106,7 +239,13 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ToolsRoute: ToolsRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiDownloadRoute: ApiDownloadRoute,
+  ApiImageRoute: ApiImageRoute,
+  ApiModelsRoute: ApiModelsRoute,
+  ApiPdfRoute: ApiPdfRoute,
   ApiSpeakRoute: ApiSpeakRoute,
+  ApiTranscribeRoute: ApiTranscribeRoute,
+  ApiVoicesRoute: ApiVoicesRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -33,7 +33,15 @@ export default defineConfig(({ command }) => ({
     tanstackStart({
       server: { entry: "server" },
     }),
-    ...(command === "build" ? [nitro({ defaultPreset: "cloudflare-module" })] : []),
+    ...(command === "build"
+      ? [
+          nitro(
+            process.env.VERCEL
+              ? {}
+              : { defaultPreset: process.env.NITRO_PRESET || "cloudflare-module" },
+          ),
+        ]
+      : []),
     viteReact(),
   ],
   build: {
