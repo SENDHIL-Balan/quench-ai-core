@@ -10,6 +10,7 @@ import {
 import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { CosmicThemeProvider } from "@/lib/theme/CosmicThemeContext";
+import { ChatHistoryProvider } from "@/lib/context/ChatHistoryContext";
 
 import appCss from "../styles.css?url";
 
@@ -168,9 +169,11 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <CosmicThemeProvider>
-        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <Outlet />
-        <Toaster position="top-right" richColors />
+        <ChatHistoryProvider>
+          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <Outlet />
+          <Toaster position="top-right" richColors />
+        </ChatHistoryProvider>
       </CosmicThemeProvider>
     </QueryClientProvider>
   );

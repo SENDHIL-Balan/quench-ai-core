@@ -271,10 +271,10 @@ export interface ChatHistoryItem {
 export function isConversationSearchIntent(query: string): boolean {
   const q = query.toLowerCase().trim();
   return (
-    /\b(what did i (?:say|tell you|ask|send|mention|write)|did i (?:say|tell you|ask|send|mention)|search (?:my |the |our )?chat|search what i('ve| have)? sent|recall (?:what|when|my|the)|remember (?:what|when|my|the|that)|as i (?:said|told you|mentioned|wrote) earlier|what was (?:my|the) (?:name|pet|dog|cat|car|code|recipe|favorite|location|address|email|phone|project|password|choice|decision|answer)|what was that .* i (?:said|told you|mentioned|sent|asked)|look through (?:my |our )?(?:chat|messages|history)|check our (?:chat|messages|history)|repeat what i said|remind me what i (?:said|sent|told you))\b/i.test(
+    /\b(what did i (?:say|tell you|ask|send|mention|write|create)|did i (?:say|tell you|ask|send|mention|write|create)|search (?:my |the |our )?chat|search what i(?:'ve| have)? sent|recall (?:what|when|my|the|our)|remember (?:what|when|my|the|that|our)|as i (?:said|told you|mentioned|wrote|asked) earlier|what was (?:my|the) (?:name|pet|dog|cat|car|code|recipe|favorite|location|address|email|phone|project|password|choice|decision|answer|prompt)|what was that .* i (?:said|told you|mentioned|sent|asked|created)|look through (?:my |our )?(?:chat|messages|history)|check our (?:chat|messages|history)|repeat what i said|remind me what i (?:said|sent|told you)|from (?:the|our|my) (?:previous|past|earlier) chat|in (?:the|our|my) (?:previous|past|earlier) chat|what did we talk about|what have i (?:said|sent|asked)|what i previously (?:said|sent|asked))\b/i.test(
       q,
     ) ||
-    /^(?:what was (?:it|that)|what did i say|what did i tell you|do you remember me|do you remember what)\b/i.test(
+    /^(?:what was (?:it|that)|what did i say|what did i tell you|what did i ask|do you remember me|do you remember what|what did i tell you to create)\b/i.test(
       q,
     )
   );
@@ -367,16 +367,39 @@ export async function searchConversationHistory(
   const chunks = chunkConversationHistory(currentMessages, otherChats);
   if (chunks.length === 0) return [];
 
-  // Remove common filler words from conversational query to boost search accuracy
+  const isRecall = isConversationSearchIntent(query);
+
+  // Remove common conversational framing words to boost keyword matching accuracy
   const cleanQuery = query
     .replace(
-      /\b(what did i (?:say|tell you|ask|send|mention)|search (?:my |the )?chat|search what i sent|recall|remember|as i said earlier)\b/gi,
+      /\b(what did i (?:say|tell you|ask|send|mention|write|create)(?: to create)?(?: before)?|did i (?:say|tell you|ask|send|mention|write|create)|search (?:my |the |our )?chat|search what i(?:'ve| have)? sent|recall|remember|as i said earlier|from (?:the|our|my) (?:previous|past) chat|in previous chat)\b/gi,
       "",
     )
     .trim();
 
-  const searchQuery = cleanQuery.length > 3 ? cleanQuery : query;
-  return retrieveRelevantChunks(searchQuery, chunks, topK);
+  let results: RagSearchResult[] = [];
+  if (cleanQuery.length >= 2) {
+    results = await retrieveRelevantChunks(cleanQuery, chunks, topK);
+  }
+
+  // If specific search didn't find high-confidence matches, or if this is a general recall intent:
+  if (results.length === 0 && isRecall) {
+    // Ground the answer in the actual past user messages
+    const userChunks = chunks.filter(
+      (c) => c.text.includes("[User previously sent]") || c.source.includes("user"),
+    );
+    const selectedChunks = userChunks.length > 0 ? userChunks.slice(-topK) : chunks.slice(-topK);
+
+    results = selectedChunks.map((chunk, index) => ({
+      chunk,
+      score: 0.95 - index * 0.05,
+      citation: `[Source: ${chunk.source}]`,
+    }));
+  } else if (results.length === 0) {
+    results = await retrieveRelevantChunks(query, chunks, topK);
+  }
+
+  return results;
 }
 
 /**

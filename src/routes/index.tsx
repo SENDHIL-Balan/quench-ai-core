@@ -26,20 +26,11 @@ import { PdfStudioModal } from "@/components/quench/PdfStudioModal";
 import { AppLoadingScreen } from "@/components/quench/AppLoadingScreen";
 import { type SupportedModelId, DEFAULT_MODEL_ID } from "@/components/quench/ModelSelector";
 import { getPromptSuggestions } from "@/lib/agent/image-suggestions";
+import { useChatHistory, type StoredChat } from "@/lib/context/ChatHistoryContext";
 
 // Track if the initial splash animation has already run in this session
 let hasBootedOnce = false;
-import {
-  onAuthState,
-  saveChatToFirestore,
-  deleteChatFromFirestore,
-  subscribeUserChats,
-  getUserChatsFromFirestore,
-  type AuthUserProfile,
-} from "@/lib/firebase";
 
-const CHATS_KEY = "quench-ai-chats-v1";
-const ACTIVE_CHAT_KEY = "quench-ai-active-chat";
 const VOICE_SETTING_KEY = "quench-ai-voice-setting";
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAX_ATTACHMENTS = 5;
@@ -49,14 +40,6 @@ const DEFAULT_VOICE_SETTING: VoiceSetting = {
   provider: "sarvam",
   autoSpeak: false,
   playbackSpeed: 1.0,
-};
-
-type StoredChat = {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  messages: UIMessage[];
 };
 
 export const Route = createFileRoute("/")({
@@ -134,17 +117,48 @@ function BravuraApp() {
   const [deepThink, setDeepThink] = useState(false);
   const [webSearch, setWebSearch] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [chats, setChats] = useState<StoredChat[]>([]);
-  const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [voiceSetting, setVoiceSetting] = useState<VoiceSetting>(DEFAULT_VOICE_SETTING);
   const [voiceModalOpen, setVoiceModalOpen] = useState(false);
   const [liveVoiceModalOpen, setLiveVoiceModalOpen] = useState(false);
   const [imageStudioOpen, setImageStudioOpen] = useState(false);
   const [pdfStudioOpen, setPdfStudioOpen] = useState(false);
-  const [authUser, setAuthUser] = useState<AuthUserProfile | null>(null);
-  const [authInitialized, setAuthInitialized] = useState(false);
   const [selectedModel, setSelectedModel] = useState<SupportedModelId>(DEFAULT_MODEL_ID);
+
+  // Consume central Chat History & Local RAG Context Provider
+  const {
+    chats,
+    activeChatId,
+    setActiveChatId,
+    createChat,
+    deleteChat: deleteChatFromHistory,
+    saveChatMessages,
+    buildCrossReferenceContext,
+    getOtherChatsForServerRag,
+    authUser,
+    authInitialized,
+  } = useChatHistory();
+
+  const [splashDone, setSplashDone] = useState(() => {
+    return (
+      hasBootedOnce ||
+      (typeof window !== "undefined" && window.sessionStorage.getItem("bravura_booted") === "1")
+    );
+  });
+
+  useEffect(() => {
+    if (splashDone) return;
+    const timer = setTimeout(() => {
+      hasBootedOnce = true;
+      try {
+        window.sessionStorage.setItem("bravura_booted", "1");
+      } catch {
+        /* ignore */
+      }
+      setSplashDone(true);
+    }, 2400);
+    return () => clearTimeout(timer);
+  }, [splashDone]);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(
     null,
   );
@@ -269,90 +283,6 @@ function BravuraApp() {
   setMessagesRef.current = setMessages;
 
   useEffect(() => {
-    const startTime = Date.now();
-    const unsubscribe = onAuthState((user) => {
-      setAuthUser(user);
-      if (
-        hasBootedOnce ||
-        (typeof window !== "undefined" && window.sessionStorage.getItem("bravura_booted") === "1")
-      ) {
-        setAuthInitialized(true);
-        return;
-      }
-      const elapsed = Date.now() - startTime;
-      const minDisplay = 2600; // 2 extra seconds for cinematic logo entrance on initial session boot
-      if (elapsed < minDisplay) {
-        setTimeout(() => {
-          hasBootedOnce = true;
-          try {
-            window.sessionStorage.setItem("bravura_booted", "1");
-          } catch {
-            /* ignore */
-          }
-          setAuthInitialized(true);
-        }, minDisplay - elapsed);
-      } else {
-        hasBootedOnce = true;
-        try {
-          window.sessionStorage.setItem("bravura_booted", "1");
-        } catch {
-          /* ignore */
-        }
-        setAuthInitialized(true);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Sync chats from Firestore when authenticated
-  useEffect(() => {
-    const uid = authUser?.uid;
-    if (!uid) return;
-    const unsubscribe = subscribeUserChats(uid, (remoteChats) => {
-      if (remoteChats.length > 0) {
-        setChats((current) => {
-          const activeId = activeChatIdRef.current;
-          if (!activeId) {
-            if (
-              current.length === remoteChats.length &&
-              current.every(
-                (c, i) =>
-                  c.id === remoteChats[i]?.id &&
-                  c.updatedAt === remoteChats[i]?.updatedAt &&
-                  c.title === remoteChats[i]?.title,
-              )
-            ) {
-              return current;
-            }
-            return remoteChats as StoredChat[];
-          }
-          let hasDiff = current.length !== remoteChats.length;
-          const updated = (remoteChats as StoredChat[]).map((rc, idx) => {
-            if (rc.id === activeId) {
-              const localActive = current.find((c) => c.id === activeId);
-              if (localActive && localActive.messages.length >= rc.messages.length) {
-                return { ...rc, messages: localActive.messages };
-              }
-            }
-            if (
-              !hasDiff &&
-              (!current[idx] ||
-                current[idx].id !== rc.id ||
-                current[idx].updatedAt !== rc.updatedAt ||
-                current[idx].title !== rc.title)
-            ) {
-              hasDiff = true;
-            }
-            return rc;
-          });
-          return hasDiff ? updated : current;
-        });
-      }
-    });
-    return () => unsubscribe();
-  }, [authUser?.uid]);
-
-  useEffect(() => {
     try {
       const saved = window.localStorage.getItem(VOICE_SETTING_KEY);
       if (saved) {
@@ -392,48 +322,20 @@ function BravuraApp() {
     }
   }, []);
 
-  // Hydrate chats & model from localStorage on client mount (avoids SSR hydration mismatch)
-  // When the user swipes the app away, force quits, or reopens, it will ALWAYS load on a fresh new page
+  // Hydrate model from localStorage on client mount
   useEffect(() => {
-    if (hasLoadedStorageRef.current) return;
-    hasLoadedStorageRef.current = true;
     try {
-      const savedChatsRaw = window.localStorage.getItem(CHATS_KEY);
-      const savedChats = savedChatsRaw ? (JSON.parse(savedChatsRaw) as StoredChat[]) : [];
       const savedModel = window.localStorage.getItem("bravura_selected_model");
-
       if (savedModel && typeof savedModel === "string" && savedModel.trim()) {
         setSelectedModel(savedModel.trim() as SupportedModelId);
       }
-
-      if (Array.isArray(savedChats) && savedChats.length > 0) {
-        setChats(savedChats);
-        chatsRef.current = savedChats;
-      }
-
-      // Explicitly clear any active chat ID so that forcequit / app swipe / fresh open always starts on a new page
-      window.localStorage.removeItem(ACTIVE_CHAT_KEY);
-      setActiveChatId(null);
-      activeChatIdRef.current = null;
-      lastLoadedChatIdRef.current = null;
-      setMessagesRef.current([]);
     } catch {
       // ignore storage errors
     }
   }, []);
 
-  useEffect(() => {
-    if (!hasLoadedStorageRef.current) return;
-    try {
-      window.localStorage.setItem(CHATS_KEY, JSON.stringify(chats));
-    } catch {
-      // storage unavailable
-    }
-  }, [chats]);
-
   // Hydrate messages only when activeChatId changes to a different chat
   useEffect(() => {
-    if (!hasLoadedStorageRef.current) return;
     if (!activeChatId) {
       if (lastLoadedChatIdRef.current !== null) {
         lastLoadedChatIdRef.current = null;
@@ -444,12 +346,18 @@ function BravuraApp() {
     if (lastLoadedChatIdRef.current === activeChatId) return;
 
     lastLoadedChatIdRef.current = activeChatId;
-    const chat = chatsRef.current.find((c) => c.id === activeChatId);
+    const chat = chats.find((c) => c.id === activeChatId);
     // Never wipe out active messages if chat has no messages
     if (chat && Array.isArray(chat.messages) && chat.messages.length > 0) {
       setMessagesRef.current(chat.messages);
     }
-  }, [activeChatId]);
+  }, [activeChatId, chats]);
+
+  // Persist active chat messages to central ChatHistoryContext
+  useEffect(() => {
+    if (!activeChatId || messages.length === 0) return;
+    saveChatMessages(activeChatId, messages);
+  }, [messages, activeChatId, saveChatMessages]);
 
   // Handle interactive suggestion prompt clicks from chat artwork cards
   useEffect(() => {
@@ -464,50 +372,6 @@ function BravuraApp() {
     window.addEventListener("bravura:pick-prompt", handlePickPrompt);
     return () => window.removeEventListener("bravura:pick-prompt", handlePickPrompt);
   }, [setInput]);
-
-  useEffect(() => {
-    if (!activeChatId || messages.length === 0) return;
-
-    setChats((current) => {
-      const existing = current.find((c) => c.id === activeChatId);
-      if (!existing) return current;
-      if (existing.messages === messages) return current;
-
-      // Stable comparison: bail out if lengths, ids, and content match
-      if (existing.messages.length === messages.length && existing.messages.length > 0) {
-        const isIdentical = existing.messages.every((m, idx) => {
-          const target = messages[idx];
-          if (!target || m.id !== target.id) return false;
-          return messageText(m) === messageText(target);
-        });
-        if (isIdentical) return current;
-      }
-
-      return current.map((c) =>
-        c.id === activeChatId ? { ...c, messages, updatedAt: new Date().toISOString() } : c,
-      );
-    });
-
-    const currentUserId = authUser?.uid;
-    if (currentUserId && activeChatId) {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-      saveTimeoutRef.current = setTimeout(() => {
-        const currentChat = chatsRef.current.find((c) => c.id === activeChatId);
-        const title =
-          currentChat?.title ||
-          (messages[0] ? messageText(messages[0]).slice(0, 45) : "New Conversation");
-        void saveChatToFirestore(currentUserId, activeChatId, title, messages);
-      }, 600);
-    }
-
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [messages, activeChatId, authUser?.uid]);
 
   useEffect(() => {
     if (status === "submitted" || status === "streaming") {
@@ -697,21 +561,10 @@ function BravuraApp() {
 
     let chatId = activeChatId;
     if (!chatId) {
-      const now = new Date().toISOString();
       const rawTitle = value || files[0]?.name || "New conversation";
-      const title = rawTitle.length > 50 ? `${rawTitle.slice(0, 50).trim()}…` : rawTitle;
-      const newChat: StoredChat = {
-        id: typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`,
-        title,
-        createdAt: now,
-        updatedAt: now,
-        messages: [],
-      };
-      chatId = newChat.id;
+      chatId = createChat(rawTitle);
       lastLoadedChatIdRef.current = chatId;
       activeChatIdRef.current = chatId;
-      setChats((current) => [newChat, ...current]);
-      setActiveChatId(chatId);
     }
 
     const textToSend =
@@ -743,17 +596,8 @@ function BravuraApp() {
       }
     }
 
-    const otherChatsForRag = chats
-      .filter((c) => c.id !== chatId)
-      .slice(0, 8)
-      .map((c) => ({
-        id: c.id,
-        title: c.title,
-        messages: c.messages.slice(-8).map((m) => ({
-          role: m.role,
-          text: messageText(m),
-        })),
-      }));
+    const localCrossReference = buildCrossReferenceContext(textToSend, chatId, messages);
+    const otherChatsForRag = getOtherChatsForServerRag(chatId);
 
     void sendMessage(
       { text: textToSend, files: fileParts },
@@ -766,6 +610,7 @@ function BravuraApp() {
           userLocation: locToSend || undefined,
           userLocationDenied: locDenied,
           otherChats: otherChatsForRag,
+          localCrossReference: localCrossReference || undefined,
         },
       },
     );
@@ -774,23 +619,12 @@ function BravuraApp() {
   const handleSendImageToChat = useCallback(
     (promptText: string, imageUrl: string) => {
       const cleanPrompt = promptText.trim() || "Generated Artwork";
-      const now = new Date().toISOString();
-      let chatId = activeChatIdRef.current;
+      let chatId = activeChatId;
 
       if (!chatId) {
         const newTitle = `🎨 ${cleanPrompt.length > 40 ? cleanPrompt.slice(0, 40).trim() + "…" : cleanPrompt}`;
-        const newChat: StoredChat = {
-          id: typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}`,
-          title: newTitle,
-          createdAt: now,
-          updatedAt: now,
-          messages: [],
-        };
-        chatId = newChat.id;
+        chatId = createChat(newTitle);
         lastLoadedChatIdRef.current = chatId;
-        activeChatIdRef.current = chatId;
-        setChats((current) => [newChat, ...current]);
-        setActiveChatId(chatId);
       }
 
       const userMsg: UIMessage = {
@@ -818,26 +652,13 @@ function BravuraApp() {
 
       const newMessages = [...messages, userMsg, assistantMsg];
       setMessages(newMessages);
-
-      setChats((current) =>
-        current.map((c) =>
-          c.id === chatId
-            ? { ...c, messages: newMessages, updatedAt: new Date().toISOString() }
-            : c,
-        ),
-      );
-
-      if (authUser?.uid && chatId) {
-        const chatObj = chatsRef.current.find((c) => c.id === chatId);
-        const title = chatObj?.title || `🎨 ${cleanPrompt.slice(0, 40)}`;
-        void saveChatToFirestore(chatId, authUser.uid, title, newMessages);
-      }
+      saveChatMessages(chatId, newMessages);
 
       setTimeout(() => {
         scrollToBottom(true);
       }, 100);
     },
-    [messages, authUser?.uid, scrollToBottom, setMessages],
+    [messages, activeChatId, createChat, saveChatMessages, scrollToBottom, setMessages],
   );
 
   const handleAllowLocation = useCallback(async () => {
@@ -868,45 +689,29 @@ function BravuraApp() {
     setInput("");
     setActiveChatId(null);
     setSidebarOpen(false);
-  }, [stop, stopSpeech, setMessages]);
+  }, [stop, stopSpeech, setMessages, setActiveChatId]);
 
   const openChat = useCallback(
     (id: string) => {
       stop();
       stopSpeech();
       hasActiveTurnRef.current = false;
-      const chat = chatsRef.current.find((c) => c.id === id) || chats.find((c) => c.id === id);
+      const chat = chats.find((c) => c.id === id);
       if (chat) {
         lastLoadedChatIdRef.current = id;
         setMessages(chat.messages);
         setActiveChatId(id);
-      } else if (authUser?.uid) {
-        void getUserChatsFromFirestore(authUser.uid).then((remoteChats) => {
-          const found = remoteChats.find((rc) => rc.id === id);
-          if (found) {
-            lastLoadedChatIdRef.current = id;
-            setMessages(found.messages as UIMessage[]);
-            setActiveChatId(id);
-            setChats((prev) => {
-              if (prev.some((p) => p.id === id)) return prev;
-              return [found as StoredChat, ...prev];
-            });
-          }
-        });
       }
       setHistoryOpen(false);
       setSidebarOpen(false);
     },
-    [stop, stopSpeech, setMessages, chats, authUser?.uid],
+    [stop, stopSpeech, setMessages, chats, setActiveChatId],
   );
 
   const deleteChat = useCallback(
     (id: string) => {
-      setChats((current) => current.filter((c) => c.id !== id));
-      if (authUser) {
-        void deleteChatFromFirestore(id);
-      }
-      if (activeChatIdRef.current === id) {
+      deleteChatFromHistory(id);
+      if (activeChatId === id) {
         stop();
         stopSpeech();
         hasActiveTurnRef.current = false;
@@ -915,7 +720,7 @@ function BravuraApp() {
         setActiveChatId(null);
       }
     },
-    [authUser, stop, stopSpeech, setMessages],
+    [deleteChatFromHistory, activeChatId, stop, stopSpeech, setMessages, setActiveChatId],
   );
 
   const conversation = messages.length > 0;

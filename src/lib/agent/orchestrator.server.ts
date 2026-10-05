@@ -39,6 +39,7 @@ export interface AgentPlanStep {
 export interface OrchestratorOptions {
   messages: UIMessage[];
   otherChats?: ChatHistoryItem[];
+  localCrossReference?: string;
   mode: ModeId;
   deepThink?: boolean;
   webSearch?: boolean;
@@ -468,6 +469,7 @@ function planToolSteps(
 export async function orchestrateAgentRun({
   messages,
   otherChats,
+  localCrossReference,
   mode,
   deepThink = false,
   webSearch = false,
@@ -533,6 +535,12 @@ export async function orchestrateAgentRun({
     } catch (chatRagErr) {
       console.warn("[bravura-agent] Conversational RAG notice:", chatRagErr);
     }
+  }
+
+  // 3. Local Client Memory RAG Cross-Reference (if supplied by the ChatHistoryProvider)
+  if (localCrossReference && localCrossReference.trim()) {
+    activityStages.push("Client Memory RAG (cross-referencing past user messages)");
+    toolContextAppend += `\n\n${localCrossReference.trim()}`;
   }
 
   const isLocationQuery =

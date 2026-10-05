@@ -12,6 +12,7 @@ import {
 type ChatBody = {
   messages?: unknown;
   otherChats?: unknown;
+  localCrossReference?: unknown;
   mode?: unknown;
   deepThink?: unknown;
   webSearch?: unknown;
@@ -43,6 +44,7 @@ export const Route = createFileRoute("/api/chat")({
         const {
           messages,
           otherChats,
+          localCrossReference,
           mode,
           deepThink,
           webSearch,
@@ -86,6 +88,8 @@ export const Route = createFileRoute("/api/chat")({
           return await runBaseAgent({
             messages: messages as UIMessage[],
             otherChats: validOtherChats,
+            localCrossReference:
+              typeof localCrossReference === "string" ? localCrossReference : undefined,
             mode: modeId,
             deepThink: deepThink === true,
             webSearch: webSearch === true,

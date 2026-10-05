@@ -29,6 +29,7 @@ import type { ChatHistoryItem } from "@/lib/rag/rag-engine.server";
 export interface AgentRunInput {
   messages: UIMessage[];
   otherChats?: ChatHistoryItem[];
+  localCrossReference?: string;
   mode: ModeId;
   deepThink?: boolean;
   webSearch?: boolean;
@@ -470,6 +471,7 @@ async function handleImageModeAgent(messages: UIMessage[]): Promise<Response> {
 export async function runBaseAgent({
   messages,
   otherChats,
+  localCrossReference,
   mode,
   deepThink = false,
   webSearch = false,
@@ -494,6 +496,7 @@ export async function runBaseAgent({
   const orchestration = await orchestrateAgentRun({
     messages,
     otherChats,
+    localCrossReference,
     mode,
     deepThink,
     webSearch: shouldSearch,
