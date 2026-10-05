@@ -42,6 +42,7 @@ export const Route = createFileRoute("/api/chat")({
 
         const {
           messages,
+          otherChats,
           mode,
           deepThink,
           webSearch,
